@@ -1,0 +1,45 @@
+model   CVAE_PCB
+mode    Train       # Train / Inference
+gpu_ids 0           # -1 for CPU, single GPU index for single GPU
+
+log_file_dir    ./outputs/train.log
+modelpath       ./outputs/cvae_pcb.pth
+
+%   Dataset
+dataset_dir             ./data
+num_designs             4
+num_samples_per_design  200
+
+%   Image parameters
+image_size  256
+
+%   Network parameters
+z_dim       64      # latent dimension for z1 (stochastic)
+c_dim       64      # condition vector dimension (design encoder output)
+c_cnn_dim   64      # design encoder CNN branch output dim
+c_hand_dim  16      # handcrafted feature branch output dim
+
+%   Fusion method: concat / film / cross_attention
+fusion_method   film
+
+%   Training parameters
+training_epochs 200
+batch_size      32
+learning_rate   0.0001
+num_workers     4
+weight_decay    0.0001
+
+%   KL weight (beta) and cyclical annealing
+beta_start  0.0
+beta_max    4.0
+beta_cycles 4
+
+%   Augmentation
+use_design_aug      True
+use_elevation_aug   True
+
+%   Validation (leave-one-out, 0-indexed)
+val_fold    0       # which design to hold out: 0=A, 1=B, 2=C, 3=D
+
+%   Inference
+num_gen_samples 10  # K samples to generate per design at inference
