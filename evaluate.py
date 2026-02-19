@@ -179,7 +179,7 @@ def evaluate_fold(config: dict, fold: int, k: int, device: torch.device) -> dict
 
     return {
         'fold':        fold,
-        'design':      DESIGN_NAMES[fold],
+        'design':      design_names[fold],
         'recon_mse':   recon_mse,
         'diversity':   diversity,
         'mmd':         mmd_val,
