@@ -22,7 +22,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from utils.load_config import load_config, display_config
-from utils.dataset     import PCBWarpageDataset, DESIGN_NAMES
+from utils.dataset     import PCBWarpageDataset, _resolve_design_names
 from utils.handcrafted_features import extract_handcrafted_features
 from models.cvae       import CVAE
 
@@ -116,8 +116,9 @@ def evaluate_fold(config: dict, fold: int, k: int, device: torch.device) -> dict
     Returns:
         dict of metric name → value
     """
+    design_names = _resolve_design_names(config)
     print(f"\n{'='*60}")
-    print(f"Fold {fold}  —  held-out design: {DESIGN_NAMES[fold]}")
+    print(f"Fold {fold}  —  held-out design: {design_names[fold]}")
     print('='*60)
 
     # Override fold in config
@@ -196,7 +197,8 @@ def main():
 
     device = get_device(config)
     k      = args.k if args.k else int(config.get('num_gen_samples', 10))
-    folds  = [args.fold] if args.fold is not None else list(range(int(config.get('num_designs', 4))))
+    design_names = _resolve_design_names(config)
+    folds  = [args.fold] if args.fold is not None else list(range(len(design_names)))
 
     all_results = []
     for fold in folds:
