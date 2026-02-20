@@ -21,7 +21,7 @@ Generation formula (per sample):
 
 Run:
   python -m data_generation.generate_elevation
-  (reads data/design/*.png, writes data/elevation/design_{A,B,C,D}/)
+  (reads data/design/*.png, writes data/elevation/design_{A,...,J}/)
 """
 
 import os
@@ -39,7 +39,10 @@ DATA_DIR   = Path(__file__).parent.parent / 'data'
 DESIGN_DIR = DATA_DIR / 'design'
 ELEV_DIR   = DATA_DIR / 'elevation'
 
-DESIGN_NAMES = ['design_A', 'design_B', 'design_C', 'design_D']
+DESIGN_NAMES = [
+    'design_A', 'design_B', 'design_C', 'design_D',
+    'design_E', 'design_F', 'design_G', 'design_H', 'design_I', 'design_J',
+]
 
 # Per-design warp amplitude: scales the dominant pattern surface
 WARP_AMPLITUDE = {
@@ -47,6 +50,12 @@ WARP_AMPLITUDE = {
     'design_B': 0.35,
     'design_C': 0.45,
     'design_D': 0.38,
+    'design_E': 0.30,
+    'design_F': 0.28,
+    'design_G': 0.40,
+    'design_H': 0.35,
+    'design_I': 0.32,
+    'design_J': 0.42,
 }
 # Per-design tilt magnitude: simulates asymmetric thermal / mounting stress
 TILT_SCALE = {
@@ -54,6 +63,12 @@ TILT_SCALE = {
     'design_B': 0.10,
     'design_C': 0.05,
     'design_D': 0.15,
+    'design_E': 0.08,
+    'design_F': 0.06,
+    'design_G': 0.10,
+    'design_H': 0.12,
+    'design_I': 0.07,
+    'design_J': 0.15,
 }
 
 # Ordered list of pattern types — sampled uniformly at random per elevation

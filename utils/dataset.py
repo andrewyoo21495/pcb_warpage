@@ -48,7 +48,10 @@ from PIL import Image
 from utils.handcrafted_features import extract_handcrafted_features
 
 # Default names used when 'design_names' is not set in config
-_DEFAULT_DESIGN_NAMES = ['design_A', 'design_B', 'design_C', 'design_D']
+_DEFAULT_DESIGN_NAMES = [
+    'design_A', 'design_B', 'design_C', 'design_D',
+    'design_E', 'design_F', 'design_G', 'design_H', 'design_I', 'design_J',
+]
 
 
 def _resolve_design_names(config: dict) -> list[str]:

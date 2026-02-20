@@ -64,7 +64,7 @@ class ElevationEncoder(nn.Module):
         """
         h      = self.mlp(self.cnn(elevation))
         mu     = self.mu_layer(h)
-        logvar = self.logvar_layer(h)
+        logvar = self.logvar_layer(h).clamp(-4.0, 4.0)
         return mu, logvar
 
     @staticmethod

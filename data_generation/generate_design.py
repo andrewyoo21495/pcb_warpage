@@ -5,15 +5,21 @@ Each 256×256 grayscale image contains multiple copies of the same complex PCB
 polygon footprint placed symmetrically on a white background.  Every footprint
 is drawn as an outline-only polygon (no fill) with intricate, winding shapes.
 
-Variant  Shape                       Layout
-  A      Complex DIP + pin slots     2×2 symmetric grid (4 copies)
-  B      Winding staircase shape     3×2 symmetric grid (6 copies)
-  C      Notched cross outline       2×2 symmetric grid (4 copies)
-  D      Notched chamfered octagon   2×3 symmetric grid (6 copies)
+Variant  Shape                           Layout
+  A      Complex DIP + pin slots         2×2 symmetric grid (4 copies)
+  B      Winding staircase               3×2 symmetric grid (6 copies)
+  C      Notched cross                   2×2 symmetric grid (4 copies)
+  D      Notched chamfered octagon       2×3 symmetric grid (6 copies)
+  E      Ascending staircase band        2×2 symmetric grid (4 copies)
+  F      T-shape + pin-slot notches      2×2 symmetric grid (4 copies)
+  G      Hourglass with notched ends     2×2 symmetric grid (4 copies)
+  H      Three-tooth comb                2×2 symmetric grid (4 copies)
+  I      I-beam with notched flanges     2×2 symmetric grid (4 copies)
+  J      U-channel with wall notches     2×2 symmetric grid (4 copies)
 
 Run:
   python -m data_generation.generate_design
-  (creates data/design/design_{A,B,C,D}.png)
+  (creates data/design/design_{A,B,C,D,E,F,G,H,I,J}.png)
 """
 
 from pathlib import Path
@@ -148,6 +154,141 @@ def _template_D():
     ]
 
 
+def _template_E():
+    """Ascending diagonal staircase band — 40×40 bbox.
+
+    The outer edge climbs from bottom-left to top-right in 3 steps; the inner
+    edge mirrors it 8 px inward, creating a diagonal strip outline.
+    """
+    return [
+        # Outer staircase: bottom-left → top-right
+        (0, 30), (10, 30), (10, 20), (20, 20),
+        (20, 10), (30, 10), (30,  0), (40,  0),
+        # Inner staircase: top-right → bottom-left
+        (40, 10), (32, 10), (32, 20),
+        (24, 20), (24, 30), (16, 30),
+        (16, 40), ( 0, 40),
+    ]
+
+
+def _template_F():
+    """T-shape with pin-slot notches — 50×44 bbox.
+
+    A wide horizontal bar on top narrows to a vertical stem; the stem has
+    two outward rectangular pin slots on each side.
+    """
+    return [
+        # Horizontal bar
+        ( 0,  0), (50,  0), (50, 16),
+        # Right inner step to stem
+        (36, 16),
+        # Stem right side: 2 outward pin-slot notches
+        (36, 22), (44, 22), (44, 28), (36, 28),
+        (36, 34), (44, 34), (44, 40), (36, 40),
+        (36, 44),
+        # Stem bottom edge
+        (14, 44),
+        # Stem left side: 2 outward pin-slot notches (mirror)
+        (14, 40), ( 6, 40), ( 6, 34), (14, 34),
+        (14, 28), ( 6, 28), ( 6, 22), (14, 22),
+        # Left inner step back to bar
+        (14, 16), ( 0, 16),
+    ]
+
+
+def _template_G():
+    """Hourglass outline — 44×36 bbox, diagonal waist with notched ends.
+
+    Wide at top and bottom; two diagonal edges converge to a narrow waist
+    in the middle.  Both flat ends carry 2 inward slots.
+    """
+    return [
+        # Top edge with 2 inward slots
+        ( 0,  0), (16,  0), (16,  6), (20,  6), (20,  0),
+        (24,  0), (24,  6), (28,  6), (28,  0), (44,  0),
+        # Right diagonal down to waist then back out
+        (44, 14), (28, 18), (44, 22),
+        (44, 36),
+        # Bottom edge with 2 inward slots
+        (28, 36), (28, 30), (24, 30), (24, 36),
+        (20, 36), (20, 30), (16, 30), (16, 36),
+        ( 0, 36),
+        # Left diagonal up to waist then back to top
+        ( 0, 22), (16, 18), ( 0, 14),
+    ]
+
+
+def _template_H():
+    """Three-tooth comb — 40×48 bbox.
+
+    A horizontal top bar (with 2 inward slots on its top edge) sprouts
+    three evenly spaced downward teeth separated by open gaps.
+    """
+    return [
+        # Top bar with 2 inward slots
+        ( 0,  0), (12,  0), (12,  6), (16,  6), (16,  0),
+        (24,  0), (24,  6), (28,  6), (28,  0), (40,  0),
+        # Right tooth
+        (40, 48), (30, 48), (30, 10),
+        # Gap then middle tooth
+        (25, 10), (25, 48), (15, 48), (15, 10),
+        # Gap then left tooth
+        (10, 10), (10, 48), ( 0, 48),
+    ]
+
+
+def _template_I():
+    """I-beam outline — 40×40 bbox, both flanges have 2 inward notches.
+
+    Top and bottom flanges span the full width; a narrow web connects them
+    in the centre.
+    """
+    return [
+        # Top flange with 2 inward notches
+        ( 0,  0), (14,  0), (14,  6), (18,  6), (18,  0),
+        (22,  0), (22,  6), (26,  6), (26,  0), (40,  0),
+        # Right side of top flange → step in to web
+        (40, 12), (26, 12),
+        # Web right side
+        (26, 28),
+        # Step out to bottom flange → right side going down
+        (40, 28), (40, 40),
+        # Bottom flange with 2 inward notches
+        (26, 40), (26, 34), (22, 34), (22, 40),
+        (18, 40), (18, 34), (14, 34), (14, 40),
+        # Left side of bottom flange → step in to web
+        ( 0, 40), ( 0, 28), (14, 28),
+        # Web left side
+        (14, 12),
+        # Step out to top flange
+        ( 0, 12),
+    ]
+
+
+def _template_J():
+    """U-channel outline — 36×40 bbox, open at the top, notched outer walls.
+
+    Solid base with upward notches; left and right arms carry inward notches
+    on their outer faces.  The inner channel is hollow (open at y = 40).
+    """
+    return [
+        # Base with 2 upward notches
+        ( 0,  0), (10,  0), (10,  6), (16,  6), (16,  0),
+        (20,  0), (20,  6), (26,  6), (26,  0), (36,  0),
+        # Right outer arm going up: 2 inward notches
+        (36, 12), (30, 12), (30, 16), (36, 16),
+        (36, 24), (30, 24), (30, 28), (36, 28),
+        (36, 40),
+        # Right inner corner, then inner walls of channel
+        (28, 40), (28,  8), ( 8,  8), ( 8, 40),
+        # Left inner corner
+        ( 0, 40),
+        # Left outer arm going down: 2 inward notches
+        ( 0, 28), ( 6, 28), ( 6, 24), ( 0, 24),
+        ( 0, 16), ( 6, 16), ( 6, 12), ( 0, 12),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Placement helpers
 # ---------------------------------------------------------------------------
@@ -260,6 +401,36 @@ def generate_design_D() -> np.ndarray:
     return _generate(_template_D, (2, 3))
 
 
+def generate_design_E() -> np.ndarray:
+    """Ascending staircase band, 4 copies in 2×2 symmetric grid."""
+    return _generate(_template_E, (2, 2))
+
+
+def generate_design_F() -> np.ndarray:
+    """T-shape with pin-slot notches, 4 copies in 2×2 symmetric grid."""
+    return _generate(_template_F, (2, 2))
+
+
+def generate_design_G() -> np.ndarray:
+    """Hourglass with notched ends, 4 copies in 2×2 symmetric grid."""
+    return _generate(_template_G, (2, 2))
+
+
+def generate_design_H() -> np.ndarray:
+    """Three-tooth comb, 4 copies in 2×2 symmetric grid."""
+    return _generate(_template_H, (2, 2))
+
+
+def generate_design_I() -> np.ndarray:
+    """I-beam with notched flanges, 4 copies in 2×2 symmetric grid."""
+    return _generate(_template_I, (2, 2))
+
+
+def generate_design_J() -> np.ndarray:
+    """U-channel with wall notches, 4 copies in 2×2 symmetric grid."""
+    return _generate(_template_J, (2, 2))
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -269,6 +440,12 @@ GENERATORS = {
     'B': generate_design_B,
     'C': generate_design_C,
     'D': generate_design_D,
+    'E': generate_design_E,
+    'F': generate_design_F,
+    'G': generate_design_G,
+    'H': generate_design_H,
+    'I': generate_design_I,
+    'J': generate_design_J,
 }
 
 

@@ -7,8 +7,8 @@ modelpath       ./outputs/cvae_pcb.pth
 
 %   Dataset
 dataset_dir             ./data
-num_designs             4
-num_samples_per_design  300
+num_designs             10
+num_samples_per_design  200
 
 %   Image parameters
 image_size  256
@@ -23,7 +23,7 @@ c_hand_dim  16      # handcrafted feature branch output dim
 fusion_method   film
 
 %   Training parameters
-training_epochs         20
+training_epochs         50
 batch_size              32
 learning_rate           0.0001
 num_workers             4
@@ -32,7 +32,7 @@ early_stop_threshold    0.001     # halt when val recon < this value; 0 = disabl
 
 %   KL weight (beta) and cyclical annealing
 beta_start  0.0
-beta_max    4.0
+beta_max    0.5
 beta_cycles 4
 
 %   Augmentation

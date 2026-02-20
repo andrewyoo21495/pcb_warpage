@@ -31,9 +31,11 @@ def parse_args():
                         help='Path to design image (PNG, grayscale)')
     parser.add_argument('--checkpoint', type=str, default=None,
                         help='Override modelpath from config')
-    parser.add_argument('--k',          type=int, default=None,
+    parser.add_argument('--k',          type=int,   default=None,
                         help='Override num_gen_samples from config')
-    parser.add_argument('--save',       type=str, default='outputs/samples',
+    parser.add_argument('--temperature', type=float, default=1.0,
+                        help='Sampling temperature: >1 increases diversity, <1 reduces it (default: 1.0)')
+    parser.add_argument('--save',       type=str,   default='outputs/samples',
                         help='Directory to save individual elevation PNG files (default: outputs/samples)')
     return parser.parse_args()
 
@@ -141,8 +143,8 @@ def main():
     hand_features = hand_features.unsqueeze(0).to(device)                   # (1, HAND_FEATURE_DIM)
 
     # Generate samples
-    print(f"Generating {k} elevation samples for {args.design} ...")
-    samples = model.sample(design_tensor, hand_features, num_samples=k)  # (K, 1, H, W)
+    print(f"Generating {k} elevation samples for {args.design}  (temperature={args.temperature}) ...")
+    samples = model.sample(design_tensor, hand_features, num_samples=k, temperature=args.temperature)
 
     print_sample_stats(samples)
 

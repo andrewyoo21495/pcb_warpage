@@ -141,6 +141,7 @@ class CVAE(nn.Module):
         design: torch.Tensor,
         hand_features: torch.Tensor,
         num_samples: int = 1,
+        temperature: float = 1.0,
     ) -> torch.Tensor:
         """Generate diverse elevation samples for a given design condition.
 
@@ -148,6 +149,8 @@ class CVAE(nn.Module):
             design       : (1, 1, H, W)  or (B, 1, H, W)
             hand_features: (1, HAND_FEATURE_DIM) or (B, HAND_FEATURE_DIM)
             num_samples  : K — number of samples to draw per design
+            temperature  : scales the standard deviation of the z1 prior;
+                           > 1.0 increases diversity, < 1.0 reduces it
 
         Returns:
             samples : (num_samples, 1, H, W)
@@ -157,7 +160,7 @@ class CVAE(nn.Module):
         # Expand c for all K samples (assumes single design, B_des=1)
         c_expanded = c.expand(num_samples, -1)                  # (K, c_dim)
 
-        z1 = torch.randn(num_samples, self.z_dim, device=c.device)  # (K, z_dim)
+        z1 = torch.randn(num_samples, self.z_dim, device=c.device) * temperature
         z_fused = self.fuse(z1, c_expanded)
         samples = self.decoder(z_fused, c_expanded)             # (K, 1, H, W)
         return samples
