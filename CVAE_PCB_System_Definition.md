@@ -38,9 +38,9 @@ The model must learn the diversity of elevations per design as a distribution, n
 
 | | Current | Future |
 |---|---|---|
-| # Designs | 4 (similar layout variants) | 10+ (diverse PCB models) |
-| Elevations per design | 100–300 | ~200 |
-| Total images | ~400–1,200 | ~2,000+ |
+| # Designs | 10 (diverse polygon shapes A–J) | 10+ (real PCB models) |
+| Elevations per design | 300 (synthetic) | ~200 (real) |
+| Total images | ~3,000 | ~2,000+ |
 
 ---
 
@@ -98,19 +98,34 @@ Inference
 
 ```
 Input (1×256×256)
-→ Conv(32) → Conv(64) → Conv(128) → GlobalAvgPool → MLP → c_cnn (dim=64)
+→ Conv(32) → Conv(64) → Conv(128)
+→ ChannelBottleneck(64, 1×1) → SpatialPool(4×4)   ← 16 spatial regions preserved
+→ Flatten(1024) → MLP → c_cnn (dim=64)
 
-Handcrafted Features (computed separately):
-  - Line density per region (black pixel ratio)
-  - Left-right / top-bottom asymmetry index
-  - Line orientation distribution (horizontal / vertical / diagonal)
-→ MLP → c_hand (dim=16)
+Handcrafted Features (22-dim, computed at original resolution before resize):
+  [0]    Global foreground density
+  [1–4]  Quadrant densities (TL, TR, BL, BR)
+  [5–6]  LR / TB asymmetry index
+  [7–9]  H / V / D line orientation ratios
+  [10]   Aspect ratio (H/W)
+  [11]   Connected component count (log-normalised)
+  [12]   Mean component area (normalised)
+  [13–15] LR / TB / 180° symmetry scores (Pearson correlation)
+  [16]   Centre density (inner 50 % area)
+  [17]   Border density (outer ring)
+  [18]   Radial mean distance from centre
+  [19]   Perimeter ratio (edge pixels / foreground pixels)
+  [20–21] Hu moments 1 & 2 (scale-invariant shape descriptors)
+→ MLP(hidden=32) → c_hand (dim=32)
 
 c = MLP(concat(c_cnn, c_hand))  →  dim=64  [Deterministic]
 ```
 
-- Kept intentionally small to prevent memorizing 4 training designs
+- Kept intentionally small to prevent memorizing few training designs
 - Handcrafted features act as generalization anchors (computable for any unseen design)
+- Feature selection: `python analyze_features.py --top 10 --write` identifies the most
+  informative subset; the encoder uses only selected indices when `selected_features` is
+  set in `config.txt`
 - Strong regularization: Dropout + Weight Decay
 
 ---
@@ -178,7 +193,7 @@ KL:             −0.5 × Σ(1 + log σ² − μ² − σ²)
 
 | | |
 |---|---|
-| β search range | 1.0 – 4.0 |
+| β search range | 0.1 – 0.5 (reduced to prevent posterior collapse) |
 | Annealing strategy | Cyclical: reset β → 0 periodically, then increase |
 | Purpose | Prevent posterior collapse under small data |
 
@@ -201,14 +216,16 @@ KL:             −0.5 × Σ(1 + log σ² − μ² − σ²)
 
 ### Current vs. Future Configuration
 
-| | Current (4 designs) | Future (10+ designs) |
+| | Current (10 synthetic designs) | Future (real data) |
 |---|---|---|
-| Design Encoder | Scratch CNN + Handcrafted | Pretrained backbone (fine-tune) |
+| Design Encoder | Scratch CNN + 22 handcrafted features | Pretrained backbone (fine-tune) |
+| Hand features | 22 (configurable subset via `selected_features`) | Re-rank with real data |
 | Fusion | FiLM (baseline: Concat) | Cross-Attention |
 | z2 from design | No (deterministic c) | Consider VAE-style z2 |
 | Decoder | Transposed CNN + FiLM | Add U-Net skip connections |
 | z1 dim | 64 | 128 |
 | c dim | 64 | 64–128 |
+| Sample diversity | Via temperature parameter | Tune with real distribution |
 
 ---
 
@@ -229,14 +246,18 @@ Due to data security restrictions, real PCB data cannot be used during developme
 - Apply slight dilation after drawing to preserve line visibility after resize
 - Generate **4 distinct design variants** (e.g., different line density, layout region, pad placement)
 
-**Handcrafted feature targets per design variant:**
+**Designs generated (10 variants, A–J):**
 
-| Design | Line Density | Asymmetry | Dominant Orientation |
-|---|---|---|---|
-| A | Low (~5%) | Low | Horizontal |
-| B | Medium (~15%) | Medium (left-heavy) | Mixed |
-| C | High (~30%) | Low | Vertical |
-| D | Medium (~20%) | High (top-heavy) | Mixed |
+Each design is a closed polygon outline rendered in outline-only style (no fill),
+auto-scaled to fill the canvas, and tiled in a symmetric grid.
+
+| Design | Shape | Grid |
+|---|---|---|
+| A | Complex DIP — pin-slot notches on all sides | 2×2 |
+| B | Winding staircase | 3×2 |
+| C | Notched cross | 2×2 |
+| D | Notched chamfered octagon | 2×3 |
+| E–J | Additional shape variants (staircase, T, hourglass, comb, I-beam, U-channel) | 2×2 |
 
 ---
 
@@ -260,16 +281,17 @@ elevation = base_warp(design) + low_freq_noise() + small_random_tilt()
 
 ### 7-3. Dataset Summary (Synthetic)
 
-| Design | # Elevation Samples | Notes |
-|---|---|---|
-| A | 200 | Low density, mild warp |
-| B | 200 | Medium density, asymmetric warp |
-| C | 200 | High density, strong warp |
-| D | 200 | Medium density, tilted warp |
+| Design | # Elevation Samples | Warp Amplitude | Tilt Scale |
+|---|---|---|---|
+| A | 300 | 0.25 | 0.05 |
+| B | 300 | 0.35 | 0.10 |
+| C | 300 | 0.45 | 0.05 |
+| D | 300 | 0.38 | 0.15 |
+| E–J | 300 each | 0.28–0.42 | 0.06–0.15 |
 
-- **Train:** 3 designs (leave-one-out rotation)
+- **Train:** 9 designs (leave-one-out rotation)
 - **Test:** 1 unseen design
-- Total: 800 image pairs
+- Total: 3,000 image pairs
 
 ---
 
@@ -284,25 +306,26 @@ See **Section 8 — Project Structure** for file locations.
 ```
 project/
 ├── data_generation/
-│   ├── generate_design.py       # Synthesize design images (4 variants)
-│   ├── generate_elevation.py    # Synthesize elevation images per design
+│   ├── generate_design.py       # Synthesize design images (10 variants, A–J)
+│   ├── generate_elevation.py    # Synthesize elevation images (300 per design)
 │   └── visualize_samples.py     # Sanity check: plot image pairs
 ├── data/
-│   ├── design/                  # design_A.png, design_B.png, ...
+│   ├── design/                  # design_A.png … design_J.png
 │   └── elevation/
 │       ├── design_A/            # elevation images for design_A
-│       ├── design_B/
-│       └── ...
+│       ├── …
+│       └── design_J/
 ├── models/
-│   ├── design_encoder.py
+│   ├── design_encoder.py        # CNN + 22 handcrafted features → c
 │   ├── elevation_encoder.py
 │   ├── decoder.py
 │   └── cvae.py
 ├── utils/
 │   ├── dataset.py
-│   ├── handcrafted_features.py
+│   ├── handcrafted_features.py  # 22-dim feature extractor
 │   └── losses.py
 ├── train.py
 ├── evaluate.py
-└── sample.py
+├── sample.py                    # supports --temperature for diversity control
+└── analyze_features.py          # feature importance ranking and selection
 ```

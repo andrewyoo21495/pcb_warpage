@@ -17,7 +17,7 @@ image_size  256
 z_dim       64      # latent dimension for z1 (stochastic)
 c_dim       64      # condition vector dimension (design encoder output)
 c_cnn_dim   64      # design encoder CNN branch output dim
-c_hand_dim  16      # handcrafted feature branch output dim
+c_hand_dim  32      # handcrafted feature branch output dim
 
 %   Fusion method: concat / film / cross_attention
 fusion_method   film
