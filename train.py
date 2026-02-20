@@ -178,15 +178,20 @@ def main():
     beta_max    = float(config.get('beta_max',    4.0))
     beta_cycles = int(config.get('beta_cycles',   4))
 
+    # Early-stopping threshold (applied to val reconstruction loss)
+    early_stop_thresh = float(config.get('early_stop_threshold', 0.0))
+
     # Checkpoint
     model_path = config.get('modelpath', './outputs/cvae_pcb.pth')
     Path(model_path).parent.mkdir(parents=True, exist_ok=True)
     best_val_loss = float('inf')
 
+    stop_info = (f"  |  early_stop_threshold={early_stop_thresh:.4f}"
+                 if early_stop_thresh > 0.0 else "")
     logger.info("=" * 60)
     logger.info(f"Training CVAE  |  fusion={config.get('fusion_method')}  "
                 f"|  val_fold={config.get('val_fold')}  "
-                f"|  epochs={total_epochs}")
+                f"|  epochs={total_epochs}{stop_info}")
     logger.info("=" * 60)
 
     for epoch in range(total_epochs):
@@ -221,6 +226,14 @@ def main():
                 'config':     config,
             }, model_path)
             logger.info(f"  → Checkpoint saved (val_recon={val_recon:.4f})")
+
+        # Early stopping: halt if val recon has dropped below the threshold
+        if early_stop_thresh > 0.0 and val_recon < early_stop_thresh:
+            logger.info(
+                f"Early stop at epoch {epoch+1}: "
+                f"val_recon={val_recon:.4f} < threshold={early_stop_thresh:.4f}"
+            )
+            break
 
     logger.info("Training complete.")
     logger.info(f"Best val recon loss: {best_val_loss:.4f}")

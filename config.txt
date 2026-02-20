@@ -23,11 +23,12 @@ c_hand_dim  16      # handcrafted feature branch output dim
 fusion_method   film
 
 %   Training parameters
-training_epochs 20
-batch_size      32
-learning_rate   0.0001
-num_workers     4
-weight_decay    0.0001
+training_epochs         20
+batch_size              32
+learning_rate           0.0001
+num_workers             4
+weight_decay            0.0001
+early_stop_threshold    0.001     # halt when val recon < this value; 0 = disabled
 
 %   KL weight (beta) and cyclical annealing
 beta_start  0.0
