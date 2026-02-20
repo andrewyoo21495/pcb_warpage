@@ -8,7 +8,7 @@ modelpath       ./outputs/cvae_pcb.pth
 %   Dataset
 dataset_dir             ./data
 num_designs             4
-num_samples_per_design  200
+num_samples_per_design  300
 
 %   Image parameters
 image_size  256
@@ -23,7 +23,7 @@ c_hand_dim  16      # handcrafted feature branch output dim
 fusion_method   film
 
 %   Training parameters
-training_epochs 200
+training_epochs 20
 batch_size      32
 learning_rate   0.0001
 num_workers     4

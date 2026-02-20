@@ -1,159 +1,268 @@
 #!/usr/bin/env python3
 """Generate synthetic PCB design images (4 variants: A, B, C, D).
 
-Each design is a 256×256 grayscale image:
-  - White background (pixel = 255)
-  - Black lines / pads / vias (pixel = 0)
-  - Dilation applied after drawing to preserve thin line visibility
+Each 256×256 grayscale image contains multiple copies of the same complex PCB
+polygon footprint placed symmetrically on a white background.  Every footprint
+is drawn as an outline-only polygon (no fill) with intricate, winding shapes.
 
-Target properties per variant:
-  A — Low density (~5%),  Low asymmetry,         Dominant orientation: Horizontal
-  B — Medium  (~15%), Medium asymmetry (left-heavy), Dominant: Mixed
-  C — High    (~30%), Low asymmetry,             Dominant: Vertical
-  D — Medium  (~20%), High asymmetry (top-heavy), Dominant: Mixed
+Variant  Shape                       Layout
+  A      Complex DIP + pin slots     2×2 symmetric grid (4 copies)
+  B      Winding staircase shape     3×2 symmetric grid (6 copies)
+  C      Notched cross outline       2×2 symmetric grid (4 copies)
+  D      Notched chamfered octagon   2×3 symmetric grid (6 copies)
 
 Run:
   python -m data_generation.generate_design
   (creates data/design/design_{A,B,C,D}.png)
 """
 
-import os
-import random
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
-from scipy.ndimage import binary_dilation
 
-CANVAS = 256
+CANVAS   = 256
+BORDER   = 4       # minimum pixels between grid edge and image edge
+GAP      = 8       # gap between two polygon bounding boxes
+LINE_W   = 2       # outline stroke width in pixels
+
 OUTPUT_DIR = Path(__file__).parent.parent / 'data' / 'design'
-SEED = 42
+SEED       = 42
 
 
-def _new_canvas() -> np.ndarray:
-    """White 256×256 uint8 canvas."""
-    return np.ones((CANVAS, CANVAS), dtype=np.uint8) * 255
+# ---------------------------------------------------------------------------
+# Polygon templates (complex, winding outlines)
+# Each function returns a list of (x, y) vertices relative to bbox top-left.
+# All coordinates are non-negative; bounding box min is at (0, 0).
+# ---------------------------------------------------------------------------
+
+def _template_A():
+    """Complex DIP outline — 40×40 bbox, pin-slot notches on all four sides.
+
+    The shape is a rectangle with:
+      - A centre notch on the top edge (IC orientation marker)
+      - Two inward rectangular pin-slot notches on each vertical side
+      - Two inward rectangular notches on the bottom edge
+    """
+    return [
+        # Start at top-left of the top notch, tracing clockwise
+        (0, 8),
+        # Left side: 2 inward pin-slot notches
+        (0, 14), (5, 14), (5, 18), (0, 18),
+        (0, 24), (5, 24), (5, 28), (0, 28),
+        # Bottom-left corner
+        (0, 40),
+        # Bottom edge: 2 inward notches
+        (10, 40), (10, 35), (16, 35), (16, 40),
+        (24, 40), (24, 35), (30, 35), (30, 40),
+        # Bottom-right corner
+        (40, 40),
+        # Right side: 2 inward pin-slot notches
+        (40, 28), (35, 28), (35, 24), (40, 24),
+        (40, 18), (35, 18), (35, 14), (40, 14),
+        # Top-right
+        (40, 8),
+        # Top edge: centre notch (orientation marker)
+        (26, 8), (26, 0), (14, 0), (14, 8),
+    ]
 
 
-def _draw_hlines(arr: np.ndarray, n: int, rng: np.random.Generator,
-                 x_range: tuple = (0, CANVAS), y_range: tuple = (0, CANVAS)):
-    """Draw horizontal line segments."""
-    for _ in range(n):
-        y = rng.integers(y_range[0], y_range[1])
-        x0 = rng.integers(x_range[0], max(x_range[0] + 1, x_range[1] - 40))
-        x1 = min(x0 + rng.integers(30, 80), x_range[1] - 1)
-        thickness = rng.integers(1, 3)
-        for dy in range(thickness):
-            row = int(np.clip(y + dy, 0, CANVAS - 1))
-            arr[row, x0:x1] = 0
+def _template_B():
+    """Winding staircase polygon — 44×38 bbox, four concave notches.
+
+    The boundary steps in/out at the top, right, bottom, and left, giving
+    a complex, winding outline with no straight monotone sides.
+    """
+    return [
+        # Stepped top: notch between x=20 and x=28
+        (0, 0),  (20, 0),
+        (20, 8), (28, 8),
+        (28, 0), (44, 0),
+        # Right side: inward notch between y=14 and y=22
+        (44, 14),
+        (36, 14), (36, 22),
+        (44, 22),
+        # Stepped bottom: notch between x=18 and x=26
+        (44, 38), (26, 38),
+        (26, 30), (18, 30),
+        (18, 38), (0, 38),
+        # Left side: inward notch between y=16 and y=24
+        (0, 24), (8, 24),
+        (8, 16), (0, 16),
+    ]
 
 
-def _draw_vlines(arr: np.ndarray, n: int, rng: np.random.Generator,
-                 x_range: tuple = (0, CANVAS), y_range: tuple = (0, CANVAS)):
-    """Draw vertical line segments."""
-    for _ in range(n):
-        x = rng.integers(x_range[0], x_range[1])
-        y0 = rng.integers(y_range[0], max(y_range[0] + 1, y_range[1] - 40))
-        y1 = min(y0 + rng.integers(30, 80), y_range[1] - 1)
-        thickness = rng.integers(1, 3)
-        for dx in range(thickness):
-            col = int(np.clip(x + dx, 0, CANVAS - 1))
-            arr[y0:y1, col] = 0
+def _template_C():
+    """Complex cross — 36×36 bbox, each arm tip carries 2 rectangular slots.
+
+    Based on the original plus/cross but every arm end has two rectangular
+    slots cut into it, making the outline highly winding (44 vertices total).
+    """
+    return [
+        # Top arm: 2 slots cut into the tip (pointing upward)
+        (10, 0), (14, 0), (14, 6), (16, 6), (16, 0),
+        (20, 0), (20, 6), (22, 6), (22, 0), (26, 0),
+        # Top-right inner corner
+        (26, 10), (36, 10),
+        # Right arm: 2 slots (pointing rightward)
+        (36, 14), (30, 14), (30, 16), (36, 16),
+        (36, 20), (30, 20), (30, 22), (36, 22), (36, 26),
+        # Bottom-right inner corner
+        (26, 26), (26, 36),
+        # Bottom arm: 2 slots (pointing downward)
+        (22, 36), (22, 30), (20, 30), (20, 36),
+        (16, 36), (16, 30), (14, 30), (14, 36), (10, 36),
+        # Bottom-left inner corner
+        (10, 26), (0, 26),
+        # Left arm: 2 slots (pointing leftward)
+        (0, 22), (6, 22), (6, 20), (0, 20),
+        (0, 16), (6, 16), (6, 14), (0, 14), (0, 10),
+        # Top-left inner corner — PIL auto-closes back to (10, 0)
+        (10, 10),
+    ]
 
 
-def _draw_rects(arr: np.ndarray, n: int, rng: np.random.Generator,
-                x_range: tuple = (0, CANVAS), y_range: tuple = (0, CANVAS)):
-    """Draw rectangular pad outlines."""
-    for _ in range(n):
-        x = rng.integers(x_range[0], x_range[1] - 20)
-        y = rng.integers(y_range[0], y_range[1] - 20)
-        w = rng.integers(6, 20)
-        h = rng.integers(6, 20)
-        x2, y2 = min(x + w, CANVAS - 1), min(y + h, CANVAS - 1)
-        arr[y, x:x2] = 0
-        arr[y2, x:x2] = 0
-        arr[y:y2, x] = 0
-        arr[y:y2, x2] = 0
+def _template_D():
+    """Notched chamfered octagon — 40×40 bbox, inward notch on each flat edge.
+
+    The chamfered (45°-corner) octagon has a rectangular slot cut into
+    the centre of each of its four axis-aligned flat edges, giving a
+    24-vertex winding outline.
+    """
+    return [
+        # Top flat edge with centre notch
+        (10, 0), (18, 0), (18, 6), (22, 6), (22, 0), (30, 0),
+        # Top-right chamfer (diagonal)
+        (40, 10),
+        # Right flat edge with centre notch
+        (40, 18), (34, 18), (34, 22), (40, 22), (40, 30),
+        # Bottom-right chamfer
+        (30, 40),
+        # Bottom flat edge with centre notch
+        (22, 40), (22, 34), (18, 34), (18, 40), (10, 40),
+        # Bottom-left chamfer
+        (0, 30),
+        # Left flat edge with centre notch
+        (0, 22), (6, 22), (6, 18), (0, 18), (0, 10),
+        # Top-left chamfer — PIL auto-closes back to (10, 0)
+    ]
 
 
-def _draw_vias(arr: np.ndarray, n: int, rng: np.random.Generator,
-               x_range: tuple = (0, CANVAS), y_range: tuple = (0, CANVAS)):
-    """Draw small circular via markers."""
-    img = Image.fromarray(arr)
+# ---------------------------------------------------------------------------
+# Placement helpers
+# ---------------------------------------------------------------------------
+
+def _bbox(pts):
+    """Return (width, height) of the axis-aligned bounding box of pts."""
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    return max(xs), max(ys)   # min is guaranteed to be at (0, 0)
+
+
+def _auto_scale(pts, layout):
+    """Return a float scale so the polygon fills one grid cell as fully as possible.
+
+    Each cell has size  (CANVAS - 2*BORDER - (cols-1)*GAP) / cols  in width and
+    the equivalent in height.  We take the smaller of the two axis factors so the
+    scaled polygon still fits inside its cell.
+    """
+    w, h = _bbox(pts)
+    cols, rows = layout
+    max_cell_w = (CANVAS - 2 * BORDER - (cols - 1) * GAP) / cols
+    max_cell_h = (CANVAS - 2 * BORDER - (rows - 1) * GAP) / rows
+    return min(max_cell_w / w, max_cell_h / h)
+
+
+def _scale_pts(pts, scale):
+    """Return pts with every coordinate multiplied by *scale* and rounded."""
+    return [(round(x * scale), round(y * scale)) for x, y in pts]
+
+
+def _symmetric_positions(pts, layout):
+    """Return (x_offset, y_offset) pairs for a centred symmetric grid.
+
+    Parameters
+    ----------
+    pts    : polygon vertex list (used only to read bounding-box size)
+    layout : (cols, rows) — grid dimensions
+
+    The entire grid is centred on the CANVAS×CANVAS image.
+    """
+    w, h = _bbox(pts)
+    cols, rows = layout
+
+    grid_w = cols * w + (cols - 1) * GAP
+    grid_h = rows * h + (rows - 1) * GAP
+
+    start_x = (CANVAS - grid_w) // 2
+    start_y = (CANVAS - grid_h) // 2
+
+    positions = []
+    for r in range(rows):
+        for c in range(cols):
+            x0 = start_x + c * (w + GAP)
+            y0 = start_y + r * (h + GAP)
+            positions.append((x0, y0))
+    return positions
+
+
+# ---------------------------------------------------------------------------
+# Drawing
+# ---------------------------------------------------------------------------
+
+def _draw_instance(draw: ImageDraw.ImageDraw, pts, x0, y0):
+    """Render one polygon as a closed outline (no fill) onto *draw*."""
+    world_pts = [(x0 + px, y0 + py) for px, py in pts]
+    # Explicitly close the polygon for draw.line by appending the first point
+    draw.line(world_pts + [world_pts[0]], fill=0, width=LINE_W)
+
+
+def _generate(template_fn, layout):
+    """Generate a single design image.
+
+    Places copies of the template polygon in a symmetric grid and renders
+    each as an outline-only polygon on a white canvas.
+    Returns a (CANVAS, CANVAS) uint8 numpy array.
+    """
+    pts = template_fn()
+    pts = _scale_pts(pts, _auto_scale(pts, layout))
+
+    img  = Image.new('L', (CANVAS, CANVAS), color=255)
     draw = ImageDraw.Draw(img)
-    for _ in range(n):
-        cx = rng.integers(x_range[0] + 4, x_range[1] - 4)
-        cy = rng.integers(y_range[0] + 4, y_range[1] - 4)
-        r = rng.integers(2, 5)
-        draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=0, width=1)
+
+    for x0, y0 in _symmetric_positions(pts, layout):
+        _draw_instance(draw, pts, x0, y0)
+
     return np.array(img)
 
 
-def _dilate(arr: np.ndarray, iterations: int = 1) -> np.ndarray:
-    """Apply morphological dilation to preserve thin lines after possible resize."""
-    fg = (arr < 128)  # foreground = dark pixels
-    dilated = binary_dilation(fg, iterations=iterations)
-    result = arr.copy()
-    result[dilated] = 0
-    return result
+# ---------------------------------------------------------------------------
+# Design variant generators (public API — same signature as before)
+# ---------------------------------------------------------------------------
+
+def generate_design_A() -> np.ndarray:
+    """Complex DIP outline, 4 copies in 2×2 symmetric grid."""
+    return _generate(_template_A, (2, 2))
 
 
-# ------------------------------------------------------------------
-# Design variant generators
-# ------------------------------------------------------------------
-
-def generate_design_A(rng: np.random.Generator) -> np.ndarray:
-    """Low density (~5%), Low asymmetry, Horizontal dominant."""
-    arr = _new_canvas()
-    _draw_hlines(arr, n=8,  rng=rng)
-    _draw_vlines(arr, n=2,  rng=rng)
-    _draw_rects (arr, n=3,  rng=rng)
-    arr = _draw_vias(arr, n=4, rng=rng)
-    return _dilate(arr)
+def generate_design_B() -> np.ndarray:
+    """Winding staircase outline, 6 copies in 3×2 symmetric grid."""
+    return _generate(_template_B, (3, 2))
 
 
-def generate_design_B(rng: np.random.Generator) -> np.ndarray:
-    """Medium density (~15%), Medium left-heavy asymmetry, Mixed orientation."""
-    arr = _new_canvas()
-    # More elements on the left half
-    _draw_hlines(arr, n=8,  rng=rng, x_range=(0, 128))
-    _draw_vlines(arr, n=6,  rng=rng, x_range=(0, 128))
-    _draw_rects (arr, n=6,  rng=rng, x_range=(0, 128))
-    # Fewer on the right
-    _draw_hlines(arr, n=3,  rng=rng, x_range=(128, 256))
-    _draw_vlines(arr, n=2,  rng=rng, x_range=(128, 256))
-    _draw_rects (arr, n=2,  rng=rng, x_range=(128, 256))
-    arr = _draw_vias(arr, n=8, rng=rng)
-    return _dilate(arr)
+def generate_design_C() -> np.ndarray:
+    """Complex cross outline, 4 copies in 2×2 symmetric grid."""
+    return _generate(_template_C, (2, 2))
 
 
-def generate_design_C(rng: np.random.Generator) -> np.ndarray:
-    """High density (~30%), Low asymmetry, Vertical dominant."""
-    arr = _new_canvas()
-    _draw_vlines(arr, n=30, rng=rng)
-    _draw_hlines(arr, n=6,  rng=rng)
-    _draw_rects (arr, n=10, rng=rng)
-    arr = _draw_vias(arr, n=10, rng=rng)
-    return _dilate(arr)
+def generate_design_D() -> np.ndarray:
+    """Notched octagon outline, 6 copies in 2×3 symmetric grid."""
+    return _generate(_template_D, (2, 3))
 
 
-def generate_design_D(rng: np.random.Generator) -> np.ndarray:
-    """Medium density (~20%), High top-heavy asymmetry, Mixed orientation."""
-    arr = _new_canvas()
-    # Concentrated in top half
-    _draw_hlines(arr, n=10, rng=rng, y_range=(0, 128))
-    _draw_vlines(arr, n=8,  rng=rng, y_range=(0, 128))
-    _draw_rects (arr, n=8,  rng=rng, y_range=(0, 128))
-    # Sparse in bottom half
-    _draw_hlines(arr, n=2,  rng=rng, y_range=(128, 256))
-    _draw_vlines(arr, n=2,  rng=rng, y_range=(128, 256))
-    arr = _draw_vias(arr, n=6, rng=rng, y_range=(0, 128))
-    return _dilate(arr)
-
-
-# ------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Entry point
-# ------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
 GENERATORS = {
     'A': generate_design_A,
@@ -163,22 +272,20 @@ GENERATORS = {
 }
 
 
-def generate_all(output_dir: Path = OUTPUT_DIR, seed: int = SEED):
+def generate_all(output_dir: Path = OUTPUT_DIR):
     output_dir.mkdir(parents=True, exist_ok=True)
-    rng = np.random.default_rng(seed)
 
-    print("Generating synthetic design images...")
+    print("Generating synthetic PCB design images...")
     for name, gen_fn in GENERATORS.items():
-        arr   = gen_fn(rng)
-        path  = output_dir / f"design_{name}.png"
+        arr  = gen_fn()
+        path = output_dir / f"design_{name}.png"
         Image.fromarray(arr.astype(np.uint8), mode='L').save(path)
 
         density = (arr < 128).mean() * 100
-        print(f"  design_{name}.png  —  line density: {density:.1f}%  →  {path}")
+        print(f"  design_{name}.png  —  fill density: {density:.1f}%  →  {path}")
 
     print("Done.")
 
 
 if __name__ == '__main__':
-    random.seed(SEED)
     generate_all()

@@ -145,13 +145,18 @@ class PCBWarpageDataset(Dataset):
     def __getitem__(self, idx):
         design_path, elev_path = self.samples[idx]
 
-        # Load grayscale PIL images
-        design    = Image.open(design_path).convert('L')
-        elevation = Image.open(elev_path).convert('L')
+        # Load grayscale PIL images at original resolution
+        design_orig = Image.open(design_path).convert('L')
+        elevation   = Image.open(elev_path).convert('L')
 
-        # Resize to target size
+        # Extract handcrafted features at original resolution — before any resize.
+        # Downsampling blurs thin design lines into grey, shifting the binary
+        # threshold used for density and edge-ratio calculations.
+        hand_features = extract_handcrafted_features(design_orig)
+
+        # Resize to model input size
         size = (self.image_size, self.image_size)
-        design    = design.resize(size, Image.LANCZOS)
+        design    = design_orig.resize(size, Image.LANCZOS)
         elevation = elevation.resize(size, Image.LANCZOS)
 
         # --- Shared spatial augmentation (same transform applied to both) ---
@@ -173,9 +178,6 @@ class PCBWarpageDataset(Dataset):
         # Convert to float tensors in [0, 1]  →  shape (1, H, W)
         design_tensor    = TF.to_tensor(design)    # white=1.0, black=0.0
         elevation_tensor = TF.to_tensor(elevation) # smooth values in [0, 1]
-
-        # Compute handcrafted features from (possibly augmented) design tensor
-        hand_features = extract_handcrafted_features(design_tensor)
 
         return design_tensor, elevation_tensor, hand_features
 

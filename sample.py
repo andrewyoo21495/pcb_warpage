@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""Generate and visualise K elevation samples for a given design image.
+"""Generate K elevation samples for a given design image and save each as an individual PNG.
 
 Usage:
-  python sample.py --design data/design/design_A.png
-  python sample.py --design data/design/design_C.png --k 16 --save outputs/samples_C.png
-  python sample.py --config config.txt --design data/design/design_B.png --k 10
+  python sample.py --design data/design/design_A.png --save outputs/samples_A/
+  python sample.py --design data/design/design_C.png --k 16 --save outputs/samples_C/
+  python sample.py --config config.txt --design data/design/design_B.png --k 10 --save outputs/B/
 """
 
 import argparse
 from pathlib import Path
 
 import torch
-import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
 import torchvision.transforms.functional as TF
@@ -34,8 +33,8 @@ def parse_args():
                         help='Override modelpath from config')
     parser.add_argument('--k',          type=int, default=None,
                         help='Override num_gen_samples from config')
-    parser.add_argument('--save',       type=str, default=None,
-                        help='Save figure to this path instead of displaying')
+    parser.add_argument('--save',       type=str, default='outputs/samples',
+                        help='Directory to save individual elevation PNG files (default: outputs/samples)')
     return parser.parse_args()
 
 
@@ -72,59 +71,26 @@ def load_design(path: str, image_size: int) -> tuple[torch.Tensor, np.ndarray]:
 # Visualisation
 # ------------------------------------------------------------------
 
-def plot_samples(
-    design_np: np.ndarray,
-    samples: torch.Tensor,
-    design_name: str,
-    save_path: str = None,
-):
-    """Plot the design and all K generated elevation samples in a grid.
+def save_individual_samples(samples: torch.Tensor, save_dir: str) -> None:
+    """Save each generated elevation sample as an individual grayscale PNG.
 
     Args:
-        design_np  : (H, W) float32 in [0, 1]
-        samples    : (K, 1, H, W) float32 in [0, 1]
-        design_name: label for the design image
-        save_path  : if provided, save figure instead of showing
+        samples  : (K, 1, H, W) float32 in [0, 1]
+        save_dir : directory where files will be written;
+                   created automatically if it does not exist
     """
-    k = samples.size(0)
-    # +1 column for the design image
-    n_cols = min(k + 1, 6)
-    n_rows = ((k + 1) + n_cols - 1) // n_cols
+    out_dir = Path(save_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    fig, axes = plt.subplots(n_rows, n_cols,
-                             figsize=(2.8 * n_cols, 3.0 * n_rows),
-                             squeeze=False)
+    # Convert to uint8 numpy array (K, H, W)
+    samples_np = (samples.squeeze(1).cpu().numpy() * 255).clip(0, 255).astype(np.uint8)
 
-    # Flatten axes for easy indexing
-    ax_list = [axes[r][c] for r in range(n_rows) for c in range(n_cols)]
+    for i, arr in enumerate(samples_np):
+        img_path = out_dir / f"elevation_{i + 1:04d}.png"
+        Image.fromarray(arr, mode='L').save(img_path)
+        print(f"  Saved {img_path}")
 
-    # First cell: design image
-    ax_list[0].imshow(design_np, cmap='gray', vmin=0, vmax=1)
-    ax_list[0].set_title(f"Design\n({design_name})", fontsize=9)
-    ax_list[0].axis('off')
-
-    # Remaining cells: generated samples
-    samples_np = samples.squeeze(1).cpu().numpy()  # (K, H, W)
-    for i in range(k):
-        ax = ax_list[i + 1]
-        ax.imshow(samples_np[i], cmap='hot', vmin=0, vmax=1)
-        ax.set_title(f"Sample {i+1}\nμ={samples_np[i].mean():.2f}", fontsize=8)
-        ax.axis('off')
-
-    # Hide unused axes
-    for ax in ax_list[k + 1:]:
-        ax.axis('off')
-
-    # Colorbar annotation
-    fig.suptitle(f"CVAE Elevation Samples  (K={k})", fontsize=12, y=1.01)
-    plt.tight_layout()
-
-    if save_path:
-        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        print(f"Figure saved to {save_path}")
-    else:
-        plt.show()
+    print(f"\nSaved {len(samples_np)} elevation images to '{out_dir}/'.")
 
 
 def print_sample_stats(samples: torch.Tensor):
@@ -180,8 +146,7 @@ def main():
 
     print_sample_stats(samples)
 
-    design_name = Path(args.design).stem
-    plot_samples(design_np, samples, design_name, save_path=args.save)
+    save_individual_samples(samples, save_dir=args.save)
 
 
 if __name__ == '__main__':

@@ -12,10 +12,19 @@ Features extracted (total = HAND_FEATURE_DIM = 10):
 
 Design images: white background (1.0), black lines (0.0), values in [0, 1].
 Foreground pixels = pixels < 0.5.
+
+Important: features are computed at the **original image resolution** (before any
+resize) so that thin design lines are faithfully represented.  Downsampling with
+LANCZOS interpolation blurs sub-pixel-wide lines into grey, which shifts the
+binary threshold used for density and edge-ratio calculations.  Pass a PIL Image
+(pre-resize) to preserve accuracy; a torch.Tensor path is kept for cases where
+only a tensor is available (e.g. batch re-extraction).
 """
 
+import numpy as np
 import torch
 import torch.nn.functional as F
+from PIL import Image
 
 HAND_FEATURE_DIM = 10
 
@@ -45,20 +54,29 @@ _SOBEL_D2 = torch.tensor(
 ).view(1, 1, 3, 3)  # 135-degree diagonal
 
 
-def extract_handcrafted_features(design_tensor: torch.Tensor) -> torch.Tensor:
-    """Compute handcrafted features from a single design image tensor.
+def extract_handcrafted_features(design_input) -> torch.Tensor:
+    """Compute handcrafted features from a design image at its native resolution.
 
     Args:
-        design_tensor: Tensor of shape (1, H, W) or (H, W),
-                       values in [0, 1] (white=1.0, black lines=0.0).
+        design_input: PIL.Image.Image  — preferred; features are computed at the
+                          original image size before any resize, so thin lines are
+                          not blurred by interpolation.
+                      torch.Tensor of shape (1, H, W) or (H, W)  — accepted when
+                          only a tensor is available (e.g. batch re-extraction).
+                          Values must be in [0, 1] (white=1.0, black lines=0.0).
 
     Returns:
         features: Tensor of shape (HAND_FEATURE_DIM,) = (10,), dtype=float32.
     """
-    if design_tensor.dim() == 3:
-        img = design_tensor.squeeze(0)  # (H, W)
+    if isinstance(design_input, Image.Image):
+        arr = np.array(design_input.convert('L'), dtype=np.float32) / 255.0
+        img = torch.from_numpy(arr)          # (H, W) at original resolution
+    elif isinstance(design_input, torch.Tensor):
+        img = design_input.squeeze(0) if design_input.dim() == 3 else design_input
     else:
-        img = design_tensor  # (H, W)
+        raise TypeError(
+            f"design_input must be a PIL Image or torch.Tensor, got {type(design_input)}"
+        )
 
     H, W = img.shape
     h2, w2 = H // 2, W // 2
