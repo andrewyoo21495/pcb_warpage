@@ -59,17 +59,18 @@ def get_device(config: dict) -> torch.device:
 # Image loading
 # ------------------------------------------------------------------
 
-def load_design(path: str, image_size: int) -> tuple[torch.Tensor, np.ndarray]:
+def load_design(path: str, image_size: int) -> tuple[torch.Tensor, np.ndarray, Image.Image]:
     """Load and preprocess a design image.
 
     Returns:
         design_tensor : (1, 1, H, W)  float32 in [0, 1] for model input
         design_np     : (H, W)        float32 in [0, 1] for display
+        design_orig   : PIL Image at original resolution (for feature extraction)
     """
-    img    = Image.open(path).convert('L')
-    img    = img.resize((image_size, image_size), Image.LANCZOS)
-    tensor = TF.to_tensor(img)               # (1, H, W)
-    return tensor.unsqueeze(0), np.array(img, dtype=np.float32) / 255.0
+    img_orig = Image.open(path).convert('L')          # original resolution
+    img      = img_orig.resize((image_size, image_size), Image.LANCZOS)
+    tensor   = TF.to_tensor(img)                      # (1, H, W)
+    return tensor.unsqueeze(0), np.array(img, dtype=np.float32) / 255.0, img_orig
 
 
 # ------------------------------------------------------------------
@@ -172,11 +173,11 @@ def main():
     print(f"Loaded model from {model_path}  (epoch {checkpoint.get('epoch', '?')})")
 
     # Load design image
-    design_tensor, design_np = load_design(args.design, image_size)
+    design_tensor, design_np, design_orig = load_design(args.design, image_size)
     design_tensor = design_tensor.to(device)    # (1, 1, H, W)
 
-    # Compute handcrafted features
-    hand_features = extract_handcrafted_features(design_tensor.squeeze(0))  # (HAND_FEATURE_DIM,)
+    # Compute handcrafted features at original resolution (preserves H, W, thin lines)
+    hand_features = extract_handcrafted_features(design_orig)               # (HAND_FEATURE_DIM,)
     hand_features = hand_features.unsqueeze(0).to(device)                   # (1, HAND_FEATURE_DIM)
 
     # Generate samples

@@ -7,6 +7,9 @@ modelpath       ./outputs/cvae_pcb.pth
 
 %   Dataset
 dataset_dir             ./data
+design_names            A, B, C, D, E, F, G, H, I, J
+design_image_dir        ./data/design
+elevation_base_dir      ./data/elevation
 num_designs             10
 num_samples_per_design  200
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Handcrafted feature extraction for PCB design images.
 
-Features extracted (total = HAND_FEATURE_DIM = 22):
+Features extracted (total = HAND_FEATURE_DIM = 24):
 
   Density & asymmetry (original 10):
     [0]    Global foreground (line) density
@@ -32,6 +32,10 @@ Features extracted (total = HAND_FEATURE_DIM = 22):
     [20]   Hu moment 1  (eta_20 + eta_02, scale-invariant shape spread)
     [21]   Hu moment 2  ((eta_20 - eta_02)^2 + 4*eta_11^2, elongation)
 
+  Absolute dimensions (2):
+    [22]   Image height  H / 1000  (original resolution before any resize)
+    [23]   Image width   W / 1000  (original resolution before any resize)
+
 Design images: white background (1.0), black lines (0.0), values in [0, 1].
 Foreground pixels = pixels < 0.5.
 
@@ -49,7 +53,7 @@ import torch.nn.functional as F
 from PIL import Image
 from scipy.ndimage import label
 
-HAND_FEATURE_DIM = 22
+HAND_FEATURE_DIM = 24
 
 # Fixed Sobel kernels (computed once at module load)
 _SOBEL_X = torch.tensor(
@@ -234,7 +238,7 @@ def extract_handcrafted_features(design_input) -> torch.Tensor:
                           Values must be in [0, 1] (white=1.0, black lines=0.0).
 
     Returns:
-        features: Tensor of shape (HAND_FEATURE_DIM,) = (22,), dtype=float32.
+        features: Tensor of shape (HAND_FEATURE_DIM,) = (24,), dtype=float32.
     """
     if isinstance(design_input, Image.Image):
         arr = np.array(design_input.convert('L'), dtype=np.float32) / 255.0
@@ -295,6 +299,12 @@ def extract_handcrafted_features(design_input) -> torch.Tensor:
     # [10] Aspect ratio
     aspect_ratio = float(H) / float(W) if W > 0 else 1.0
 
+    # [22-23] Absolute image dimensions (normalised by 1000 px reference)
+    # These are computed at the original image resolution (before any resize)
+    # so they reflect the physical extent of the design.
+    h_norm = float(H) / 1000.0
+    w_norm = float(W) / 1000.0
+
     # [11-12] Connected component features
     log_num_components, mean_component_area = _component_features(fg_np)
 
@@ -316,7 +326,8 @@ def extract_handcrafted_features(design_input) -> torch.Tensor:
          aspect_ratio, log_num_components, mean_component_area,
          lr_sym, tb_sym, rot180_sym,
          centre_density, border_density, radial_mean,
-         peri_ratio, hu1, hu2],
+         peri_ratio, hu1, hu2,
+         h_norm, w_norm],
         dtype=torch.float32
     )
     return features

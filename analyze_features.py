@@ -51,6 +51,8 @@ FEATURE_LABELS = [
     'perimeter_ratio',     # 19
     'hu_moment_1',         # 20
     'hu_moment_2',         # 21
+    'height_norm',         # 22
+    'width_norm',          # 23
 ]
 
 

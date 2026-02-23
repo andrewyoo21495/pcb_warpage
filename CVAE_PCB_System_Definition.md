@@ -102,7 +102,7 @@ Input (1×256×256)
 → ChannelBottleneck(64, 1×1) → SpatialPool(4×4)   ← 16 spatial regions preserved
 → Flatten(1024) → MLP → c_cnn (dim=64)
 
-Handcrafted Features (22-dim, computed at original resolution before resize):
+Handcrafted Features (24-dim, computed at original resolution before resize):
   [0]    Global foreground density
   [1–4]  Quadrant densities (TL, TR, BL, BR)
   [5–6]  LR / TB asymmetry index
@@ -116,6 +116,8 @@ Handcrafted Features (22-dim, computed at original resolution before resize):
   [18]   Radial mean distance from centre
   [19]   Perimeter ratio (edge pixels / foreground pixels)
   [20–21] Hu moments 1 & 2 (scale-invariant shape descriptors)
+  [22]   Image height H / 1000 (original resolution)
+  [23]   Image width  W / 1000 (original resolution)
 → MLP(hidden=32) → c_hand (dim=32)
 
 c = MLP(concat(c_cnn, c_hand))  →  dim=64  [Deterministic]
