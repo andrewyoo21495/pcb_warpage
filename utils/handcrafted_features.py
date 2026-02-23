@@ -251,7 +251,7 @@ def extract_handcrafted_features(design_input) -> torch.Tensor:
 
     # Binary foreground mask: black lines = 1, white background = 0
     fg = (img < 0.5).float()
-    fg_np = fg.numpy()
+    fg_np = fg.cpu().numpy()
 
     # === Original features [0-9] ===
 

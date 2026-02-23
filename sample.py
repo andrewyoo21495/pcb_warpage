@@ -37,6 +37,9 @@ def parse_args():
                         help='Sampling temperature: >1 increases diversity, <1 reduces it (default: 1.0)')
     parser.add_argument('--save',       type=str,   default='outputs/samples',
                         help='Directory to save individual elevation PNG files (default: outputs/samples)')
+    parser.add_argument('--denormalize', action='store_true',
+                        help='Also save inverse-scaled physical values as .txt files '
+                             '(reads elevation_min / elevation_max from config.txt)')
     return parser.parse_args()
 
 
@@ -109,6 +112,40 @@ def print_sample_stats(samples: torch.Tensor):
     print("-----------------------------------\n")
 
 
+def save_denormalized_txt(
+    samples: torch.Tensor,
+    save_dir: str,
+    elev_min: float,
+    elev_max: float,
+) -> None:
+    """Apply the inverse min-max transform and save each sample as a .txt file.
+
+    Forward transform (applied when preparing the dataset):
+        pixel_float = (physical_value - elev_min) / (elev_max - elev_min)
+
+    Inverse (applied here):
+        physical_value = pixel_float * (elev_max - elev_min) + elev_min
+
+    Args:
+        samples  : (K, 1, H, W) float32 in [0, 1]
+        save_dir : directory to write .txt files (created if absent)
+        elev_min : minimum physical value used in original min-max scaling
+        elev_max : maximum physical value used in original min-max scaling
+    """
+    out_dir = Path(save_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    samples_np = samples.squeeze(1).cpu().numpy()           # (K, H, W) in [0, 1]
+    physical   = samples_np * (elev_max - elev_min) + elev_min   # inverse transform
+
+    for i, arr in enumerate(physical):
+        txt_path = out_dir / f"elevation_{i + 1:04d}.txt"
+        np.savetxt(str(txt_path), arr, fmt='%.6f')
+        print(f"  Saved {txt_path}")
+
+    print(f"\nSaved {len(physical)} denormalized .txt files to '{out_dir}/'.")
+
+
 # ------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------
@@ -149,6 +186,16 @@ def main():
     print_sample_stats(samples)
 
     save_individual_samples(samples, save_dir=args.save)
+
+    if args.denormalize:
+        elev_min = float(config.get('elevation_min', 0.0))
+        elev_max = float(config.get('elevation_max', 1.0))
+        if elev_min == 0.0 and elev_max == 1.0:
+            print("Warning: elevation_min/elevation_max are both at default [0.0, 1.0]. "
+                  "Set them in config.txt to obtain physically meaningful values.")
+        print(f"\nDenormalizing to physical range [{elev_min}, {elev_max}] ...")
+        save_denormalized_txt(samples, save_dir=args.save,
+                              elev_min=elev_min, elev_max=elev_max)
 
 
 if __name__ == '__main__':

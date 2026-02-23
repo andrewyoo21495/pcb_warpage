@@ -252,8 +252,24 @@ Generate K elevation samples for a given design image:
 python sample.py --design data/design/design_A.png
 python sample.py --design data/design/design_A.png --k 16
 python sample.py --design data/design/design_A.png --k 16 --temperature 1.2
-python sample.py --design data/design/design_A.png --k 16 --save outputs/samples_A.png
+python sample.py --design data/design/design_A.png --k 16 --save outputs/samples_A/
 python sample.py --design D:/path_to_elevation/A.png --k 10
+python sample.py --design data/design/design_A.png --k 10 --denormalize
+```
+
+The `--denormalize` flag applies the inverse min-max transform to convert generated pixel
+values back to their original physical units (e.g., mm).  It reads `elevation_min` and
+`elevation_max` from `config.txt` and writes a `.txt` file alongside each PNG:
+
+```
+Forward:  pixel ∈ [0, 1]  ←  (value − elev_min) / (elev_max − elev_min)
+Inverse:  value           =   pixel × (elev_max − elev_min) + elev_min
+```
+
+Set the two keys in `config.txt` before using this flag:
+```
+elevation_min   -0.5    # your actual physical minimum (e.g. mm)
+elevation_max    2.3    # your actual physical maximum
 ```
 
 Options:
@@ -263,8 +279,9 @@ Options:
 | `--design` | (required) | Path to design PNG |
 | `--k` | from config | Number of samples to generate |
 | `--temperature` | 1.0 | Scale factor on z1 prior; >1 = more diverse, <1 = less |
+| `--denormalize` | off | Save `.txt` files with physical values (requires `elevation_min`/`max` in config) |
 | `--checkpoint` | from config | Override model checkpoint path |
-| `--save` | (show plot) | Save figure to file instead of displaying |
+| `--save` | `outputs/samples` | Directory to save individual PNG files |
 | `--config` | `config.txt` | Config file path |
 
 ---
@@ -303,11 +320,11 @@ To revert to all 22 features, remove `selected_features` from `config.txt`.
 | Flag | Default | Description |
 |---|---|---|
 | `--top` | 22 (all) | Number of features to select |
-| `--corr_threshold` | 0.85 | Max |correlation| allowed between selected features |
+| `--corr_threshold` | 0.85 | Max \|correlation\| allowed between selected features |
 | `--write` | off | Write selection to config.txt |
-| `--design_dir` | `./data/design` | Design image directory |
-| `--elevation_dir` | `./data/elevation` | Elevation base directory |
-| `--config` | `./config.txt` | Config file to update |
+| `--design_dir` | from config (`dataset_dir/design`) | Override design image directory |
+| `--elevation_dir` | from config (`dataset_dir/elevation`) | Override elevation base directory |
+| `--config` | `./config.txt` | Config file to read and optionally update |
 
 ---
 
@@ -334,7 +351,10 @@ python train.py
 python evaluate.py
 
 # 6. Generate samples for a design of interest
-python sample.py --design data/design/design_C.png --k 16 --save outputs/design_C_samples.png
+python sample.py --design data/design/design_C.png --k 16 --save outputs/design_C_samples/
+
+# 6b. (Optional) Also export physical values: set elevation_min/max in config.txt first
+python sample.py --design data/design/design_C.png --k 16 --denormalize --save outputs/design_C_samples/
 ```
 
 ---
@@ -394,4 +414,8 @@ val_fold            0       # index of held-out design (0-indexed)
 
 %   Inference
 num_gen_samples     10      # K samples per design at inference
+
+%   Physical scaling  (for sample.py --denormalize)
+elevation_min       0.0     # physical minimum value used in original min-max scaling
+elevation_max       1.0     # physical maximum value used in original min-max scaling
 ```

@@ -23,7 +23,7 @@ c_hand_dim  32      # handcrafted feature branch output dim
 fusion_method   film
 
 %   Training parameters
-training_epochs         50
+training_epochs         5
 batch_size              32
 learning_rate           0.0001
 num_workers             4
@@ -44,3 +44,7 @@ val_fold    0       # which design to hold out: 0=A, 1=B, 2=C, 3=D
 
 %   Inference
 num_gen_samples 10  # K samples to generate per design at inference
+
+%   Physical scaling  (used by sample.py --denormalize)
+elevation_min   0.0     # physical minimum value used in min-max scaling (e.g. mm)
+elevation_max   1.0     # physical maximum value used in min-max scaling (e.g. mm)

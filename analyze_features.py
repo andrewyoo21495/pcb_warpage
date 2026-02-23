@@ -24,6 +24,7 @@ import numpy as np
 from PIL import Image
 
 from utils.handcrafted_features import extract_handcrafted_features, HAND_FEATURE_DIM
+from utils.load_config import load_config
 
 
 # Feature labels (must match order in extract_handcrafted_features)
@@ -217,10 +218,12 @@ def write_config_key(config_path: Path, key: str, value: str) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description='Analyse and select handcrafted features')
-    parser.add_argument('--design_dir', type=str, default='./data/design',
-                        help='Directory containing design PNGs')
-    parser.add_argument('--elevation_dir', type=str, default='./data/elevation',
-                        help='Directory containing elevation subfolders')
+    parser.add_argument('--design_dir', type=str, default=None,
+                        help='Directory containing design PNGs '
+                             '(default: <dataset_dir>/design from config.txt)')
+    parser.add_argument('--elevation_dir', type=str, default=None,
+                        help='Directory containing elevation subfolders '
+                             '(default: <dataset_dir>/elevation from config.txt)')
     parser.add_argument('--top', type=int, default=HAND_FEATURE_DIM,
                         help='Number of features to select (default: all)')
     parser.add_argument('--corr_threshold', type=float, default=0.85,
@@ -231,8 +234,13 @@ def main():
                         help='Path to config.txt')
     args = parser.parse_args()
 
-    design_dir = Path(args.design_dir)
-    elevation_dir = Path(args.elevation_dir)
+    # Load config to derive dataset directories if not given on CLI
+    config = load_config(args.config)
+    dataset_dir = str(config.get('dataset_dir', './data'))
+    design_dir    = Path(args.design_dir)    if args.design_dir    is not None \
+                    else Path(dataset_dir) / 'design'
+    elevation_dir = Path(args.elevation_dir) if args.elevation_dir is not None \
+                    else Path(dataset_dir) / 'elevation'
 
     # Load designs
     print(f"Loading designs from {design_dir} ...")

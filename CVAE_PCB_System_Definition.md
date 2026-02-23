@@ -326,6 +326,6 @@ project/
 │   └── losses.py
 ├── train.py
 ├── evaluate.py
-├── sample.py                    # supports --temperature for diversity control
-└── analyze_features.py          # feature importance ranking and selection
+├── sample.py                    # supports --temperature, --denormalize
+└── analyze_features.py          # feature importance ranking and selection (auto-reads config)
 ```
