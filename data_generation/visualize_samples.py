@@ -3,7 +3,7 @@
 
 Run:
   python -m data_generation.visualize_samples
-  (reads data/design/*.png and data/elevation/design_*/*.png)
+  (reads data/design/*.png and data/elevation/design_*/images/*.png)
 """
 
 import random
@@ -16,7 +16,10 @@ from PIL import Image
 DATA_DIR    = Path(__file__).parent.parent / 'data'
 DESIGN_DIR  = DATA_DIR / 'design'
 ELEV_DIR    = DATA_DIR / 'elevation'
-DESIGN_NAMES = ['design_A', 'design_B', 'design_C', 'design_D']
+DESIGN_NAMES = [
+    'design_A', 'design_B', 'design_C', 'design_D',
+    'design_E', 'design_F', 'design_G', 'design_H', 'design_I', 'design_J',
+]
 
 N_ELEV_COLS = 4   # how many elevation samples to show per design row
 SEED        = 0
@@ -49,7 +52,7 @@ def visualize(
 
     for row, name in enumerate(DESIGN_NAMES):
         design_path = design_dir / f"{name}.png"
-        elev_subdir = elev_dir / name
+        elev_subdir = elev_dir / name / 'images'
 
         # --- Design image (column 0) ---
         ax = axes[row][0]
@@ -104,7 +107,7 @@ def plot_elevation_variance(
     fig.suptitle("Elevation Sample Variance per Design", fontsize=12)
 
     for ax, name in zip(axes, DESIGN_NAMES):
-        elev_subdir = elev_dir / name
+        elev_subdir = elev_dir / name / 'images'
         if not elev_subdir.exists():
             ax.set_title(f"{name}\n(no data)")
             continue

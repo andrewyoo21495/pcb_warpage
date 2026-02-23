@@ -21,10 +21,9 @@ Generation formula (per sample):
 
 Run:
   python -m data_generation.generate_elevation
-  (reads data/design/*.png, writes data/elevation/design_{A,...,J}/)
+  (reads data/design/*.png, writes data/elevation/design_{A,...,J}/images/)
 """
 
-import os
 import random
 from pathlib import Path
 
@@ -250,7 +249,7 @@ def generate_all(
             print(f"  [SKIP] {design_path} not found — run generate_design.py first.")
             continue
 
-        out_dir = elev_dir / design_name
+        out_dir = elev_dir / design_name / 'images'
         out_dir.mkdir(parents=True, exist_ok=True)
 
         density_map    = _load_density_map(design_path)
