@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FiLM Decoder — Condition Injection Deep Dive</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
+  :root {
+    --bg: #06080d;
+    --surface: #0d1117;
+    --surface2: #151b27;
+    --surface3: #1c2436;
+    --border: #263354;
+    --border-subtle: #1a2540;
+    --text: #dfe6f0;
+    --text-dim: #6b7fa3;
+    --text-muted: #3e5070;
+
+    --cond: #00d4aa;
+    --cond-dim: rgba(0, 212, 170, 0.12);
+    --cond-mid: rgba(0, 212, 170, 0.25);
+
+    --latent: #f45c7b;
+    --latent-dim: rgba(244, 92, 123, 0.12);
+
+    --process: #7c6aef;
+    --process-dim: rgba(124, 106, 239, 0.12);
+    --process-mid: rgba(124, 106, 239, 0.25);
+
+    --output: #38bdf8;
+    --output-dim: rgba(56, 189, 248, 0.12);
+
+    --film: #f0ad30;
+    --film-dim: rgba(240, 173, 48, 0.10);
+    --film-mid: rgba(240, 173, 48, 0.25);
+
+    --adain: #e879f9;
+    --adain-dim: rgba(232, 121, 249, 0.10);
+
+    --spade: #34d399;
+    --spade-dim: rgba(52, 211, 153, 0.10);
+
+    --xattn: #fb923c;
+    --xattn-dim: rgba(251, 146, 60, 0.10);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Outfit', sans-serif;
+    min-height: 100vh;
+    padding: 48px 24px 80px;
+  }
+
+  .container { max-width: 1100px; margin: 0 auto; }
+
+  h1 {
+    font-size: 32px;
+    font-weight: 800;
+    text-align: center;
+    margin-bottom: 4px;
+    letter-spacing: -1px;
+    background: linear-gradient(135deg, var(--film), var(--cond));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .subtitle {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 14px;
+    font-weight: 300;
+    margin-bottom: 56px;
+    letter-spacing: 0.5px;
+  }
+
+  .section-label {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+
+  .section-label .num {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px; font-weight: 600;
+  }
+
+  .section-label h2 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+
+  .section-label .desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    font-weight: 300;
+    margin-left: auto;
+  }
+
+  /* ====== MAIN DIAGRAM ====== */
+  .diagram-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 40px 32px 32px;
+    margin-bottom: 56px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .diagram-panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--film), var(--cond), var(--process));
+  }
+
+  .diagram-panel .badge {
+    position: absolute;
+    top: 14px; right: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+
+  /* Decoder flow */
+  .decoder-flow {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    justify-content: center;
+    padding: 20px 0;
+  }
+
+  .decoder-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    min-width: 130px;
+  }
+
+  .stage-box {
+    border-radius: 12px;
+    padding: 12px 14px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 500;
+    position: relative;
+    width: 120px;
+  }
+
+  .stage-box .dim {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    margin-top: 3px;
+    opacity: 0.7;
+  }
+
+  .stage-box.input-stage {
+    background: var(--latent-dim);
+    border: 1px solid rgba(244, 92, 123, 0.35);
+    color: var(--latent);
+  }
+
+  .stage-box.conv-stage {
+    background: var(--process-dim);
+    border: 1px solid rgba(124, 106, 239, 0.3);
+    color: var(--process);
+  }
+
+  .stage-box.output-stage {
+    background: var(--output-dim);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    color: var(--output);
+  }
+
+  .flow-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    color: var(--text-muted);
+    font-size: 18px;
+    align-self: flex-start;
+    margin-top: 40px;
+  }
+
+  /* FiLM injection detail */
+  .film-injection {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .film-arrow-up {
+    font-size: 14px;
+    color: var(--film);
+    animation: pulse-up 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-up {
+    0%, 100% { opacity: 0.4; transform: translateY(0); }
+    50% { opacity: 1; transform: translateY(-3px); }
+  }
+
+  .film-badge {
+    background: var(--film-dim);
+    border: 1px solid var(--film-mid);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--film);
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  .condition-source {
+    margin-top: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .condition-source .c-dot {
+    width: 10px; height: 10px;
+    background: var(--cond);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--cond-mid);
+  }
+
+  .condition-source .c-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--cond);
+  }
+
+  /* Block detail panel */
+  .block-detail-container {
+    display: flex;
+    gap: 32px;
+    align-items: flex-start;
+    justify-content: center;
+    margin-top: 40px;
+    flex-wrap: wrap;
+  }
+
+  .block-detail {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px 24px;
+    width: 340px;
+    position: relative;
+  }
+
+  .block-detail h3 {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 20px;
+    text-align: center;
+  }
+
+  .pipe-step {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    margin-bottom: 6px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .pipe-step .icon {
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .pipe-step .meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  .pipe-step.purple { background: var(--process-dim); color: var(--process); }
+  .pipe-step.purple .icon { background: var(--process-mid); color: var(--process); }
+
+  .pipe-step.gold { background: var(--film-dim); color: var(--film); border: 1px solid var(--film-mid); }
+  .pipe-step.gold .icon { background: var(--film-mid); color: var(--film); }
+
+  .pipe-step.teal { background: var(--cond-dim); color: var(--cond); }
+  .pipe-step.teal .icon { background: var(--cond-mid); color: var(--cond); }
+
+  .pipe-arrow {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 14px;
+    margin: 2px 0;
+  }
+
+  /* Equation highlight */
+  .eq-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    text-align: center;
+    line-height: 2;
+    margin: 16px 0;
+  }
+
+  .eq-box .var-c { color: var(--cond); }
+  .eq-box .var-h { color: var(--process); }
+  .eq-box .var-film { color: var(--film); }
+  .eq-box .var-out { color: var(--output); }
+  .eq-box .comment { color: var(--text-muted); font-size: 10px; }
+
+  /* ====== ALTERNATIVES SECTION ====== */
+  .alt-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 56px;
+  }
+
+  @media (max-width: 800px) { .alt-grid { grid-template-columns: 1fr; } }
+
+  .alt-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px 24px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s;
+  }
+
+  .alt-card:hover { border-color: var(--border); }
+
+  .alt-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+
+  .alt-card.film-card::before { background: var(--film); }
+  .alt-card.adain-card::before { background: var(--adain); }
+  .alt-card.spade-card::before { background: var(--spade); }
+  .alt-card.xattn-card::before { background: var(--xattn); }
+
+  .alt-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .alt-header .dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+  }
+
+  .alt-header h3 {
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .alt-header .chip {
+    margin-left: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+
+  .alt-eq {
+    background: var(--bg);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    line-height: 1.8;
+    margin-bottom: 14px;
+    text-align: center;
+    color: var(--text-dim);
+  }
+
+  .alt-desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.7;
+    margin-bottom: 14px;
+    font-weight: 300;
+  }
+
+  .alt-tags {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .alt-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid;
+  }
+
+  .alt-tag.pro { background: rgba(52, 211, 153, 0.08); border-color: rgba(52, 211, 153, 0.25); color: #34d399; }
+  .alt-tag.con { background: rgba(244, 92, 123, 0.08); border-color: rgba(244, 92, 123, 0.25); color: #f45c7b; }
+  .alt-tag.neutral { background: rgba(107, 127, 163, 0.08); border-color: rgba(107, 127, 163, 0.25); color: var(--text-dim); }
+
+  /* ====== COMPARISON TABLE ====== */
+  .comp-table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 56px;
+    overflow-x: auto;
+  }
+
+  .comp-table-wrap h3 {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 20px;
+    text-align: center;
+  }
+
+  table.comp {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  table.comp th {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+
+  table.comp td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--text);
+    vertical-align: top;
+    line-height: 1.5;
+  }
+
+  table.comp tr:last-child td { border-bottom: none; }
+
+  table.comp .method-name {
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .highlight-row { background: rgba(240, 173, 48, 0.04); }
+
+  .star { color: var(--film); font-size: 14px; }
+
+  /* Flow connector lines */
+  .connector-label {
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-muted);
+    margin: 6px 0;
+  }
+
+  .v-arrow {
+    text-align: center;
+    font-size: 16px;
+    color: var(--text-muted);
+    margin: 4px 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>FiLM Decoder — Condition Injection 심층 분석</h1>
+  <p class="subtitle">Decoder 내부에서 Condition이 각 블록에 어떻게 주입되는지, 그리고 대안적 방법들</p>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 1: FULL DECODER FLOW -->
+  <!-- ============================================================ -->
+  <div class="section-label">
+    <div class="num" style="background: var(--film-dim); color: var(--film);">1</div>
+    <h2>FiLM Decoder 전체 흐름</h2>
+    <span class="desc">z_fused → 5-stage upsampling → elevation output</span>
+  </div>
+
+  <div class="diagram-panel">
+    <span class="badge">Decoder Architecture</span>
+
+    <!-- Condition c source bar -->
+    <div style="display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 12px;">
+      <div style="width: 10px; height: 10px; background: var(--cond); border-radius: 50%; box-shadow: 0 0 10px var(--cond-mid);"></div>
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--cond); font-weight: 600;">Condition c</span>
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-dim);">(dim=64, Design Encoder output)</span>
+      <div style="flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--cond-mid), var(--cond-mid), var(--cond-mid), transparent); margin: 0 12px;"></div>
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--text-muted);">broadcast to all blocks ↓</span>
+    </div>
+
+    <!-- Dashed line showing c broadcast -->
+    <div style="display: flex; justify-content: center; margin-bottom: 8px;">
+      <div style="width: 85%; height: 1px; border-bottom: 1px dashed var(--cond-mid);"></div>
+    </div>
+
+    <!-- Main decoder stages -->
+    <div class="decoder-flow">
+
+      <!-- z_fused input -->
+      <div class="decoder-stage">
+        <div class="stage-box input-stage">
+          <div>z_fused</div>
+          <div class="dim">(B, 64)</div>
+        </div>
+        <div style="margin-top: 8px; text-align: center;">
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--text-muted);">Linear</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--text-muted);">→ reshape</div>
+        </div>
+      </div>
+
+      <div class="flow-arrow">→</div>
+
+      <!-- Projection -->
+      <div class="decoder-stage">
+        <div class="stage-box conv-stage">
+          <div>Projection</div>
+          <div class="dim">256 × 8 × 8</div>
+        </div>
+      </div>
+
+      <div class="flow-arrow">→</div>
+
+      <!-- Block 1 -->
+      <div class="decoder-stage">
+        <div class="stage-box conv-stage" style="border-color: rgba(124, 106, 239, 0.5);">
+          <div>Block 1</div>
+          <div class="dim">128 × 16²</div>
+        </div>
+        <div class="film-injection">
+          <div class="film-arrow-up">↑</div>
+          <div class="film-badge">γ₁·h + β₁</div>
+          <div class="condition-source">
+            <div class="c-dot"></div>
+            <span class="c-label">c → γ₁, β₁</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-arrow">→</div>
+
+      <!-- Block 2 -->
+      <div class="decoder-stage">
+        <div class="stage-box conv-stage" style="border-color: rgba(124, 106, 239, 0.5);">
+          <div>Block 2</div>
+          <div class="dim">64 × 32²</div>
+        </div>
+        <div class="film-injection">
+          <div class="film-arrow-up" style="animation-delay: 0.3s;">↑</div>
+          <div class="film-badge">γ₂·h + β₂</div>
+          <div class="condition-source">
+            <div class="c-dot"></div>
+            <span class="c-label">c → γ₂, β₂</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-arrow">→</div>
+
+      <!-- Block 3 -->
+      <div class="decoder-stage">
+        <div class="stage-box conv-stage" style="border-color: rgba(124, 106, 239, 0.5);">
+          <div>Block 3</div>
+          <div class="dim">32 × 64²</div>
+        </div>
+        <div class="film-injection">
+          <div class="film-arrow-up" style="animation-delay: 0.6s;">↑</div>
+          <div class="film-badge">γ₃·h + β₃</div>
+          <div class="condition-source">
+            <div class="c-dot"></div>
+            <span class="c-label">c → γ₃, β₃</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-arrow">→</div>
+
+      <!-- Block 4 -->
+      <div class="decoder-stage">
+        <div class="stage-box conv-stage" style="border-color: rgba(124, 106, 239, 0.5);">
+          <div>Block 4</div>
+          <div class="dim">16 × 128²</div>
+        </div>
+        <div class="film-injection">
+          <div class="film-arrow-up" style="animation-delay: 0.9s;">↑</div>
+          <div class="film-badge">γ₄·h + β₄</div>
+          <div class="condition-source">
+            <div class="c-dot"></div>
+            <span class="c-label">c → γ₄, β₄</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-arrow">→</div>
+
+      <!-- Final output -->
+      <div class="decoder-stage">
+        <div class="stage-box output-stage">
+          <div>Output</div>
+          <div class="dim">1 × 256²</div>
+        </div>
+        <div style="margin-top: 8px; text-align: center;">
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--text-muted);">↑2× + Conv</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--output);">+ Sigmoid</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Key insight box -->
+    <div style="display: flex; justify-content: center; margin-top: 24px;">
+      <div style="background: var(--surface2); border: 1px solid var(--border); border-left: 3px solid var(--film); border-radius: 10px; padding: 14px 20px; max-width: 640px;">
+        <div style="font-size: 12px; font-weight: 600; color: var(--film); margin-bottom: 6px;">핵심 포인트</div>
+        <div style="font-size: 12px; color: var(--text-dim); line-height: 1.7; font-weight: 300;">
+          동일한 <span style="color: var(--cond); font-family: 'JetBrains Mono', monospace;">c</span> 벡터가 4개 블록 모두에 주입되지만,
+          각 블록은 <strong style="color: var(--text);">독립적인 Linear 레이어</strong>로 γ, β를 생성합니다.
+          따라서 같은 c에서도 Block 1은 저주파 구조를, Block 4는 고주파 디테일을 조건부로 제어합니다.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 1B: SINGLE BLOCK DETAIL -->
+  <!-- ============================================================ -->
+  <div class="section-label">
+    <div class="num" style="background: var(--process-dim); color: var(--process);">1b</div>
+    <h2>단일 FiLM Block 내부 구조</h2>
+    <span class="desc">Upsample → Conv → BN → ReLU → FiLM</span>
+  </div>
+
+  <div class="diagram-panel" style="padding-top: 28px;">
+    <div class="block-detail-container">
+
+      <!-- Left: step-by-step pipeline -->
+      <div class="block-detail">
+        <h3 style="color: var(--process);">Main Path (Feature Map)</h3>
+
+        <div class="pipe-step purple">
+          <div class="icon">IN</div>
+          <div>
+            Input Feature Map
+            <div class="meta">(B, C_in, H, W)</div>
+          </div>
+        </div>
+
+        <div class="pipe-arrow">↓</div>
+
+        <div class="pipe-step purple">
+          <div class="icon">↑2</div>
+          <div>
+            Bilinear Upsample ×2
+            <div class="meta">(B, C_in, 2H, 2W)</div>
+          </div>
+        </div>
+
+        <div class="pipe-arrow">↓</div>
+
+        <div class="pipe-step purple">
+          <div class="icon">C</div>
+          <div>
+            Conv2d(C_in → C_out, 3×3, pad=1)
+            <div class="meta">(B, C_out, 2H, 2W)</div>
+          </div>
+        </div>
+
+        <div class="pipe-arrow">↓</div>
+
+        <div class="pipe-step purple">
+          <div class="icon">BN</div>
+          <div>
+            BatchNorm2d → ReLU
+            <div class="meta">normalize + activate → h</div>
+          </div>
+        </div>
+
+        <div class="pipe-arrow">↓</div>
+
+        <div class="pipe-step gold">
+          <div class="icon">F</div>
+          <div>
+            <strong>FiLM Modulation</strong>
+            <div class="meta">h_out = γ · h + β</div>
+          </div>
+        </div>
+
+        <div class="pipe-arrow">↓</div>
+
+        <div class="pipe-step purple" style="background: var(--output-dim); color: var(--output);">
+          <div class="icon" style="background: rgba(56,189,248,0.2); color: var(--output);">O</div>
+          <div>
+            Output Feature Map
+            <div class="meta">(B, C_out, 2H, 2W)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: FiLM mechanism detail -->
+      <div class="block-detail" style="border-color: var(--film-mid);">
+        <h3 style="color: var(--film);">FiLM Layer 동작 원리</h3>
+
+        <div class="pipe-step teal">
+          <div class="icon" style="background: var(--cond-mid); color: var(--cond);">c</div>
+          <div>
+            Condition Vector
+            <div class="meta">(B, 64) — 모든 블록에서 동일</div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 8px; margin: 10px 0; justify-content: center;">
+          <div style="text-align: center;">
+            <div class="pipe-arrow">↓</div>
+            <div class="pipe-step gold" style="padding: 8px 12px;">
+              <div>Linear(64 → C_out)</div>
+            </div>
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--film); margin-top: 4px; font-weight: 600;">γ</div>
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--text-muted);">(B, C_out)</div>
+          </div>
+          <div style="text-align: center;">
+            <div class="pipe-arrow">↓</div>
+            <div class="pipe-step gold" style="padding: 8px 12px;">
+              <div>Linear(64 → C_out)</div>
+            </div>
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--film); margin-top: 4px; font-weight: 600;">β</div>
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--text-muted);">(B, C_out)</div>
+          </div>
+        </div>
+
+        <div class="eq-box" style="border-color: var(--film-mid);">
+          <span class="comment"># reshape for broadcasting</span><br>
+          <span class="var-film">γ</span> = γ.unsqueeze(-1).unsqueeze(-1)
+          <span class="comment">→ (B, C_out, <strong>1, 1</strong>)</span><br>
+          <span class="var-film">β</span> = β.unsqueeze(-1).unsqueeze(-1)
+          <span class="comment">→ (B, C_out, <strong>1, 1</strong>)</span><br><br>
+          <span class="var-film">h_out</span> = <span class="var-film">γ</span> ⊙ <span class="var-h">h</span> + <span class="var-film">β</span>
+          <span class="comment"># element-wise per channel</span>
+        </div>
+
+        <div style="background: var(--bg); border-radius: 8px; padding: 12px; margin-top: 10px;">
+          <div style="font-size: 11px; color: var(--text-dim); line-height: 1.7; font-weight: 300;">
+            <span style="color: var(--film); font-weight: 500;">γ</span>는 채널별 <strong style="color: var(--text);">scale</strong> — 특정 feature를 증폭/억제<br>
+            <span style="color: var(--film); font-weight: 500;">β</span>는 채널별 <strong style="color: var(--text);">shift</strong> — 기본값 조정 (bias)<br>
+            <span style="color: var(--text-muted);">(1, 1)</span> shape이므로 같은 채널의 <strong style="color: var(--text);">모든 spatial 위치</strong>에 동일 적용
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 2: ALTERNATIVE METHODS -->
+  <!-- ============================================================ -->
+  <div class="section-label">
+    <div class="num" style="background: var(--cond-dim); color: var(--cond);">2</div>
+    <h2>Decoder에서 Condition을 주입하는 대안적 방법들</h2>
+  </div>
+
+  <div class="alt-grid">
+
+    <!-- FiLM -->
+    <div class="alt-card film-card">
+      <div class="alt-header">
+        <div class="dot" style="background: var(--film);"></div>
+        <h3 style="color: var(--film);">FiLM</h3>
+        <span class="chip" style="background: var(--film-dim); color: var(--film);">현재 사용</span>
+      </div>
+      <div class="alt-eq">
+        γ, β = Linear(<span style="color: var(--cond);">c</span>)
+        <span style="color: var(--text-muted);">  # (B, C_out)</span><br>
+        h_out = <span style="color: var(--film);">γ</span> ⊙ h + <span style="color: var(--film);">β</span>
+      </div>
+      <div class="alt-desc">
+        조건 벡터 c에서 채널별 scale(γ)과 shift(β)를 생성하여 feature map을 변조합니다.
+        각 채널이 독립적으로 조절되며, 같은 spatial 위치에 균일하게 적용됩니다.
+        가장 널리 검증된 방식입니다.
+      </div>
+      <div class="alt-tags">
+        <span class="alt-tag pro">✓ 파라미터 적음</span>
+        <span class="alt-tag pro">✓ 학습 안정적</span>
+        <span class="alt-tag pro">✓ 검증된 방식</span>
+        <span class="alt-tag con">✗ spatial 정보 없음</span>
+      </div>
+    </div>
+
+    <!-- AdaIN -->
+    <div class="alt-card adain-card">
+      <div class="alt-header">
+        <div class="dot" style="background: var(--adain);"></div>
+        <h3 style="color: var(--adain);">AdaIN</h3>
+        <span class="chip" style="background: var(--adain-dim); color: var(--adain);">StyleGAN 계열</span>
+      </div>
+      <div class="alt-eq">
+        γ, β = Linear(<span style="color: var(--cond);">c</span>)<br>
+        h_norm = (h − μ(h)) / σ(h)
+        <span style="color: var(--text-muted);">  # instance norm</span><br>
+        h_out = <span style="color: var(--adain);">γ</span> ⊙ h_norm + <span style="color: var(--adain);">β</span>
+      </div>
+      <div class="alt-desc">
+        FiLM과 구조가 유사하지만, γ·h + β를 적용하기 전에 feature map을 <strong>Instance Normalization</strong>합니다.
+        이를 통해 기존 feature의 통계(평균/분산)를 완전히 제거하고, c가 새로운 통계를 주입합니다.
+        "스타일을 완전히 교체"하는 효과가 있어 StyleGAN에서 사용됩니다.
+      </div>
+      <div class="alt-tags">
+        <span class="alt-tag pro">✓ 스타일 제어 강력</span>
+        <span class="alt-tag pro">✓ FiLM 대비 normalize 추가</span>
+        <span class="alt-tag con">✗ 정보 손실 (기존 통계 제거)</span>
+        <span class="alt-tag neutral">≈ FiLM과 파라미터 유사</span>
+      </div>
+    </div>
+
+    <!-- SPADE -->
+    <div class="alt-card spade-card">
+      <div class="alt-header">
+        <div class="dot" style="background: var(--spade);"></div>
+        <h3 style="color: var(--spade);">SPADE</h3>
+        <span class="chip" style="background: var(--spade-dim); color: var(--spade);">spatial 조건</span>
+      </div>
+      <div class="alt-eq">
+        <span style="color: var(--text-muted);"># c가 벡터가 아닌 spatial map일 때</span><br>
+        γ(x,y), β(x,y) = Conv(<span style="color: var(--cond);">c_map</span>)<br>
+        h_out(x,y) = <span style="color: var(--spade);">γ(x,y)</span> ⊙ h_norm(x,y) + <span style="color: var(--spade);">β(x,y)</span>
+      </div>
+      <div class="alt-desc">
+        FiLM/AdaIN의 spatial 확장입니다. 조건이 벡터가 아닌 <strong>2D 맵</strong>(예: segmentation map)일 때 사용합니다.
+        pixel 위치마다 다른 γ, β를 적용하므로, "이 위치가 도로인지 건물인지"에 따라 다른 변조가 가능합니다.
+        PCB 시스템에서는 Design Image 자체를 spatial condition으로 쓸 수 있습니다.
+      </div>
+      <div class="alt-tags">
+        <span class="alt-tag pro">✓ 위치별 조건 반영</span>
+        <span class="alt-tag pro">✓ semantic layout에 강력</span>
+        <span class="alt-tag con">✗ 파라미터 많음 (Conv 사용)</span>
+        <span class="alt-tag con">✗ 조건이 spatial map이어야 함</span>
+      </div>
+    </div>
+
+    <!-- Cross-Attention in Decoder -->
+    <div class="alt-card xattn-card">
+      <div class="alt-header">
+        <div class="dot" style="background: var(--xattn);"></div>
+        <h3 style="color: var(--xattn);">Cross-Attention</h3>
+        <span class="chip" style="background: var(--xattn-dim); color: var(--xattn);">Diffusion 계열</span>
+      </div>
+      <div class="alt-eq">
+        Q = proj(<span style="color: var(--process);">h_flat</span>)
+        <span style="color: var(--text-muted);">  # feature map → tokens</span><br>
+        K, V = proj(<span style="color: var(--cond);">c</span>)<br>
+        h_out = reshape(MHA(Q, K, V))
+      </div>
+      <div class="alt-desc">
+        Feature map의 각 spatial 위치를 token으로 보고, 조건 c에 대해 attention을 수행합니다.
+        Stable Diffusion에서 text prompt를 이미지 생성에 반영할 때 이 방식을 사용합니다.
+        각 pixel이 c의 어떤 측면에 attend할지 <strong>선택적으로</strong> 결정합니다.
+      </div>
+      <div class="alt-tags">
+        <span class="alt-tag pro">✓ 가장 유연한 표현력</span>
+        <span class="alt-tag pro">✓ 위치별 선택적 반영</span>
+        <span class="alt-tag con">✗ O(HW) 복잡도</span>
+        <span class="alt-tag con">✗ 파라미터/메모리 최대</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 3: COMPARISON TABLE -->
+  <!-- ============================================================ -->
+  <div class="section-label">
+    <div class="num" style="background: var(--output-dim); color: var(--output);">3</div>
+    <h2>종합 비교</h2>
+  </div>
+
+  <div class="comp-table-wrap">
+    <table class="comp">
+      <thead>
+        <tr>
+          <th>방식</th>
+          <th>수식</th>
+          <th>추가 파라미터 / 블록</th>
+          <th>Spatial 조건</th>
+          <th>적합한 경우</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="highlight-row">
+          <td class="method-name" style="color: var(--film);">FiLM <span class="star">★</span></td>
+          <td style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">γ·h + β</td>
+          <td>2 × Linear(c_dim, C_out)<br><span style="color: var(--text-muted); font-size: 10px;">~8K params</span></td>
+          <td style="color: var(--text-muted);">✗ 없음</td>
+          <td>조건이 global vector일 때 (현재 시스템)</td>
+        </tr>
+        <tr>
+          <td class="method-name" style="color: var(--adain);">AdaIN</td>
+          <td style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">γ·norm(h) + β</td>
+          <td>2 × Linear(c_dim, C_out)<br><span style="color: var(--text-muted); font-size: 10px;">~8K params</span></td>
+          <td style="color: var(--text-muted);">✗ 없음</td>
+          <td>스타일 전환이 핵심일 때</td>
+        </tr>
+        <tr>
+          <td class="method-name" style="color: var(--spade);">SPADE</td>
+          <td style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">γ(x,y)·norm(h) + β(x,y)</td>
+          <td>2 × Conv(cond_ch, C_out)<br><span style="color: var(--text-muted); font-size: 10px;">~50K+ params</span></td>
+          <td style="color: var(--cond);">✓ pixel별</td>
+          <td>조건이 layout/segmentation map일 때</td>
+        </tr>
+        <tr>
+          <td class="method-name" style="color: var(--xattn);">Cross-Attn</td>
+          <td style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">MHA(Q=h, K=c, V=c)</td>
+          <td>W_q, W_k, W_v, W_out<br><span style="color: var(--text-muted); font-size: 10px;">~100K+ params</span></td>
+          <td style="color: var(--cond);">✓ 선택적</td>
+          <td>조건이 복잡/다차원적일 때 (text 등)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Footer note -->
+  <div style="text-align: center; padding: 20px 0;">
+    <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 24px; display: inline-block; max-width: 680px;">
+      <div style="font-size: 12px; font-weight: 600; color: var(--cond); margin-bottom: 6px;">
+        현재 시스템에 대한 권장사항
+      </div>
+      <div style="font-size: 12px; color: var(--text-dim); line-height: 1.7; font-weight: 300;">
+        PCB Elevation 생성에서 조건 c는 <strong style="color: var(--text);">64차원 global vector</strong>이므로,
+        <span style="color: var(--film); font-weight: 600;">FiLM</span>이 가장 효율적입니다.
+        만약 Design Image를 spatial condition으로 직접 활용하고 싶다면
+        <span style="color: var(--spade); font-weight: 600;">SPADE</span>도 실험해볼 가치가 있습니다 — 이 경우
+        Design Image를 각 decoder 블록의 해상도에 맞게 downsample하여 입력합니다.
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
