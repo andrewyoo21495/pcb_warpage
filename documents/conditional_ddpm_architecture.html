@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Conditional DDPM Architecture — PCB Elevation Generation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0a0e17;
+    --surface: #111827;
+    --surface2: #1a2235;
+    --border: #2a3550;
+    --text: #e2e8f0;
+    --text-dim: #8899b4;
+    --accent-blue: #3b82f6;
+    --accent-cyan: #06b6d4;
+    --accent-purple: #8b5cf6;
+    --accent-green: #10b981;
+    --accent-amber: #f59e0b;
+    --accent-rose: #f43f5e;
+    --accent-blue-dim: rgba(59, 130, 246, 0.15);
+    --accent-cyan-dim: rgba(6, 182, 212, 0.15);
+    --accent-purple-dim: rgba(139, 92, 246, 0.15);
+    --accent-green-dim: rgba(16, 185, 129, 0.15);
+    --accent-amber-dim: rgba(245, 158, 11, 0.15);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    min-height: 100vh;
+    padding: 40px 20px;
+  }
+
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 6px;
+    letter-spacing: -0.5px;
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .subtitle {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 14px;
+    margin-bottom: 48px;
+    font-weight: 300;
+  }
+
+  /* Section titles */
+  .section-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 24px;
+    padding-left: 12px;
+    border-left: 3px solid var(--accent-blue);
+    color: var(--text);
+  }
+
+  /* ====== TRAINING DIAGRAM ====== */
+  .diagram-wrapper {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 36px 24px 24px;
+    margin-bottom: 48px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .diagram-wrapper::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple), var(--accent-cyan));
+  }
+
+  .diagram-label {
+    position: absolute;
+    top: 12px;
+    right: 20px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+  }
+
+  /* Flow rows */
+  .flow-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .flow-row.spaced {
+    margin-bottom: 28px;
+  }
+
+  /* Boxes */
+  .box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 14px 20px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    text-align: center;
+    min-width: 120px;
+    position: relative;
+    transition: transform 0.2s;
+  }
+
+  .box:hover {
+    transform: translateY(-2px);
+  }
+
+  .box .label {
+    font-size: 10px;
+    font-family: 'IBM Plex Mono', monospace;
+    margin-top: 4px;
+    opacity: 0.7;
+  }
+
+  .box.input {
+    background: var(--accent-blue-dim);
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    color: var(--accent-blue);
+  }
+
+  .box.condition {
+    background: var(--accent-cyan-dim);
+    border: 1px solid rgba(6, 182, 212, 0.4);
+    color: var(--accent-cyan);
+  }
+
+  .box.process {
+    background: var(--accent-purple-dim);
+    border: 1px solid rgba(139, 92, 246, 0.4);
+    color: var(--accent-purple);
+  }
+
+  .box.output {
+    background: var(--accent-green-dim);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    color: var(--accent-green);
+  }
+
+  .box.loss {
+    background: var(--accent-amber-dim);
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    color: var(--accent-amber);
+  }
+
+  .box.noise {
+    background: rgba(244, 63, 94, 0.12);
+    border: 1px solid rgba(244, 63, 94, 0.4);
+    color: var(--accent-rose);
+  }
+
+  .box.large {
+    min-width: 200px;
+    padding: 18px 28px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .box.wide {
+    min-width: 280px;
+  }
+
+  /* Arrows */
+  .arrow {
+    color: var(--text-dim);
+    font-size: 20px;
+    flex-shrink: 0;
+    user-select: none;
+  }
+
+  .arrow.down {
+    display: flex;
+    justify-content: center;
+    margin: 4px 0;
+    font-size: 18px;
+  }
+
+  .arrow-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    font-family: 'IBM Plex Mono', monospace;
+    text-align: center;
+    margin: -2px 0 4px;
+  }
+
+  /* Bracket group */
+  .bracket-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 16px;
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+    position: relative;
+  }
+
+  .bracket-group .group-label {
+    position: absolute;
+    top: -10px;
+    left: 16px;
+    background: var(--surface);
+    padding: 0 8px;
+    font-size: 10px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  /* UNet detail box */
+  .unet-detail {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 12px auto;
+    max-width: 720px;
+    width: 100%;
+  }
+
+  .unet-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .unet-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .unet-block .bar {
+    border-radius: 4px;
+    transition: all 0.2s;
+  }
+
+  .unet-block .bar:hover {
+    filter: brightness(1.3);
+  }
+
+  .unet-block .res {
+    font-size: 9px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--text-dim);
+  }
+
+  .unet-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-dim);
+    margin: 0 6px;
+    white-space: nowrap;
+  }
+
+  .skip-arrows {
+    text-align: center;
+    font-size: 10px;
+    color: var(--text-dim);
+    margin: 6px 0;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  /* Injection indicators */
+  .injection-row {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    margin: 12px 0;
+    flex-wrap: wrap;
+  }
+
+  .injection-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .injection-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Two column layout */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 48px;
+  }
+
+  @media (max-width: 768px) {
+    .two-col { grid-template-columns: 1fr; }
+  }
+
+  .info-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+
+  .info-card h3 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: var(--text);
+  }
+
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(42, 53, 80, 0.5);
+    font-size: 12px;
+  }
+
+  .info-row:last-child { border-bottom: none; }
+
+  .info-row .key {
+    color: var(--text-dim);
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .info-row .value {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .tag.blue { background: var(--accent-blue-dim); color: var(--accent-blue); }
+  .tag.cyan { background: var(--accent-cyan-dim); color: var(--accent-cyan); }
+  .tag.purple { background: var(--accent-purple-dim); color: var(--accent-purple); }
+  .tag.green { background: var(--accent-green-dim); color: var(--accent-green); }
+  .tag.amber { background: var(--accent-amber-dim); color: var(--accent-amber); }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    margin-bottom: 36px;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .legend-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+  }
+
+  /* Divider */
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+    margin: 40px 0;
+  }
+
+  /* Plus sign */
+  .plus {
+    font-size: 18px;
+    color: var(--text-dim);
+    font-weight: 300;
+  }
+
+  .merge-label {
+    font-size: 10px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--text-dim);
+    background: var(--surface2);
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>Conditional DDPM for PCB Elevation Generation</h1>
+  <p class="subtitle">Architecture Overview — Denoising Diffusion Probabilistic Model with Spatial &amp; Global Conditioning</p>
+
+  <!-- Legend -->
+  <div class="legend">
+    <div class="legend-item">
+      <div class="legend-swatch" style="background: rgba(59,130,246,0.4);"></div>
+      Input Data
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch" style="background: rgba(6,182,212,0.4);"></div>
+      Condition
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch" style="background: rgba(139,92,246,0.4);"></div>
+      Processing
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch" style="background: rgba(244,63,94,0.4);"></div>
+      Noise
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch" style="background: rgba(245,158,11,0.4);"></div>
+      Loss
+    </div>
+    <div class="legend-item">
+      <div class="legend-swatch" style="background: rgba(16,185,129,0.4);"></div>
+      Output
+    </div>
+  </div>
+
+  <!-- ==================== TRAINING ==================== -->
+  <div class="diagram-wrapper">
+    <span class="diagram-label">Training Phase</span>
+
+    <!-- Row 1: Inputs -->
+    <div class="flow-row spaced">
+      <div class="bracket-group" style="min-width: 280px;">
+        <span class="group-label">Condition Path</span>
+        <div class="box condition">
+          Design Image
+          <span class="label">1ch · 256×256</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div class="box condition" style="min-width: 90px; padding: 8px 12px;">
+            orig_h, orig_w
+            <span class="label">scalars</span>
+          </div>
+          <div class="box condition" style="min-width: 90px; padding: 8px 12px;">
+            aspect_ratio
+            <span class="label">scalar</span>
+          </div>
+          <div class="box condition" style="min-width: 90px; padding: 8px 12px;">
+            density
+            <span class="label">scalar</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="width: 40px;"></div>
+
+      <div class="bracket-group" style="min-width: 200px;">
+        <span class="group-label">Data Path</span>
+        <div class="box input">
+          Elevation Image x₀
+          <span class="label">1ch · 256×256</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 2: Condition Encoder + Forward Diffusion -->
+    <div class="flow-row spaced">
+      <div style="display: flex; flex-direction: column; align-items: center; min-width: 280px;">
+        <div class="arrow down">↓</div>
+        <div class="box process large" style="min-width: 280px;">
+          Condition Encoder
+          <span class="label">Lightweight CNN + MLP</span>
+        </div>
+        <div class="arrow down">↓</div>
+        <div style="display: flex; gap: 16px; margin-top: 8px;">
+          <div class="box condition" style="min-width: 120px;">
+            Spatial Features
+            <span class="label">128² · 64² · 32²</span>
+          </div>
+          <div class="box condition" style="min-width: 120px;">
+            Global Feature
+            <span class="label">vector (D=256+)</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="width: 40px;"></div>
+
+      <div style="display: flex; flex-direction: column; align-items: center; min-width: 200px;">
+        <div class="arrow down">↓</div>
+        <div class="box process" style="min-width: 200px;">
+          Forward Diffusion q(x_t|x₀)
+          <span class="label">add noise at timestep t</span>
+        </div>
+        <div class="arrow down">↓</div>
+        <div class="box noise" style="margin-top: 8px;">
+          Noisy Image x_t
+          <span class="label">1ch · 256×256</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Merge arrow -->
+    <div style="display: flex; justify-content: center; gap: 8px; align-items: center; margin: 8px 0;">
+      <span style="color: var(--accent-cyan); font-size: 14px;">↘</span>
+      <span class="merge-label">inject conditions</span>
+      <span style="color: var(--accent-rose); font-size: 14px;">↙</span>
+    </div>
+
+    <!-- Row 3: U-Net -->
+    <div class="flow-row" style="margin-top: 8px;">
+      <div style="display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 720px;">
+        
+        <!-- Timestep -->
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+          <div class="box process" style="min-width: 100px; padding: 8px 14px;">
+            Timestep t
+            <span class="label">sinusoidal embed</span>
+          </div>
+          <span class="plus">+</span>
+          <div class="box condition" style="min-width: 100px; padding: 8px 14px;">
+            Global Feature
+          </div>
+          <span class="arrow">→</span>
+          <span class="merge-label">AdaGN modulation</span>
+        </div>
+
+        <div class="unet-detail">
+          <div style="text-align: center; margin-bottom: 10px; font-size: 14px; font-weight: 600; color: var(--accent-purple);">
+            U-Net Noise Predictor ε_θ
+          </div>
+
+          <!-- U-Net visual -->
+          <div class="unet-inner">
+            <!-- Encoder -->
+            <div class="unet-block">
+              <div class="bar" style="width: 48px; height: 80px; background: linear-gradient(180deg, rgba(139,92,246,0.5), rgba(139,92,246,0.3));"></div>
+              <span class="res">256²</span>
+            </div>
+            <div class="unet-block">
+              <div class="bar" style="width: 44px; height: 68px; background: linear-gradient(180deg, rgba(139,92,246,0.5), rgba(6,182,212,0.3)); border: 1px dashed rgba(6,182,212,0.4);"></div>
+              <span class="res">128²</span>
+            </div>
+            <div class="unet-block">
+              <div class="bar" style="width: 40px; height: 56px; background: linear-gradient(180deg, rgba(139,92,246,0.5), rgba(6,182,212,0.3)); border: 1px dashed rgba(6,182,212,0.4);"></div>
+              <span class="res">64²</span>
+            </div>
+            <div class="unet-block">
+              <div class="bar" style="width: 36px; height: 44px; background: linear-gradient(180deg, rgba(139,92,246,0.5), rgba(6,182,212,0.3)); border: 1px dashed rgba(6,182,212,0.4);"></div>
+              <span class="res">32²</span>
+            </div>
+
+            <!-- Bottleneck -->
+            <div class="unet-block">
+              <div class="bar" style="width: 32px; height: 36px; background: rgba(139,92,246,0.7); border-radius: 6px;"></div>
+              <span class="res" style="color: var(--accent-purple);">mid</span>
+            </div>
+
+            <!-- Decoder -->
+            <div class="unet-block">
+              <div class="bar" style="width: 36px; height: 44px; background: linear-gradient(180deg, rgba(16,185,129,0.3), rgba(16,185,129,0.5));"></div>
+              <span class="res">32²</span>
+            </div>
+            <div class="unet-block">
+              <div class="bar" style="width: 40px; height: 56px; background: linear-gradient(180deg, rgba(16,185,129,0.3), rgba(16,185,129,0.5));"></div>
+              <span class="res">64²</span>
+            </div>
+            <div class="unet-block">
+              <div class="bar" style="width: 44px; height: 68px; background: linear-gradient(180deg, rgba(16,185,129,0.3), rgba(16,185,129,0.5));"></div>
+              <span class="res">128²</span>
+            </div>
+            <div class="unet-block">
+              <div class="bar" style="width: 48px; height: 80px; background: linear-gradient(180deg, rgba(16,185,129,0.3), rgba(16,185,129,0.5));"></div>
+              <span class="res">256²</span>
+            </div>
+          </div>
+
+          <div class="skip-arrows">← ← ← skip connections → → →</div>
+
+          <!-- Injection legend -->
+          <div class="injection-row">
+            <div class="injection-item">
+              <div class="injection-dot" style="background: var(--accent-cyan);"></div>
+              <span>Spatial cond. concat (128², 64², 32²)</span>
+            </div>
+            <div class="injection-item">
+              <div class="injection-dot" style="background: var(--accent-purple);"></div>
+              <span>AdaGN modulation (every ResBlock)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 4: Output + Loss -->
+    <div class="arrow down">↓</div>
+    <div class="flow-row" style="margin-top: 4px;">
+      <div class="box output">
+        Predicted Noise ε̂
+        <span class="label">1ch · 256×256</span>
+      </div>
+      <span class="arrow">→</span>
+      <div class="box loss large">
+        ℒ = MSE( ε̂ , ε )
+        <span class="label">noise prediction loss</span>
+      </div>
+      <span class="arrow">←</span>
+      <div class="box noise">
+        True Noise ε
+        <span class="label">sampled at step t</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== INFERENCE ==================== -->
+  <div class="diagram-wrapper">
+    <span class="diagram-label">Inference Phase</span>
+
+    <!-- Input -->
+    <div class="flow-row spaced">
+      <div class="box condition large">
+        New Design Image (unseen)
+        <span class="label">1ch · 256×256 + metadata</span>
+      </div>
+    </div>
+
+    <div class="arrow down">↓</div>
+
+    <div class="flow-row">
+      <div class="box process large">
+        Condition Encoder
+        <span class="label">computed once</span>
+      </div>
+    </div>
+
+    <div class="arrow down">↓</div>
+
+    <div class="flow-row spaced">
+      <div class="box condition">Spatial Features</div>
+      <span class="plus">+</span>
+      <div class="box condition">Global Feature</div>
+    </div>
+
+    <div style="display: flex; justify-content: center; margin: 4px 0;">
+      <span class="merge-label">condition cached, shared across n samples</span>
+    </div>
+
+    <div class="arrow down">↓</div>
+
+    <!-- Reverse process -->
+    <div class="flow-row">
+      <div class="box noise" style="min-width: 160px;">
+        z_T ~ 𝒩(0, I) × n
+        <span class="label">n Gaussian noise samples</span>
+      </div>
+      <span class="arrow">→</span>
+      <div class="box process wide large">
+        DDIM Reverse Process
+        <span class="label">50 steps · η=0.5–0.8 · conditioned U-Net</span>
+      </div>
+      <span class="arrow">→</span>
+      <div class="box output" style="min-width: 160px;">
+        n Elevation Images
+        <span class="label">256×256 → resize to original</span>
+      </div>
+    </div>
+
+    <div class="arrow down" style="margin-top: 12px;">↓</div>
+
+    <div class="flow-row">
+      <div class="box output wide">
+        Distribution Analysis
+        <span class="label">pixel-wise mean/std maps · FID · coverage metrics</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== DETAILS ==================== -->
+  <div class="two-col">
+    <div class="info-card">
+      <h3>Model Configuration</h3>
+      <div class="info-row">
+        <span class="key">backbone</span>
+        <span class="tag purple">U-Net + AdaGN</span>
+      </div>
+      <div class="info-row">
+        <span class="key">base_channels</span>
+        <span class="value">64</span>
+      </div>
+      <div class="info-row">
+        <span class="key">channel_mults</span>
+        <span class="value">(1, 2, 4, 8)</span>
+      </div>
+      <div class="info-row">
+        <span class="key">params</span>
+        <span class="value">~10M</span>
+      </div>
+      <div class="info-row">
+        <span class="key">β_schedule</span>
+        <span class="tag amber">cosine</span>
+      </div>
+      <div class="info-row">
+        <span class="key">T (train)</span>
+        <span class="value">1000</span>
+      </div>
+      <div class="info-row">
+        <span class="key">DDIM steps</span>
+        <span class="value">50</span>
+      </div>
+      <div class="info-row">
+        <span class="key">image_size</span>
+        <span class="value">256 × 256</span>
+      </div>
+    </div>
+
+    <div class="info-card">
+      <h3>Training Strategy</h3>
+      <div class="info-row">
+        <span class="key">optimizer</span>
+        <span class="tag blue">AdamW</span>
+      </div>
+      <div class="info-row">
+        <span class="key">lr</span>
+        <span class="value">1e-4</span>
+      </div>
+      <div class="info-row">
+        <span class="key">epochs</span>
+        <span class="value">2000</span>
+      </div>
+      <div class="info-row">
+        <span class="key">batch_size</span>
+        <span class="value">16</span>
+      </div>
+      <div class="info-row">
+        <span class="key">EMA_decay</span>
+        <span class="tag green">0.9999</span>
+      </div>
+      <div class="info-row">
+        <span class="key">dropout</span>
+        <span class="value">0.15</span>
+      </div>
+      <div class="info-row">
+        <span class="key">augmentation</span>
+        <span class="value">HFlip + VFlip (paired)</span>
+      </div>
+      <div class="info-row">
+        <span class="key">validation</span>
+        <span class="tag cyan">leave-one-design-out</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Condition injection detail -->
+  <div class="section-title">Condition Injection Detail</div>
+  <div class="diagram-wrapper" style="padding-top: 24px;">
+    <div style="display: flex; justify-content: center; gap: 48px; flex-wrap: wrap;">
+      <!-- Spatial -->
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 300px;">
+        <div style="font-size: 14px; font-weight: 600; color: var(--accent-cyan);">Spatial Injection</div>
+        <div style="font-size: 12px; color: var(--text-dim); text-align: center; line-height: 1.6;">
+          Design image의 multi-scale feature maps를<br>
+          U-Net encoder의 대응 resolution에<br>
+          <span class="tag cyan">channel-wise concatenation</span>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: end;">
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
+            <div style="width: 36px; height: 36px; background: rgba(6,182,212,0.3); border: 1px solid rgba(6,182,212,0.5); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 9px; color: var(--accent-cyan);">f₁</div>
+            <span style="font-size: 9px; color: var(--text-dim);">128²</span>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
+            <div style="width: 30px; height: 30px; background: rgba(6,182,212,0.3); border: 1px solid rgba(6,182,212,0.5); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 9px; color: var(--accent-cyan);">f₂</div>
+            <span style="font-size: 9px; color: var(--text-dim);">64²</span>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
+            <div style="width: 24px; height: 24px; background: rgba(6,182,212,0.3); border: 1px solid rgba(6,182,212,0.5); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 9px; color: var(--accent-cyan);">f₃</div>
+            <span style="font-size: 9px; color: var(--text-dim);">32²</span>
+          </div>
+        </div>
+        <div style="font-size: 11px; color: var(--text-dim);">→ 설계의 공간 구조(선 위치, 패턴) 반영</div>
+      </div>
+
+      <!-- Divider -->
+      <div style="width: 1px; background: var(--border); min-height: 120px;"></div>
+
+      <!-- Global -->
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 300px;">
+        <div style="font-size: 14px; font-weight: 600; color: var(--accent-purple);">Global Injection (AdaGN)</div>
+        <div style="font-size: 12px; color: var(--text-dim); text-align: center; line-height: 1.6;">
+          Timestep embedding + global condition을<br>
+          합산하여 각 ResBlock의 GroupNorm에<br>
+          <span class="tag purple">scale γ &amp; shift β 파라미터 생성</span>
+        </div>
+        <div style="background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--text-dim); text-align: center; line-height: 1.8;">
+          h = GroupNorm(x)<br>
+          γ, β = MLP(t_emb + g_emb)<br>
+          out = γ · h + β
+        </div>
+        <div style="font-size: 11px; color: var(--text-dim);">→ 전역 속성(크기, 밀도 등) 반영</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

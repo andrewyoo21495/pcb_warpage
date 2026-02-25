@@ -220,8 +220,8 @@ KL:             −0.5 × Σ(1 + log σ² − μ² − σ²)
 
 | | Current (10 synthetic designs) | Future (real data) |
 |---|---|---|
-| Design Encoder | Scratch CNN + 22 handcrafted features | Pretrained backbone (fine-tune) |
-| Hand features | 22 (configurable subset via `selected_features`) | Re-rank with real data |
+| Design Encoder | Scratch CNN + 24 handcrafted features | Pretrained backbone (fine-tune) |
+| Hand features | 24 (configurable subset via `selected_features`) | Re-rank with real data |
 | Fusion | FiLM (baseline: Concat) | Cross-Attention |
 | z2 from design | No (deterministic c) | Consider VAE-style z2 |
 | Decoder | Transposed CNN + FiLM | Add U-Net skip connections |
@@ -307,27 +307,47 @@ See **Section 8 — Project Structure** for file locations.
 
 ```
 project/
+├── config.txt                       # All hyperparameters (model_type, CVAE, DDPM)
+├── train.py                         # Training loop (CVAE or DDPM, auto-selected)
+├── evaluate.py                      # Leave-one-out evaluation (auto-detects model)
+├── sample.py                        # Inference / generation (auto-detects model)
+├── analyze_features.py              # Feature importance ranking and selection
 ├── data_generation/
-│   ├── generate_design.py       # Synthesize design images (10 variants, A–J)
-│   ├── generate_elevation.py    # Synthesize elevation images (300 per design)
-│   └── visualize_samples.py     # Sanity check: plot image pairs
+│   ├── generate_design.py           # Synthesize design images (10 variants, A–J)
+│   ├── generate_elevation.py        # Synthesize elevation images (per design)
+│   └── visualize_samples.py         # Sanity check: plot image pairs
 ├── data/
-│   ├── design/                  # design_A.png … design_J.png
+│   ├── design/                      # design_A.png … design_J.png
 │   └── elevation/
-│       ├── design_A/            # elevation images for design_A
+│       ├── design_A/images/         # elevation images for design_A
 │       ├── …
-│       └── design_J/
+│       └── design_J/images/
 ├── models/
-│   ├── design_encoder.py        # CNN + 22 handcrafted features → c
-│   ├── elevation_encoder.py
-│   ├── decoder.py
-│   └── cvae.py
+│   ├── __init__.py                  # build_model() factory (cvae / ddpm)
+│   ├── cvae.py                      # Full CVAE (Concat / FiLM / CrossAttn)
+│   ├── design_encoder.py            # CNN + 24 handcrafted features → c
+│   ├── elevation_encoder.py         # CNN → μ, logvar, z1 (stochastic)
+│   ├── decoder.py                   # FiLM-conditioned upsampler
+│   ├── ddpm.py                      # Conditional DDPM (cosine schedule + DDIM)
+│   ├── ddpm_condition_encoder.py    # Multi-scale CNN → spatial feats + global cond
+│   └── unet.py                      # U-Net noise predictor with AdaGN
 ├── utils/
-│   ├── dataset.py
-│   ├── handcrafted_features.py  # 22-dim feature extractor
-│   └── losses.py
-├── train.py
-├── evaluate.py
-├── sample.py                    # supports --temperature, --denormalize
-└── analyze_features.py          # feature importance ranking and selection (auto-reads config)
+│   ├── dataset.py                   # PCBWarpageDataset + DataLoader factory
+│   ├── handcrafted_features.py      # 24-dim feature extractor
+│   ├── losses.py                    # MSE recon + KL + cyclical β annealing (CVAE)
+│   ├── load_config.py               # config.txt parser
+│   └── ema.py                       # Exponential Moving Average (DDPM)
+└── documents/
+    ├── CVAE_PCB_System_Definition.md
+    └── DDPM_PCB_Spec.md             # DDPM architecture specification
 ```
+
+### Model Selection
+
+Set `model_type` in `config.txt` to switch between architectures:
+- `model_type  cvae` — Conditional VAE (this document, ~4.2M params)
+- `model_type  ddpm` — Conditional DDPM (see `DDPM_PCB_Spec.md`, ~14.3M params)
+
+Both models share the same data pipeline, config system, and evaluation metrics.
+The `build_model(config)` factory in `models/__init__.py` instantiates the correct
+model class based on `model_type`.
