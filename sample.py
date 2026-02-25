@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Generate K elevation samples for a given design image and save each as an individual PNG.
 
+Supports both CVAE and DDPM (auto-detected from checkpoint).
+
 Usage:
   python sample.py --design data/design/design_A.png --save outputs/samples_A/
   python sample.py --design data/design/design_C.png --k 16 --save outputs/samples_C/
@@ -17,7 +19,7 @@ import torchvision.transforms.functional as TF
 
 from utils.load_config import load_config
 from utils.handcrafted_features import extract_handcrafted_features
-from models.cvae import CVAE
+from models import build_model
 
 
 # ------------------------------------------------------------------
@@ -25,7 +27,7 @@ from models.cvae import CVAE
 # ------------------------------------------------------------------
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Sample elevation images from trained CVAE')
+    parser = argparse.ArgumentParser(description='Sample elevation images from trained model')
     parser.add_argument('--config',     type=str, default='config.txt')
     parser.add_argument('--design',     type=str, required=True,
                         help='Path to design image (PNG, grayscale)')
@@ -71,6 +73,35 @@ def load_design(path: str, image_size: int) -> tuple[torch.Tensor, np.ndarray, I
     img      = img_orig.resize((image_size, image_size), Image.LANCZOS)
     tensor   = TF.to_tensor(img)                      # (1, H, W)
     return tensor.unsqueeze(0), np.array(img, dtype=np.float32) / 255.0, img_orig
+
+
+# ------------------------------------------------------------------
+# Model loading helper
+# ------------------------------------------------------------------
+
+def load_model_from_checkpoint(checkpoint: dict, config: dict, device: torch.device):
+    """Load a model from checkpoint, handling both CVAE and DDPM.
+
+    For DDPM checkpoints, EMA weights are loaded for inference.
+    """
+    model_type = checkpoint.get('model_type', 'cvae')
+    config['model_type'] = model_type
+
+    model = build_model(config).to(device)
+
+    if model_type == 'ddpm' and 'ema_state_dict' in checkpoint:
+        ema_sd = checkpoint['ema_state_dict']
+        model_sd = model.state_dict()
+        for name in ema_sd:
+            if name in model_sd:
+                model_sd[name] = ema_sd[name]
+        model.load_state_dict(model_sd)
+        print(f"  Loaded DDPM checkpoint with EMA weights")
+    else:
+        model.load_state_dict(checkpoint['model_state'])
+
+    model.eval()
+    return model, model_type
 
 
 # ------------------------------------------------------------------
@@ -165,12 +196,11 @@ def main():
         raise FileNotFoundError(f"Checkpoint not found: {model_path}\n"
                                 "Run train.py first.")
 
-    # Load model
-    checkpoint = torch.load(model_path, map_location=device)
-    model      = CVAE(config).to(device)
-    model.load_state_dict(checkpoint['model_state'])
-    model.eval()
-    print(f"Loaded model from {model_path}  (epoch {checkpoint.get('epoch', '?')})")
+    # Load model (auto-detects CVAE or DDPM from checkpoint)
+    checkpoint = torch.load(model_path, map_location=device, weights_only=False)
+    model, model_type = load_model_from_checkpoint(checkpoint, config, device)
+    print(f"Loaded {model_type.upper()} model from {model_path}  "
+          f"(epoch {checkpoint.get('epoch', '?')})")
 
     # Load design image
     design_tensor, design_np, design_orig = load_design(args.design, image_size)
@@ -181,8 +211,10 @@ def main():
     hand_features = hand_features.unsqueeze(0).to(device)                   # (1, HAND_FEATURE_DIM)
 
     # Generate samples
-    print(f"Generating {k} elevation samples for {args.design}  (temperature={args.temperature}) ...")
-    samples = model.sample(design_tensor, hand_features, num_samples=k, temperature=args.temperature)
+    print(f"Generating {k} elevation samples for {args.design}  "
+          f"(temperature={args.temperature}, model={model_type.upper()}) ...")
+    samples = model.sample(design_tensor, hand_features,
+                           num_samples=k, temperature=args.temperature)
 
     print_sample_stats(samples)
 

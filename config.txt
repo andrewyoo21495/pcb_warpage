@@ -1,13 +1,13 @@
-model   CVAE_PCB
-mode    Train       # Train / Inference
-gpu_ids 0           # -1 for CPU, single GPU index for single GPU
+model_type  cvae        # cvae / ddpm
+mode        Train       # Train / Inference
+gpu_ids     0           # -1 for CPU, single GPU index for single GPU
 
 log_file_dir    ./outputs/train.log
 modelpath       ./outputs/cvae_pcb.pth
 
 %   Dataset
 dataset_dir             ./data
-design_names            A, B, C, D, E, F, G, H, I, J
+design_names            design_A, design_B, design_C, design_D, design_E, design_F, design_G, design_H, design_I, design_J
 design_image_dir        ./data/design
 elevation_base_dir      ./data/elevation
 elevation_subdir        images
@@ -17,27 +17,36 @@ num_samples_per_design  200
 %   Image parameters
 image_size  256
 
-%   Network parameters
+%   CVAE network parameters
 z_dim       64      # latent dimension for z1 (stochastic)
 c_dim       64      # condition vector dimension (design encoder output)
 c_cnn_dim   64      # design encoder CNN branch output dim
 c_hand_dim  32      # handcrafted feature branch output dim
 
-%   Fusion method: concat / film / cross_attention
+%   Fusion method: concat / film / cross_attention  (CVAE only)
 fusion_method   film
 
-%   Training parameters
+%   Training parameters  (shared by CVAE and DDPM)
 training_epochs         5
 batch_size              32
 learning_rate           0.0001
 num_workers             4
 weight_decay            0.0001
-early_stop_threshold    0.001     # halt when val recon < this value; 0 = disabled
+early_stop_threshold    0.001     # halt when val loss < this value; 0 = disabled
 
-%   KL weight (beta) and cyclical annealing
+%   KL weight (beta) and cyclical annealing  (CVAE only)
 beta_start  0.0
 beta_max    0.5
 beta_cycles 4
+
+%   DDPM parameters
+ddpm_T              1000    # diffusion timesteps
+ddpm_base_ch        64      # U-Net base channels
+ddpm_cond_dim       256     # global condition vector dimension
+ddpm_eta            0.7     # DDIM stochasticity: 0=deterministic, 1=full DDPM
+ddpm_ddim_steps     50      # DDIM inference steps
+ddpm_dropout        0.15    # dropout rate in U-Net
+ema_decay           0.9999  # EMA decay for DDPM
 
 %   Augmentation
 use_design_aug      True
@@ -52,3 +61,5 @@ num_gen_samples 10  # K samples to generate per design at inference
 %   Physical scaling  (used by sample.py --denormalize)
 elevation_min   0.0     # physical minimum value used in min-max scaling (e.g. mm)
 elevation_max   1.0     # physical maximum value used in min-max scaling (e.g. mm)
+
+selected_features  7,9,11,13,14,15,17,20,21

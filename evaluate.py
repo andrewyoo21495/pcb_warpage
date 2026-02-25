@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Evaluation script for CVAE PCB Warpage — Leave-One-Out protocol.
+"""Evaluation script for PCB Warpage models — Leave-One-Out protocol.
+
+Supports both CVAE and DDPM (auto-detected from checkpoint).
 
 Metrics computed for the held-out design:
   1. Sample Diversity     : mean per-pixel variance across K generated samples
-  2. Inter-condition Sep. : distance between generated distributions across designs
-  3. Reconstruction MSE   : MSE of deterministic reconstruction (mu path)
-  4. MMD                  : Maximum Mean Discrepancy (RBF kernel) between
+  2. Reconstruction MSE   : MSE of deterministic reconstruction (CVAE only)
+  3. MMD                  : Maximum Mean Discrepancy (RBF kernel) between
                             generated and real elevation distributions
 
 Usage:
-  python evaluate.py                       # evaluates all 4 folds
+  python evaluate.py                       # evaluates all folds
   python evaluate.py --fold 0              # evaluate only fold 0
   python evaluate.py --config config.txt   # explicit config path
 """
@@ -23,8 +24,7 @@ from torch.utils.data import DataLoader
 
 from utils.load_config import load_config, display_config
 from utils.dataset     import PCBWarpageDataset, _resolve_design_names
-from utils.handcrafted_features import extract_handcrafted_features
-from models.cvae       import CVAE
+from models            import build_model
 
 
 # ------------------------------------------------------------------
@@ -32,10 +32,10 @@ from models.cvae       import CVAE
 # ------------------------------------------------------------------
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Evaluate CVAE PCB Warpage model')
+    parser = argparse.ArgumentParser(description='Evaluate PCB Warpage model')
     parser.add_argument('--config', type=str, default='config.txt')
     parser.add_argument('--fold',   type=int, default=None,
-                        help='Evaluate a single fold (0-3); default: all folds')
+                        help='Evaluate a single fold (0-indexed); default: all folds')
     parser.add_argument('--k',      type=int, default=None,
                         help='Override num_gen_samples from config')
     return parser.parse_args()
@@ -69,7 +69,7 @@ def sample_diversity(samples: torch.Tensor) -> float:
 
 
 def reconstruction_mse(model, loader, device) -> float:
-    """Average MSE of deterministic reconstructions over the val set."""
+    """Average MSE of deterministic reconstructions (CVAE only)."""
     model.eval()
     mse_total = 0.0
     n_batches = 0
@@ -106,6 +106,37 @@ def mmd(real: torch.Tensor, generated: torch.Tensor, sigma: float = 1.0) -> floa
 
 
 # ------------------------------------------------------------------
+# Model loading helper
+# ------------------------------------------------------------------
+
+def load_model_from_checkpoint(checkpoint: dict, config: dict, device: torch.device):
+    """Load a model from checkpoint, handling both CVAE and DDPM.
+
+    For DDPM checkpoints, EMA weights are loaded for inference.
+    """
+    model_type = checkpoint.get('model_type', 'cvae')
+    # Override config model_type so build_model creates the right class
+    config['model_type'] = model_type
+
+    model = build_model(config).to(device)
+
+    if model_type == 'ddpm' and 'ema_state_dict' in checkpoint:
+        # Load EMA weights for inference (better generation quality)
+        ema_sd = checkpoint['ema_state_dict']
+        model_sd = model.state_dict()
+        for name in ema_sd:
+            if name in model_sd:
+                model_sd[name] = ema_sd[name]
+        model.load_state_dict(model_sd)
+        print(f"  Loaded DDPM checkpoint with EMA weights")
+    else:
+        model.load_state_dict(checkpoint['model_state'])
+
+    model.eval()
+    return model, model_type
+
+
+# ------------------------------------------------------------------
 # Evaluate one fold
 # ------------------------------------------------------------------
 
@@ -114,11 +145,11 @@ def evaluate_fold(config: dict, fold: int, k: int, device: torch.device) -> dict
     """Run evaluation for one leave-one-out fold.
 
     Returns:
-        dict of metric name → value
+        dict of metric name -> value
     """
     design_names = _resolve_design_names(config)
     print(f"\n{'='*60}")
-    print(f"Fold {fold}  —  held-out design: {design_names[fold]}")
+    print(f"Fold {fold}  --  held-out design: {design_names[fold]}")
     print('='*60)
 
     # Override fold in config
@@ -136,15 +167,17 @@ def evaluate_fold(config: dict, fold: int, k: int, device: torch.device) -> dict
         print(f"  [WARNING] Checkpoint not found at {model_path}")
         return {}
 
-    checkpoint = torch.load(model_path, map_location=device)
-    model = CVAE(cfg).to(device)
-    model.load_state_dict(checkpoint['model_state'])
-    model.eval()
-    print(f"Loaded checkpoint (epoch {checkpoint.get('epoch', '?')})")
+    checkpoint = torch.load(model_path, map_location=device, weights_only=False)
+    model, model_type = load_model_from_checkpoint(checkpoint, cfg, device)
+    print(f"Loaded {model_type.upper()} checkpoint (epoch {checkpoint.get('epoch', '?')})")
 
-    # 1. Reconstruction MSE
-    recon_mse = reconstruction_mse(model, val_loader, device)
-    print(f"  Reconstruction MSE : {recon_mse:.6f}")
+    # 1. Reconstruction MSE (CVAE only)
+    if model_type == 'cvae':
+        recon_mse = reconstruction_mse(model, val_loader, device)
+        print(f"  Reconstruction MSE : {recon_mse:.6f}")
+    else:
+        recon_mse = float('nan')
+        print(f"  Reconstruction MSE : N/A (DDPM)")
 
     # 2. Collect real elevation images (flattened)
     real_flat_list = []
@@ -168,7 +201,6 @@ def evaluate_fold(config: dict, fold: int, k: int, device: torch.device) -> dict
 
     # 5. MMD (downsample feature space for tractability)
     gen_flat = gen_samples.view(k, -1).cpu()
-    # PCA-style reduction: project to 128 dims via random projection
     proj_dim = min(128, real_flat.size(1))
     torch.manual_seed(42)
     proj = torch.randn(real_flat.size(1), proj_dim) / (real_flat.size(1) ** 0.5)
@@ -212,8 +244,11 @@ def main():
         print('='*60)
         metrics = ['recon_mse', 'diversity', 'mmd']
         for m in metrics:
-            vals = [r[m] for r in all_results]
-            print(f"  {m:<18} : mean={np.mean(vals):.6f}  std={np.std(vals):.6f}")
+            vals = [r[m] for r in all_results if not (m == 'recon_mse' and np.isnan(r[m]))]
+            if vals:
+                print(f"  {m:<18} : mean={np.mean(vals):.6f}  std={np.std(vals):.6f}")
+            else:
+                print(f"  {m:<18} : N/A")
 
 
 if __name__ == '__main__':
