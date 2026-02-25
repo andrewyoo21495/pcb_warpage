@@ -47,7 +47,7 @@ ddpm_eta            0.7     # DDIM stochasticity: 0=deterministic, 1=full DDPM
 ddpm_ddim_steps     50      # DDIM inference steps
 ddpm_dropout        0.15    # dropout rate in U-Net
 ema_decay           0.9999  # EMA decay for DDPM
-
+  
 %   Augmentation
 use_design_aug      True
 use_elevation_aug   True
