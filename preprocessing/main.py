@@ -263,6 +263,10 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
         "global_max": global_max,
         "num_subfolders": len(subfolder_stats),
         "num_images": images_generated,
+        "subfolders": [
+            {"name": name, "min": smin, "max": smax, "num_files": cnt}
+            for name, smin, smax, cnt in subfolder_stats
+        ],
     }
     with open(metadata_path, 'w', encoding='utf-8') as f:
         json.dump(metadata, f, indent=2)
