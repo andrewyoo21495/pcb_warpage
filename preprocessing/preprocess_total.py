@@ -16,6 +16,9 @@ Usage:
     # Single-file mode — process one .txt file
     python preprocess_total.py --input-file /path/to/sample.txt
 
+    # With parallel processing (e.g. 4 workers)
+    python preprocess_total.py --root-dir /path/to/data --workers 4
+
     # With custom parameters
     python preprocess_total.py --root-dir /path/to/data --downsample-factor 4 \
         --z-threshold 3.0 --poly-degree 3 --ridge-alpha 0.1 --gaussian-sigma 1.0
@@ -25,7 +28,9 @@ import argparse
 import logging
 import os
 import sys
+import time
 import warnings
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -76,6 +81,9 @@ class PreprocessorConfig:
     # Gaussian smoothing
     gaussian_sigma: float = 1.0
 
+    # Parallel processing
+    max_workers: int = 1
+
     # Output
     image_format: str = "png"
     colormap: str = "gray"
@@ -92,17 +100,8 @@ def should_skip_file(filepath: str, exclude_suffixes: list = EXCLUDE_SUFFIXES) -
 
 
 def read_elevation(filepath: str, null_value: float = 9999.0) -> np.ndarray:
-    """Load a tab-delimited elevation file and replace null sentinels with NaN.
-
-    Args:
-        filepath: Path to the .txt file.
-        null_value: Sentinel value representing null (default 9999.0).
-
-    Returns:
-        np.ndarray of shape (N, M) with NaN for missing values.
-    """
+    """Load a tab-delimited elevation file and replace null sentinels with NaN."""
     data = np.loadtxt(filepath, delimiter='\t')
-    logger.info("Loaded %s — shape: %s", filepath, data.shape)
     data[data == null_value] = np.nan
     return data
 
@@ -111,7 +110,6 @@ def save_preprocessed_txt(data: np.ndarray, output_path: str) -> None:
     """Save preprocessed data as tab-delimited text with 4 decimal places."""
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     np.savetxt(output_path, data, delimiter='\t', fmt='%.4f')
-    logger.info("Saved preprocessed text: %s", output_path)
 
 
 def discover_subfolders(root_dir: str) -> List[str]:
@@ -136,7 +134,6 @@ def discover_txt_files(subfolder: str, exclude_suffixes: list) -> List[str]:
         if not os.path.isfile(full_path):
             continue
         if should_skip_file(full_path, exclude_suffixes):
-            logger.info("Skipping excluded file: %s", full_path)
             continue
         txt_files.append(full_path)
     return txt_files
@@ -184,21 +181,17 @@ def downsample_median(data: np.ndarray, factor: int) -> np.ndarray:
     H, W = data.shape
     new_H = H // factor
     new_W = W // factor
-    logger.info("Downsampling: (%d, %d) -> (%d, %d) with factor %d",
-                H, W, new_H, new_W, factor)
 
+    # Truncate to exact multiple of factor
     trimmed = data[:new_H * factor, :new_W * factor]
 
-    result = np.full((new_H, new_W), np.nan)
-    for i in range(new_H):
-        for j in range(new_W):
-            block = trimmed[i * factor:(i + 1) * factor,
-                            j * factor:(j + 1) * factor]
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", RuntimeWarning)
-                val = np.nanmedian(block)
-            if not np.isnan(val):
-                result[i, j] = val
+    # Vectorized: reshape into blocks and compute nanmedian in one call
+    reshaped = trimmed.reshape(new_H, factor, new_W, factor)
+    reshaped = reshaped.transpose(0, 2, 1, 3).reshape(new_H, new_W, factor * factor)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        result = np.nanmedian(reshaped, axis=2)
 
     return result
 
@@ -208,19 +201,9 @@ def detect_and_remove_outliers(
     grid_size: int = 8,
     z_threshold: float = 3.0,
 ) -> np.ndarray:
-    """Detect outliers per region using z-score and replace with NaN.
-
-    Args:
-        data: Input array of shape (H, W), may contain NaN.
-        grid_size: Number of grid divisions along each axis.
-        z_threshold: Z-score threshold for outlier detection.
-
-    Returns:
-        Array with outliers replaced by NaN.
-    """
+    """Detect outliers per region using z-score and replace with NaN."""
     result = data.copy()
     H, W = result.shape
-    total_removed = 0
 
     row_edges = np.linspace(0, H, grid_size + 1, dtype=int)
     col_edges = np.linspace(0, W, grid_size + 1, dtype=int)
@@ -249,11 +232,7 @@ def detect_and_remove_outliers(
 
             if n_outliers > 0:
                 region[outlier_mask] = np.nan
-                total_removed += n_outliers
-                logger.debug("Region (%d,%d): removed %d outliers",
-                             ri, ci, n_outliers)
 
-    logger.info("Outlier detection: removed %d total outliers", total_removed)
     return result
 
 
@@ -262,16 +241,7 @@ def interpolate_surface(
     poly_degree: int = 3,
     ridge_alpha: float = 0.1,
 ) -> np.ndarray:
-    """Fill NaN values using polynomial surface regression with ridge regularization.
-
-    Args:
-        data: Input array of shape (H, W), may contain NaN.
-        poly_degree: Degree of polynomial features.
-        ridge_alpha: Ridge regularization coefficient.
-
-    Returns:
-        Array with all NaN values filled by interpolation.
-    """
+    """Fill NaN values using polynomial surface regression with ridge regularization."""
     H, W = data.shape
     total_pixels = H * W
 
@@ -293,12 +263,6 @@ def interpolate_surface(
     if valid_ratio < 0.05:
         logger.warning("Valid values: %.1f%% (< 5%%) — potential quality degradation.",
                         valid_ratio * 100)
-    elif valid_ratio < 0.10:
-        logger.warning("Valid values: %.1f%% (< 10%%) — quality may be degraded.",
-                        valid_ratio * 100)
-
-    logger.info("Interpolation: %.1f%% valid values (%d / %d)",
-                valid_ratio * 100, n_valid, total_pixels)
 
     # Normalize coordinates for numerical stability
     row_norm = rows_flat / max(H - 1, 1)
@@ -315,7 +279,6 @@ def interpolate_surface(
     # Fit ridge regression
     model = Ridge(alpha=ridge_alpha)
     model.fit(X_train, y_train)
-    logger.info("Interpolation: Ridge regression fit complete.")
 
     # Predict NaN positions only
     result = data.copy()
@@ -330,18 +293,8 @@ def interpolate_surface(
 
 
 def smooth_gaussian(data: np.ndarray, sigma: float = 1.0) -> np.ndarray:
-    """Apply Gaussian smoothing to the data.
-
-    Args:
-        data: Input array (must be NaN-free).
-        sigma: Gaussian kernel standard deviation.
-
-    Returns:
-        Smoothed array of the same shape.
-    """
-    result = gaussian_filter(data, sigma=sigma)
-    logger.info("Gaussian smoothing (sigma=%.2f) complete.", sigma)
-    return result
+    """Apply Gaussian smoothing to the data."""
+    return gaussian_filter(data, sigma=sigma)
 
 
 # =============================================================================
@@ -349,14 +302,7 @@ def smooth_gaussian(data: np.ndarray, sigma: float = 1.0) -> np.ndarray:
 # =============================================================================
 
 def compute_global_minmax(root_dir: str) -> Tuple[float, float]:
-    """Compute global min and max across all preprocessed files.
-
-    Args:
-        root_dir: Root directory containing subfolders with interpolated/ dirs.
-
-    Returns:
-        (global_min, global_max) across all preprocessed files.
-    """
+    """Compute global min and max across all preprocessed files."""
     files = discover_preprocessed_files(root_dir)
     if not files:
         raise ValueError(f"No preprocessed files found under {root_dir}")
@@ -371,8 +317,6 @@ def compute_global_minmax(root_dir: str) -> Tuple[float, float]:
         global_min = min(global_min, file_min)
         global_max = max(global_max, file_max)
 
-    logger.info("Global min/max: min=%.4f, max=%.4f (from %d files)",
-                global_min, global_max, len(files))
     return float(global_min), float(global_max)
 
 
@@ -382,19 +326,10 @@ def generate_grayscale_image(
     global_max: float,
     output_path: str,
 ) -> None:
-    """Scale data to [0, 255] using global min/max and save as grayscale image.
-
-    Args:
-        data: 2D array of preprocessed elevation values.
-        global_min: Global minimum for scaling.
-        global_max: Global maximum for scaling.
-        output_path: Path to save the output image.
-    """
+    """Scale data to [0, 255] using global min/max and save as grayscale image."""
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     if global_min == global_max:
-        logger.warning("global_min == global_max (%.4f). Generating mid-value image.",
-                        global_min)
         img_array = np.full(data.shape, 128, dtype=np.uint8)
     else:
         scaled = (data - global_min) / (global_max - global_min)
@@ -403,7 +338,6 @@ def generate_grayscale_image(
 
     img = Image.fromarray(img_array, mode='L')
     img.save(output_path)
-    logger.info("Saved grayscale image: %s", output_path)
 
 
 # =============================================================================
@@ -419,11 +353,10 @@ def process_single_file(filepath: str, config: PreprocessorConfig) -> np.ndarray
     try:
         data = read_elevation(filepath, null_value=config.null_value)
     except Exception as e:
-        logger.error("Failed to read %s: %s", filepath, e)
+        logger.warning("Failed to read %s: %s", filepath, e)
         return None
 
     if np.all(np.isnan(data)):
-        logger.warning("Entire data is NaN in %s — skipping.", filepath)
         return None
 
     data = downsample_median(data, factor=config.downsample_factor)
@@ -442,23 +375,35 @@ def process_single_file(filepath: str, config: PreprocessorConfig) -> np.ndarray
     return data
 
 
+def _process_and_save(filepath: str, output_dir: str, config: PreprocessorConfig) -> str:
+    """Process a single file and save outputs. Returns filepath on success, None on failure."""
+    data = process_single_file(filepath, config)
+    if data is None:
+        return None
+
+    txt_path, _ = get_output_paths(filepath, output_dir)
+    save_preprocessed_txt(data, txt_path)
+    return filepath
+
+
 def run_single_file_mode(config: PreprocessorConfig) -> None:
     """Single-file mode: process one file and generate output."""
     filepath = config.input_file
     parent_dir = os.path.dirname(filepath)
     txt_path, img_path = get_output_paths(filepath, parent_dir)
 
+    print(f"  Processing: {Path(filepath).name}")
     data = process_single_file(filepath, config)
     if data is None:
-        logger.error("Processing failed for %s", filepath)
+        print(f"  [FAILED] {filepath}")
         return
 
     save_preprocessed_txt(data, txt_path)
 
     global_min, global_max = float(np.min(data)), float(np.max(data))
-    logger.info("Single-file global min/max: min=%.4f, max=%.4f",
-                global_min, global_max)
     generate_grayscale_image(data, global_min, global_max, img_path)
+    print(f"  [DONE] Saved to: {txt_path}")
+    print(f"         Image:    {img_path}")
 
 
 def run_batch_mode(config: PreprocessorConfig) -> None:
@@ -467,38 +412,73 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
     subfolders = discover_subfolders(root_dir)
 
     if not subfolders:
-        logger.warning("No subfolders found in %s", root_dir)
+        print("  No subfolders found. Nothing to do.")
         return
 
-    # Phase 1: Per-file preprocessing (Steps 1-5)
-    logger.info("=== Phase 1: Preprocessing ===")
-    files_processed = 0
-
+    # Collect all files to process
+    all_tasks = []  # list of (filepath, subfolder)
     for subfolder in subfolders:
         txt_files = discover_txt_files(subfolder, config.exclude_suffixes)
-        if not txt_files:
-            logger.info("No .txt files in %s — skipping.", subfolder)
-            continue
-
         for filepath in txt_files:
-            logger.info("Processing: %s", filepath)
-            data = process_single_file(filepath, config)
-            if data is None:
-                continue
+            all_tasks.append((filepath, subfolder))
 
-            txt_path, _ = get_output_paths(filepath, subfolder)
-            save_preprocessed_txt(data, txt_path)
-            files_processed += 1
-
-    logger.info("Phase 1 complete: %d files preprocessed.", files_processed)
-
-    if files_processed == 0:
-        logger.warning("No files were preprocessed. Skipping Phase 2.")
+    total_files = len(all_tasks)
+    if total_files == 0:
+        print("  No .txt files found to process.")
         return
 
-    # Phase 2: Global scaling & image generation (Steps 6-7)
-    logger.info("=== Phase 2: Image Generation ===")
+    print(f"  Found {total_files} files across {len(subfolders)} subfolders.\n")
+
+    # --- Phase 1: Per-file preprocessing (Steps 1-5) ---
+    print("  Phase 1/2: Preprocessing files...")
+    files_processed = 0
+    files_skipped = 0
+
+    if config.max_workers > 1:
+        # Parallel processing
+        with ProcessPoolExecutor(max_workers=config.max_workers) as executor:
+            futures = {}
+            for filepath, subfolder in all_tasks:
+                fut = executor.submit(_process_and_save, filepath, subfolder, config)
+                futures[fut] = filepath
+
+            for fut in as_completed(futures):
+                filepath = futures[fut]
+                try:
+                    result = fut.result()
+                    if result is not None:
+                        files_processed += 1
+                    else:
+                        files_skipped += 1
+                except Exception as e:
+                    files_skipped += 1
+                    logger.warning("Error processing %s: %s", filepath, e)
+
+                done = files_processed + files_skipped
+                print(f"\r    [{done}/{total_files}] processed", end="", flush=True)
+    else:
+        # Sequential processing
+        for filepath, subfolder in all_tasks:
+            result = _process_and_save(filepath, subfolder, config)
+            if result is not None:
+                files_processed += 1
+            else:
+                files_skipped += 1
+
+            done = files_processed + files_skipped
+            print(f"\r    [{done}/{total_files}] processed", end="", flush=True)
+
+    print()  # newline after progress
+    print(f"    -> {files_processed} succeeded, {files_skipped} skipped.\n")
+
+    if files_processed == 0:
+        print("  No files were preprocessed. Skipping image generation.")
+        return
+
+    # --- Phase 2: Global scaling & image generation (Steps 6-7) ---
+    print("  Phase 2/2: Generating images...")
     global_min, global_max = compute_global_minmax(root_dir)
+    images_generated = 0
 
     for subfolder in subfolders:
         interp_dir = os.path.join(subfolder, "interpolated")
@@ -517,8 +497,9 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
             img_name = entry.replace(".txt", ".png")
             img_path = os.path.join(images_dir, img_name)
             generate_grayscale_image(data, global_min, global_max, img_path)
+            images_generated += 1
 
-    logger.info("Phase 2 complete.")
+    print(f"    -> {images_generated} images generated.")
 
 
 def main(config: PreprocessorConfig) -> None:
@@ -528,10 +509,25 @@ def main(config: PreprocessorConfig) -> None:
     if not config.input_file and not config.root_dir:
         raise ValueError("Specify either --root-dir or --input-file.")
 
+    start_time = time.time()
+
+    print("\n" + "=" * 60)
+    print("  PCB Elevation Data Preprocessor")
+    print("=" * 60)
+
     if config.input_file:
+        print(f"  Mode: Single file")
         run_single_file_mode(config)
     else:
+        workers_str = f"{config.max_workers} workers" if config.max_workers > 1 else "sequential"
+        print(f"  Mode: Batch ({workers_str})")
+        print(f"  Root: {config.root_dir}")
         run_batch_mode(config)
+
+    elapsed = time.time() - start_time
+    print(f"\n{'=' * 60}")
+    print(f"  Completed in {elapsed:.1f} seconds.")
+    print(f"{'=' * 60}\n")
 
 
 # =============================================================================
@@ -562,6 +558,8 @@ def parse_args() -> PreprocessorConfig:
                         help="Ridge regularization alpha (default: 0.1).")
     parser.add_argument("--gaussian-sigma", type=float, default=1.0,
                         help="Gaussian smoothing sigma (default: 1.0).")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="Number of parallel workers (default: 1 = sequential).")
 
     args = parser.parse_args()
 
@@ -574,18 +572,19 @@ def parse_args() -> PreprocessorConfig:
         interp_poly_degree=args.poly_degree,
         interp_ridge_alpha=args.ridge_alpha,
         gaussian_sigma=args.gaussian_sigma,
+        max_workers=args.workers,
     )
 
 
 if __name__ == "__main__":
     logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        level=logging.WARNING,
+        format="%(asctime)s [%(levelname)s] %(message)s",
     )
 
     config = parse_args()
     try:
         main(config)
     except Exception as e:
-        logger.error("Pipeline failed: %s", e, exc_info=True)
+        print(f"\n  [ERROR] Pipeline failed: {e}", file=sys.stderr)
         sys.exit(1)

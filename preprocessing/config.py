@@ -34,6 +34,9 @@ class PreprocessorConfig:
     # Gaussian smoothing
     gaussian_sigma: float = 1.0
 
+    # Parallel processing
+    max_workers: int = 1
+
     # Output
     image_format: str = "png"
     colormap: str = "gray"

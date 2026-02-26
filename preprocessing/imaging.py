@@ -35,8 +35,6 @@ def compute_global_minmax(root_dir: str) -> Tuple[float, float]:
         global_min = min(global_min, file_min)
         global_max = max(global_max, file_max)
 
-    logger.info("Global min/max: min=%.4f, max=%.4f (from %d files)",
-                global_min, global_max, len(files))
     return float(global_min), float(global_max)
 
 
@@ -67,4 +65,3 @@ def generate_grayscale_image(
 
     img = Image.fromarray(img_array, mode='L')
     img.save(output_path)
-    logger.info("Saved grayscale image: %s", output_path)

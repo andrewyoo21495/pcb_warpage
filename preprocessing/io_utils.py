@@ -32,7 +32,6 @@ def read_elevation(filepath: str, null_value: float = 9999.0) -> np.ndarray:
         ValueError: If the file cannot be parsed.
     """
     data = np.loadtxt(filepath, delimiter='\t')
-    logger.info("Loaded %s — shape: %s", filepath, data.shape)
     data[data == null_value] = np.nan
     return data
 
@@ -41,7 +40,6 @@ def save_preprocessed_txt(data: np.ndarray, output_path: str) -> None:
     """Save preprocessed data as tab-delimited text with 4 decimal places."""
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     np.savetxt(output_path, data, delimiter='\t', fmt='%.4f')
-    logger.info("Saved preprocessed text: %s", output_path)
 
 
 def discover_subfolders(root_dir: str) -> List[str]:
@@ -67,7 +65,6 @@ def discover_txt_files(subfolder: str, exclude_suffixes: list) -> List[str]:
         if not os.path.isfile(full_path):
             continue
         if should_skip_file(full_path, exclude_suffixes):
-            logger.info("Skipping excluded file: %s", full_path)
             continue
         txt_files.append(full_path)
     return txt_files

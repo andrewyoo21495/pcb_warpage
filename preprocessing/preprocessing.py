@@ -24,23 +24,17 @@ def downsample_median(data: np.ndarray, factor: int) -> np.ndarray:
     H, W = data.shape
     new_H = H // factor
     new_W = W // factor
-    logger.info("Downsampling: (%d, %d) -> (%d, %d) with factor %d",
-                H, W, new_H, new_W, factor)
 
     # Truncate to exact multiple of factor
     trimmed = data[:new_H * factor, :new_W * factor]
 
-    # Reshape into blocks and compute nanmedian
-    result = np.full((new_H, new_W), np.nan)
-    for i in range(new_H):
-        for j in range(new_W):
-            block = trimmed[i * factor:(i + 1) * factor,
-                            j * factor:(j + 1) * factor]
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", RuntimeWarning)
-                val = np.nanmedian(block)
-            if not np.isnan(val):
-                result[i, j] = val
+    # Vectorized: reshape into blocks and compute nanmedian in one call
+    reshaped = trimmed.reshape(new_H, factor, new_W, factor)
+    reshaped = reshaped.transpose(0, 2, 1, 3).reshape(new_H, new_W, factor * factor)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        result = np.nanmedian(reshaped, axis=2)
 
     return result
 
@@ -95,7 +89,7 @@ def detect_and_remove_outliers(
                 logger.debug("Region (%d,%d): removed %d outliers",
                              ri, ci, n_outliers)
 
-    logger.info("Outlier detection: removed %d total outliers", total_removed)
+    logger.debug("Outlier detection: removed %d total outliers", total_removed)
     return result
 
 
@@ -139,9 +133,6 @@ def interpolate_surface(
         logger.warning("Valid values: %.1f%% (< 10%%) — quality may be degraded.",
                         valid_ratio * 100)
 
-    logger.info("Interpolation: %.1f%% valid values (%d / %d)",
-                valid_ratio * 100, n_valid, total_pixels)
-
     # Normalize coordinates for numerical stability
     row_norm = rows_flat / max(H - 1, 1)
     col_norm = cols_flat / max(W - 1, 1)
@@ -157,7 +148,6 @@ def interpolate_surface(
     # Fit ridge regression
     model = Ridge(alpha=ridge_alpha)
     model.fit(X_train, y_train)
-    logger.info("Interpolation: Ridge regression fit complete.")
 
     # Predict NaN positions only
     result = data.copy()
@@ -181,6 +171,4 @@ def smooth_gaussian(data: np.ndarray, sigma: float = 1.0) -> np.ndarray:
     Returns:
         Smoothed array of the same shape.
     """
-    result = gaussian_filter(data, sigma=sigma)
-    logger.info("Gaussian smoothing (sigma=%.2f) complete.", sigma)
-    return result
+    return gaussian_filter(data, sigma=sigma)

@@ -2,7 +2,11 @@
 
 import argparse
 import logging
+import os
 import sys
+import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from pathlib import Path
 
 import numpy as np
 
@@ -34,7 +38,7 @@ def process_single_file(filepath: str, config: PreprocessorConfig) -> np.ndarray
     try:
         data = read_elevation(filepath, null_value=config.null_value)
     except Exception as e:
-        logger.error("Failed to read %s: %s", filepath, e)
+        logger.warning("Failed to read %s: %s", filepath, e)
         return None
 
     # Check if entire data is NaN
@@ -58,68 +62,113 @@ def process_single_file(filepath: str, config: PreprocessorConfig) -> np.ndarray
     return data
 
 
+def _process_and_save(filepath: str, output_dir: str, config: PreprocessorConfig) -> str:
+    """Process a single file and save outputs. Returns filepath on success, None on failure.
+
+    This is the worker function used by both sequential and parallel modes.
+    """
+    data = process_single_file(filepath, config)
+    if data is None:
+        return None
+
+    txt_path, _ = get_output_paths(filepath, output_dir)
+    save_preprocessed_txt(data, txt_path)
+    return filepath
+
+
 def run_single_file_mode(config: PreprocessorConfig) -> None:
     """Single-file mode: process one file and generate output."""
-    import os
-
     filepath = config.input_file
     parent_dir = os.path.dirname(filepath)
     txt_path, img_path = get_output_paths(filepath, parent_dir)
 
+    print(f"  Processing: {Path(filepath).name}")
     data = process_single_file(filepath, config)
     if data is None:
-        logger.error("Processing failed for %s", filepath)
+        print(f"  [FAILED] {filepath}")
         return
 
     save_preprocessed_txt(data, txt_path)
 
-    # Single file: use its own range for scaling
     global_min, global_max = float(np.min(data)), float(np.max(data))
-    logger.info("Single-file global min/max: min=%.4f, max=%.4f",
-                global_min, global_max)
     generate_grayscale_image(data, global_min, global_max, img_path)
+    print(f"  [DONE] Saved to: {txt_path}")
+    print(f"         Image:    {img_path}")
 
 
 def run_batch_mode(config: PreprocessorConfig) -> None:
     """Batch (directory) mode: process all subfolders, then generate images."""
-    import os
-
     root_dir = config.root_dir
     subfolders = discover_subfolders(root_dir)
 
     if not subfolders:
-        logger.warning("No subfolders found in %s", root_dir)
+        print("  No subfolders found. Nothing to do.")
         return
 
-    # Phase 1: Per-file preprocessing (Steps 1-5)
-    logger.info("=== Phase 1: Preprocessing ===")
-    files_processed = 0
-
+    # Collect all files to process
+    all_tasks = []  # list of (filepath, subfolder)
     for subfolder in subfolders:
         txt_files = discover_txt_files(subfolder, config.exclude_suffixes)
-        if not txt_files:
-            logger.info("No .txt files in %s — skipping.", subfolder)
-            continue
-
         for filepath in txt_files:
-            logger.info("Processing: %s", filepath)
-            data = process_single_file(filepath, config)
-            if data is None:
-                continue
+            all_tasks.append((filepath, subfolder))
 
-            txt_path, _ = get_output_paths(filepath, subfolder)
-            save_preprocessed_txt(data, txt_path)
-            files_processed += 1
-
-    logger.info("Phase 1 complete: %d files preprocessed.", files_processed)
-
-    if files_processed == 0:
-        logger.warning("No files were preprocessed. Skipping Phase 2.")
+    total_files = len(all_tasks)
+    if total_files == 0:
+        print("  No .txt files found to process.")
         return
 
-    # Phase 2: Global scaling & image generation (Steps 6-7)
-    logger.info("=== Phase 2: Image Generation ===")
+    print(f"  Found {total_files} files across {len(subfolders)} subfolders.\n")
+
+    # --- Phase 1: Per-file preprocessing (Steps 1-5) ---
+    print("  Phase 1/2: Preprocessing files...")
+    files_processed = 0
+    files_skipped = 0
+
+    if config.max_workers > 1:
+        # Parallel processing
+        with ProcessPoolExecutor(max_workers=config.max_workers) as executor:
+            futures = {}
+            for filepath, subfolder in all_tasks:
+                fut = executor.submit(_process_and_save, filepath, subfolder, config)
+                futures[fut] = filepath
+
+            for fut in as_completed(futures):
+                filepath = futures[fut]
+                try:
+                    result = fut.result()
+                    if result is not None:
+                        files_processed += 1
+                    else:
+                        files_skipped += 1
+                except Exception as e:
+                    files_skipped += 1
+                    logger.warning("Error processing %s: %s", filepath, e)
+
+                done = files_processed + files_skipped
+                print(f"\r    [{done}/{total_files}] processed", end="", flush=True)
+    else:
+        # Sequential processing
+        for filepath, subfolder in all_tasks:
+            result = _process_and_save(filepath, subfolder, config)
+            if result is not None:
+                files_processed += 1
+            else:
+                files_skipped += 1
+
+            done = files_processed + files_skipped
+            print(f"\r    [{done}/{total_files}] processed", end="", flush=True)
+
+    print()  # newline after progress
+    print(f"    -> {files_processed} succeeded, {files_skipped} skipped.\n")
+
+    if files_processed == 0:
+        print("  No files were preprocessed. Skipping image generation.")
+        return
+
+    # --- Phase 2: Global scaling & image generation (Steps 6-7) ---
+    print("  Phase 2/2: Generating images...")
     global_min, global_max = compute_global_minmax(root_dir)
+    images_generated = 0
 
     for subfolder in subfolders:
         interp_dir = os.path.join(subfolder, "interpolated")
@@ -138,8 +187,9 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
             img_name = entry.replace(".txt", ".png")
             img_path = os.path.join(images_dir, img_name)
             generate_grayscale_image(data, global_min, global_max, img_path)
+            images_generated += 1
 
-    logger.info("Phase 2 complete.")
+    print(f"    -> {images_generated} images generated.")
 
 
 def main(config: PreprocessorConfig) -> None:
@@ -149,10 +199,25 @@ def main(config: PreprocessorConfig) -> None:
     if not config.input_file and not config.root_dir:
         raise ValueError("Specify either --root-dir or --input-file.")
 
+    start_time = time.time()
+
+    print("\n" + "=" * 60)
+    print("  PCB Elevation Data Preprocessor")
+    print("=" * 60)
+
     if config.input_file:
+        print(f"  Mode: Single file")
         run_single_file_mode(config)
     else:
+        workers_str = f"{config.max_workers} workers" if config.max_workers > 1 else "sequential"
+        print(f"  Mode: Batch ({workers_str})")
+        print(f"  Root: {config.root_dir}")
         run_batch_mode(config)
+
+    elapsed = time.time() - start_time
+    print(f"\n{'=' * 60}")
+    print(f"  Completed in {elapsed:.1f} seconds.")
+    print(f"{'=' * 60}\n")
 
 
 def parse_args() -> PreprocessorConfig:
@@ -179,6 +244,8 @@ def parse_args() -> PreprocessorConfig:
                         help="Ridge regularization alpha (default: 0.1).")
     parser.add_argument("--gaussian-sigma", type=float, default=1.0,
                         help="Gaussian smoothing sigma (default: 1.0).")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="Number of parallel workers (default: 1 = sequential).")
 
     args = parser.parse_args()
 
@@ -191,18 +258,19 @@ def parse_args() -> PreprocessorConfig:
         interp_poly_degree=args.poly_degree,
         interp_ridge_alpha=args.ridge_alpha,
         gaussian_sigma=args.gaussian_sigma,
+        max_workers=args.workers,
     )
 
 
 if __name__ == "__main__":
     logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        level=logging.WARNING,
+        format="%(asctime)s [%(levelname)s] %(message)s",
     )
 
     config = parse_args()
     try:
         main(config)
     except Exception as e:
-        logger.error("Pipeline failed: %s", e, exc_info=True)
+        print(f"\n  [ERROR] Pipeline failed: {e}", file=sys.stderr)
         sys.exit(1)
