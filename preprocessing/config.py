@@ -31,6 +31,9 @@ class PreprocessorConfig:
     interp_poly_degree: int = 3
     interp_ridge_alpha: float = 0.1
 
+    # Tilt correction
+    tilt_patch_size: int = 16
+
     # Gaussian smoothing
     gaussian_sigma: float = 2.0
     gaussian_iterations: int = 3

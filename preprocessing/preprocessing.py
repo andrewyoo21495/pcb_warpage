@@ -159,6 +159,56 @@ def interpolate_surface(
     return result, n_interpolated
 
 
+def flatten_tilt(data: np.ndarray, patch_size: int = 16) -> tuple:
+    """Remove linear tilt by fitting and subtracting a plane through four corner patches.
+
+    Computes the mean elevation of each corner patch, fits a least-squares plane
+    z = a*x + b*y + c through the four (centroid, mean_z) points, and subtracts
+    it from the surface.  The result is shifted so that its minimum is zero.
+
+    Args:
+        data: Input 2D array (H, W), must be NaN-free (run after interpolation).
+        patch_size: Side length of the square patch at each corner used to
+                    compute stable corner elevation estimates.
+
+    Returns:
+        (flattened_data, plane_amplitude) where plane_amplitude is the max-min
+        of the subtracted plane (a diagnostic for how much tilt was removed).
+    """
+    H, W = data.shape
+    ps = min(patch_size, H // 4, W // 4)  # clamp to avoid overlap
+
+    # Corner patches: mean elevation and centroid coordinates (row, col)
+    corners = [
+        (data[:ps, :ps],             ps / 2,       ps / 2),        # top-left
+        (data[:ps, W - ps:],         ps / 2,       W - ps / 2),    # top-right
+        (data[H - ps:, :ps],         H - ps / 2,   ps / 2),        # bottom-left
+        (data[H - ps:, W - ps:],     H - ps / 2,   W - ps / 2),   # bottom-right
+    ]
+
+    # Build 4×3 system: [row, col, 1] @ [a, b, c]^T = z
+    A = np.empty((4, 3), dtype=np.float64)
+    z = np.empty(4, dtype=np.float64)
+    for i, (patch, r_center, c_center) in enumerate(corners):
+        A[i] = [r_center, c_center, 1.0]
+        z[i] = float(np.mean(patch))
+
+    # Least-squares solve (exact for 4 points / 3 unknowns, overdetermined by 1)
+    coeffs, _, _, _ = np.linalg.lstsq(A, z, rcond=None)  # [a, b, c]
+
+    # Build the full plane surface
+    rows, cols = np.indices((H, W), dtype=np.float64)
+    plane = coeffs[0] * rows + coeffs[1] * cols + coeffs[2]
+
+    plane_amplitude = float(plane.max() - plane.min())
+
+    # Subtract plane and shift minimum to zero
+    flattened = data.astype(np.float64) - plane
+    flattened -= flattened.min()
+
+    return flattened.astype(np.float32), plane_amplitude
+
+
 def smooth_gaussian(
     data: np.ndarray,
     sigma: float = 2.0,

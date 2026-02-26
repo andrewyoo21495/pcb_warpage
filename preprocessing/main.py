@@ -23,6 +23,7 @@ from .io_utils import (
 from .preprocessing import (
     detect_and_remove_outliers,
     downsample_median,
+    flatten_tilt,
     interpolate_surface,
     smooth_gaussian,
 )
@@ -31,21 +32,22 @@ logger = logging.getLogger(__name__)
 
 
 def process_single_file(filepath: str, config: PreprocessorConfig) -> tuple:
-    """Run Steps 1-5 on a single file and return the preprocessed data with stats.
+    """Run Steps 1-6 on a single file and return the preprocessed data with stats.
 
     Returns:
-        (data, n_outliers, n_interpolated) or (None, 0, 0) if the file should be skipped.
+        (data, n_outliers, n_interpolated, plane_amplitude) or
+        (None, 0, 0, 0.0) if the file should be skipped.
     """
     try:
         data = read_elevation(filepath, null_value=config.null_value)
     except Exception as e:
         logger.warning("Failed to read %s: %s", filepath, e)
-        return None, 0, 0
+        return None, 0, 0, 0.0
 
     # Check if entire data is NaN
     if np.all(np.isnan(data)):
         logger.warning("Entire data is NaN in %s — skipping.", filepath)
-        return None, 0, 0
+        return None, 0, 0, 0.0
 
     data = downsample_median(data, factor=config.downsample_factor)
     data, n_outliers = detect_and_remove_outliers(
@@ -58,26 +60,30 @@ def process_single_file(filepath: str, config: PreprocessorConfig) -> tuple:
         poly_degree=config.interp_poly_degree,
         ridge_alpha=config.interp_ridge_alpha,
     )
+    data, plane_amplitude = flatten_tilt(
+        data, patch_size=config.tilt_patch_size,
+    )
     data = smooth_gaussian(
         data, sigma=config.gaussian_sigma, iterations=config.gaussian_iterations,
     )
 
-    return data, n_outliers, n_interpolated
+    return data, n_outliers, n_interpolated, plane_amplitude
 
 
 def _process_and_save(filepath: str, output_dir: str, config: PreprocessorConfig) -> tuple:
     """Process a single file and save outputs.
 
     Returns:
-        (filepath, n_outliers, n_interpolated) on success, or (None, 0, 0) on failure.
+        (filepath, n_outliers, n_interpolated, plane_amplitude) on success,
+        or (None, 0, 0, 0.0) on failure.
     """
-    data, n_outliers, n_interpolated = process_single_file(filepath, config)
+    data, n_outliers, n_interpolated, plane_amplitude = process_single_file(filepath, config)
     if data is None:
-        return None, 0, 0
+        return None, 0, 0, 0.0
 
     txt_path, _ = get_output_paths(filepath, output_dir)
     save_preprocessed_txt(data, txt_path)
-    return filepath, n_outliers, n_interpolated
+    return filepath, n_outliers, n_interpolated, plane_amplitude
 
 
 def run_single_file_mode(config: PreprocessorConfig) -> None:
@@ -87,7 +93,7 @@ def run_single_file_mode(config: PreprocessorConfig) -> None:
     txt_path, img_path = get_output_paths(filepath, parent_dir)
 
     print(f"  Processing: {Path(filepath).name}")
-    data, n_outliers, n_interpolated = process_single_file(filepath, config)
+    data, n_outliers, n_interpolated, plane_amplitude = process_single_file(filepath, config)
     if data is None:
         print(f"  [FAILED] {filepath}")
         return
@@ -110,6 +116,7 @@ def run_single_file_mode(config: PreprocessorConfig) -> None:
 
     print(f"  Outliers removed:     {n_outliers}")
     print(f"  Points interpolated:  {n_interpolated}")
+    print(f"  Tilt plane amplitude: {plane_amplitude:.4f}")
     print(f"  Min: {global_min:.4f}  Max: {global_max:.4f}")
     print(f"  [DONE] Saved to: {txt_path}")
     print(f"         Image:    {img_path}")
@@ -139,12 +146,13 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
 
     print(f"  Found {total_files} files across {len(subfolders)} subfolders.\n")
 
-    # --- Phase 1: Per-file preprocessing (Steps 1-5) ---
+    # --- Phase 1: Per-file preprocessing (Steps 1-6) ---
     print("  Phase 1/2: Preprocessing files...")
     files_processed = 0
     files_skipped = 0
     total_outliers = 0
     total_interpolated = 0
+    total_plane_amplitude = 0.0
 
     if config.max_workers > 1:
         # Parallel processing
@@ -157,11 +165,12 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
             for fut in as_completed(futures):
                 filepath = futures[fut]
                 try:
-                    result_path, n_outliers, n_interp = fut.result()
+                    result_path, n_outliers, n_interp, plane_amp = fut.result()
                     if result_path is not None:
                         files_processed += 1
                         total_outliers += n_outliers
                         total_interpolated += n_interp
+                        total_plane_amplitude += plane_amp
                     else:
                         files_skipped += 1
                 except Exception as e:
@@ -173,11 +182,14 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
     else:
         # Sequential processing
         for filepath, subfolder in all_tasks:
-            result_path, n_outliers, n_interp = _process_and_save(filepath, subfolder, config)
+            result_path, n_outliers, n_interp, plane_amp = _process_and_save(
+                filepath, subfolder, config,
+            )
             if result_path is not None:
                 files_processed += 1
                 total_outliers += n_outliers
                 total_interpolated += n_interp
+                total_plane_amplitude += plane_amp
             else:
                 files_skipped += 1
 
@@ -187,7 +199,11 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
     print()  # newline after progress
     print(f"    -> {files_processed} succeeded, {files_skipped} skipped.")
     print(f"    -> Total outliers removed:    {total_outliers}")
-    print(f"    -> Total points interpolated: {total_interpolated}\n")
+    print(f"    -> Total points interpolated: {total_interpolated}")
+    if files_processed > 0:
+        avg_plane = total_plane_amplitude / files_processed
+        print(f"    -> Avg tilt plane amplitude:  {avg_plane:.4f}")
+    print()
 
     if files_processed == 0:
         print("  No files were preprocessed. Skipping image generation.")
@@ -380,6 +396,8 @@ def parse_args() -> PreprocessorConfig:
                         help="Polynomial degree for interpolation (default: 3).")
     parser.add_argument("--ridge-alpha", type=float, default=0.1,
                         help="Ridge regularization alpha (default: 0.1).")
+    parser.add_argument("--tilt-patch-size", type=int, default=16,
+                        help="Corner patch size for tilt correction (default: 16).")
     parser.add_argument("--gaussian-sigma", type=float, default=2.0,
                         help="Gaussian smoothing sigma per iteration (default: 2.0).")
     parser.add_argument("--smooth-iterations", type=int, default=3,
@@ -397,6 +415,7 @@ def parse_args() -> PreprocessorConfig:
         outlier_grid_size=args.grid_size,
         interp_poly_degree=args.poly_degree,
         interp_ridge_alpha=args.ridge_alpha,
+        tilt_patch_size=args.tilt_patch_size,
         gaussian_sigma=args.gaussian_sigma,
         gaussian_iterations=args.smooth_iterations,
         max_workers=args.workers,

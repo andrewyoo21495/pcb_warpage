@@ -7,8 +7,8 @@ It applies noise removal, interpolation, and smoothing to produce **preprocessed
 
 ```
 Raw .txt files  ->  Downsample  ->  Outlier Removal  ->  Polynomial Interpolation
-    ->  Gaussian Smoothing  ->  Save preprocessed .txt
-    ->  Global Min/Max Scaling  ->  Save grayscale .png
+    ->  Tilt Correction  ->  Gaussian Smoothing  ->  Save preprocessed .txt
+    ->  Global Min/Max Scaling  ->  Elevation Range Analysis  ->  Save grayscale .png
 ```
 
 ---
@@ -72,6 +72,7 @@ python -m preprocessing.main --input-file /path/to/sample_001.txt
 | `--grid-size` | `8` | Grid divisions for regional outlier detection (8 = 8x8 regions) |
 | `--poly-degree` | `3` | Polynomial degree for surface interpolation |
 | `--ridge-alpha` | `0.1` | Ridge regularization coefficient |
+| `--tilt-patch-size` | `16` | Corner patch size (pixels) for tilt correction plane fitting |
 | `--gaussian-sigma` | `2.0` | Gaussian smoothing base sigma (adaptive to data dimensions) |
 | `--smooth-iterations` | `3` | Number of smooth-then-rescale iterations |
 | `--workers` | `1` | Number of parallel workers (1 = sequential) |
@@ -85,6 +86,7 @@ python -m preprocessing.main \
     --z-threshold 2.5 \
     --poly-degree 3 \
     --ridge-alpha 0.1 \
+    --tilt-patch-size 16 \
     --gaussian-sigma 2.0 \
     --smooth-iterations 3 \
     --workers 4
@@ -105,7 +107,7 @@ This displays a 2x3 figure with:
 | | | |
 |---|---|---|
 | 1. Original (jet colormap) | 2. Downsampled | 3. Outliers (red circles) |
-| 4. Interpolated | 5. Smoothed | 6. Grayscale |
+| 4. Interpolated | 5. Tilt-corrected | 6. Smoothed & Grayscale |
 
 To save the figure:
 
@@ -154,7 +156,9 @@ root_data_dir/
 The pipeline displays:
 - Per-file progress counter
 - Total outliers removed and points interpolated
+- Average tilt plane amplitude (how much tilt was removed)
 - Per-subfolder min/max statistics
+- Elevation range distribution table (per-subfolder and global): mean, std, min, P25, P50, P75, max of per-file (max - min) ranges
 - Global min/max values used for image scaling
 
 ---
@@ -170,6 +174,7 @@ from preprocessing.main import main
 config = PreprocessorConfig(
     root_dir="/path/to/data",
     downsample_factor=4,
+    tilt_patch_size=16,
     gaussian_sigma=2.0,
     gaussian_iterations=3,
 )
@@ -184,6 +189,7 @@ from preprocessing.preprocessing import (
     downsample_median,
     detect_and_remove_outliers,
     interpolate_surface,
+    flatten_tilt,
     smooth_gaussian,
 )
 
@@ -191,6 +197,7 @@ data = read_elevation("sample.txt", null_value=9999.0)
 data = downsample_median(data, factor=4)
 data, n_outliers = detect_and_remove_outliers(data, grid_size=8, z_threshold=3.0)
 data, n_interpolated = interpolate_surface(data, poly_degree=3, ridge_alpha=0.1)
+data, plane_amplitude = flatten_tilt(data, patch_size=16)
 data = smooth_gaussian(data, sigma=2.0, iterations=3)
 ```
 
@@ -204,9 +211,59 @@ data = smooth_gaussian(data, sigma=2.0, iterations=3)
 | 2 | `downsample_median()` | Reduce resolution via block median |
 | 3 | `detect_and_remove_outliers()` | Regional z-score outlier removal (returns count) |
 | 4 | `interpolate_surface()` | Polynomial + Ridge regression to fill NaN (returns count) |
-| 5 | `smooth_gaussian()` | Adaptive anisotropic Gaussian with min/max preservation |
-| 6 | Global min/max computation | Find min/max across all preprocessed files |
-| 7 | `generate_grayscale_image()` | Min-max scale to [0, 255] and save PNG |
+| 5 | `flatten_tilt()` | Corner-patch plane subtraction to remove linear tilt (returns plane amplitude) |
+| 6 | `smooth_gaussian()` | Adaptive anisotropic Gaussian with min/max preservation |
+| 7 | Global min/max computation | Find min/max across all preprocessed files |
+| 7a | Elevation range analysis | Per-subfolder and global distribution of per-file (max - min) ranges |
+| 8 | `generate_grayscale_image()` | Min-max scale to [0, 255] and save PNG |
+
+---
+
+## Tilt Correction (Step 5)
+
+PCB elevation data often includes a linear tilt component caused by uneven component mounting, measurement fixture misalignment, or gravitational sag. This tilt is not part of the actual warpage pattern and can distort both training and analysis.
+
+The `flatten_tilt()` function removes this linear tilt by:
+
+1. **Corner patch averaging** — Computes the mean elevation over a square patch (default 16x16 pixels) at each of the four corners. Averaging over a patch rather than using single corner pixels makes the estimate robust to local noise.
+2. **Plane fitting** — Fits a least-squares plane `z = a*row + b*col + c` through the four corner centroids. With 4 points and 3 unknowns, the system is overdetermined by one degree, providing a stable fit.
+3. **Plane subtraction** — Subtracts the fitted plane from the entire surface, then shifts the result so the minimum is zero.
+
+The function returns a `plane_amplitude` diagnostic (max - min of the subtracted plane), which indicates how much tilt was removed. Large values suggest the sample had significant tilt; near-zero values mean the sample was already level.
+
+**Placement rationale:** Tilt correction runs after interpolation (which fills NaN gaps, ensuring complete corner data) and before Gaussian smoothing (so smoothing preserves the true warpage extremes rather than tilt-inflated ones).
+
+Adjust the patch size with `--tilt-patch-size`. Larger patches are more noise-robust but may average over real warpage features near corners.
+
+---
+
+## Elevation Range Distribution Analysis (Step 7a)
+
+In batch mode, the pipeline computes the **per-file elevation range** (max - min) for every preprocessed file and reports the distribution of these ranges both per subfolder and globally.
+
+### Console output
+
+A summary table is printed showing mean, std, min, P25, P50 (median), P75, and max of the per-file ranges:
+
+```
+    Elevation range distributions (per-file max - min):
+    ----------------------------------------------------------------------------
+      Subfolder                           Mean       Std       Min       P25       P50       P75       Max
+    ----------------------------------------------------------------------------
+      board_A                           0.3842    0.0521    0.2710    0.3481    0.3820    0.4189    0.5103
+      board_B                           0.4215    0.0388    0.3520    0.3941    0.4200    0.4482    0.5210
+    ----------------------------------------------------------------------------
+      GLOBAL                            0.4029    0.0489    0.2710    0.3612    0.3950    0.4301    0.5210
+```
+
+### Saved metadata
+
+The range distribution statistics are also saved in `scaling_metadata.json` under each subfolder entry (`range_distribution`) and at the top level (`global_range_distribution`), with fields: `mean`, `std`, `min`, `p25`, `median`, `p75`, `max`.
+
+This analysis is useful for:
+- Detecting subfolders with unusually narrow or wide warpage ranges
+- Comparing range distributions before and after tilt correction
+- Identifying outlier samples with extreme ranges
 
 ---
 
@@ -217,8 +274,8 @@ preprocessing/
 ├── __init__.py              # Package init
 ├── config.py                # PreprocessorConfig dataclass
 ├── io_utils.py              # File I/O, discovery, skip logic
-├── preprocessing.py         # Core processing functions (steps 2-5)
-├── imaging.py               # Global scaling & image generation (steps 6-7)
+├── preprocessing.py         # Core processing functions (steps 2-6)
+├── imaging.py               # Global scaling & image generation (steps 7-8)
 ├── main.py                  # CLI entry point & orchestration
 ├── visualize_steps.py       # Step-by-step visualization tool
 ├── preprocess_total.py      # Standalone single-file version
