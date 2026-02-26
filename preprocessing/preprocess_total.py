@@ -21,7 +21,7 @@ Usage:
 
     # With custom parameters
     python preprocess_total.py --root-dir /path/to/data --downsample-factor 4 \
-        --z-threshold 3.0 --poly-degree 3 --ridge-alpha 0.1 --gaussian-sigma 1.0
+        --z-threshold 3.0 --poly-degree 3 --ridge-alpha 0.1 --gaussian-sigma 2.0
 """
 
 import argparse
@@ -79,7 +79,8 @@ class PreprocessorConfig:
     interp_ridge_alpha: float = 0.1
 
     # Gaussian smoothing
-    gaussian_sigma: float = 1.0
+    gaussian_sigma: float = 2.0
+    gaussian_iterations: int = 3
 
     # Parallel processing
     max_workers: int = 1
@@ -303,28 +304,47 @@ def interpolate_surface(
     return result, n_interpolated
 
 
-def smooth_gaussian(data: np.ndarray, sigma: float = 1.0) -> np.ndarray:
-    """Apply Gaussian smoothing while preserving the original min and max values.
+def smooth_gaussian(
+    data: np.ndarray,
+    sigma: float = 2.0,
+    iterations: int = 3,
+) -> np.ndarray:
+    """Apply iterative Gaussian smoothing while preserving the original min/max.
 
-    After smoothing, the result is linearly rescaled so that its min and max
-    match the original data's min and max.
+    Sigma is adaptive: scaled proportionally to the data dimensions so that
+    the visual smoothness is consistent regardless of resolution.  Different
+    sigma values are used for rows and columns (anisotropic) to handle
+    non-square data correctly.
+
+    Each iteration applies a Gaussian filter and then linearly rescales the
+    result so that its min and max match the original data.  Repeating this
+    process produces a surface where transitions from peaks to valleys are
+    very smooth and natural, while the extreme values are preserved.
     """
+    rows, cols = data.shape
+    sigma_row = max(1.0, rows * sigma / 100)
+    sigma_col = max(1.0, cols * sigma / 100)
+
     orig_min = np.min(data)
     orig_max = np.max(data)
 
-    smoothed = gaussian_filter(data, sigma=sigma)
+    if orig_max - orig_min < 1e-12:
+        return data.copy()
 
-    smooth_min = np.min(smoothed)
-    smooth_max = np.max(smoothed)
+    smoothed = data.copy()
+    for _ in range(iterations):
+        smoothed = gaussian_filter(smoothed, sigma=[sigma_row, sigma_col])
 
-    # Rescale smoothed data to preserve original min/max
-    if smooth_max - smooth_min < 1e-12:
-        return smoothed
+        s_min = np.min(smoothed)
+        s_max = np.max(smoothed)
 
-    rescaled = (smoothed - smooth_min) / (smooth_max - smooth_min)
-    rescaled = rescaled * (orig_max - orig_min) + orig_min
+        if s_max - s_min < 1e-12:
+            break
 
-    return rescaled
+        smoothed = (smoothed - s_min) / (s_max - s_min)
+        smoothed = smoothed * (orig_max - orig_min) + orig_min
+
+    return smoothed
 
 
 # =============================================================================
@@ -400,7 +420,9 @@ def process_single_file(filepath: str, config: PreprocessorConfig) -> tuple:
         poly_degree=config.interp_poly_degree,
         ridge_alpha=config.interp_ridge_alpha,
     )
-    data = smooth_gaussian(data, sigma=config.gaussian_sigma)
+    data = smooth_gaussian(
+        data, sigma=config.gaussian_sigma, iterations=config.gaussian_iterations,
+    )
 
     return data, n_outliers, n_interpolated
 
@@ -638,8 +660,10 @@ def parse_args() -> PreprocessorConfig:
                         help="Polynomial degree for interpolation (default: 3).")
     parser.add_argument("--ridge-alpha", type=float, default=0.1,
                         help="Ridge regularization alpha (default: 0.1).")
-    parser.add_argument("--gaussian-sigma", type=float, default=1.0,
-                        help="Gaussian smoothing sigma (default: 1.0).")
+    parser.add_argument("--gaussian-sigma", type=float, default=2.0,
+                        help="Gaussian smoothing sigma per iteration (default: 2.0).")
+    parser.add_argument("--smooth-iterations", type=int, default=3,
+                        help="Number of smooth-then-rescale iterations (default: 3).")
     parser.add_argument("--workers", type=int, default=1,
                         help="Number of parallel workers (default: 1 = sequential).")
 
@@ -654,6 +678,7 @@ def parse_args() -> PreprocessorConfig:
         interp_poly_degree=args.poly_degree,
         interp_ridge_alpha=args.ridge_alpha,
         gaussian_sigma=args.gaussian_sigma,
+        gaussian_iterations=args.smooth_iterations,
         max_workers=args.workers,
     )
 

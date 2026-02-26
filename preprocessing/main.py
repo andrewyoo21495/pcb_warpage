@@ -57,7 +57,9 @@ def process_single_file(filepath: str, config: PreprocessorConfig) -> tuple:
         poly_degree=config.interp_poly_degree,
         ridge_alpha=config.interp_ridge_alpha,
     )
-    data = smooth_gaussian(data, sigma=config.gaussian_sigma)
+    data = smooth_gaussian(
+        data, sigma=config.gaussian_sigma, iterations=config.gaussian_iterations,
+    )
 
     return data, n_outliers, n_interpolated
 
@@ -291,8 +293,10 @@ def parse_args() -> PreprocessorConfig:
                         help="Polynomial degree for interpolation (default: 3).")
     parser.add_argument("--ridge-alpha", type=float, default=0.1,
                         help="Ridge regularization alpha (default: 0.1).")
-    parser.add_argument("--gaussian-sigma", type=float, default=1.0,
-                        help="Gaussian smoothing sigma (default: 1.0).")
+    parser.add_argument("--gaussian-sigma", type=float, default=2.0,
+                        help="Gaussian smoothing sigma per iteration (default: 2.0).")
+    parser.add_argument("--smooth-iterations", type=int, default=3,
+                        help="Number of smooth-then-rescale iterations (default: 3).")
     parser.add_argument("--workers", type=int, default=1,
                         help="Number of parallel workers (default: 1 = sequential).")
 
@@ -307,6 +311,7 @@ def parse_args() -> PreprocessorConfig:
         interp_poly_degree=args.poly_degree,
         interp_ridge_alpha=args.ridge_alpha,
         gaussian_sigma=args.gaussian_sigma,
+        gaussian_iterations=args.smooth_iterations,
         max_workers=args.workers,
     )
 

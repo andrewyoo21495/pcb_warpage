@@ -32,7 +32,8 @@ class PreprocessorConfig:
     interp_ridge_alpha: float = 0.1
 
     # Gaussian smoothing
-    gaussian_sigma: float = 1.0
+    gaussian_sigma: float = 2.0
+    gaussian_iterations: int = 3
 
     # Parallel processing
     max_workers: int = 1
