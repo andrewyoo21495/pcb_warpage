@@ -10,11 +10,13 @@ Usage:
 """
 
 import argparse
+import json
 from pathlib import Path
 
 import torch
 import numpy as np
 from PIL import Image
+import matplotlib.pyplot as plt
 import torchvision.transforms.functional as TF
 
 from utils.load_config import load_config
@@ -42,6 +44,17 @@ def parse_args():
     parser.add_argument('--denormalize', action='store_true',
                         help='Also save inverse-scaled physical values as .txt files '
                              '(reads elevation_min / elevation_max from config.txt)')
+    parser.add_argument('--colormap',   type=str, default=None,
+                        help='Apply a matplotlib colormap (e.g. "jet") to saved PNGs '
+                             '(default: grayscale)')
+    parser.add_argument('--save_txt',   action='store_true',
+                        help='Save generated samples as tab-delimited .txt files '
+                             'in a txt_data/ subfolder (reverse of preprocessing imaging step). '
+                             'Auto-reads scaling_metadata.json from the elevation data directory; '
+                             'override with --metadata or falls back to config elevation_min/max')
+    parser.add_argument('--metadata',   type=str, default=None,
+                        help='Path to scaling_metadata.json from preprocessing '
+                             '(default: auto-detect in elevation data directory)')
     return parser.parse_args()
 
 
@@ -108,26 +121,37 @@ def load_model_from_checkpoint(checkpoint: dict, config: dict, device: torch.dev
 # Visualisation
 # ------------------------------------------------------------------
 
-def save_individual_samples(samples: torch.Tensor, save_dir: str) -> None:
-    """Save each generated elevation sample as an individual grayscale PNG.
+def save_individual_samples(samples: torch.Tensor, save_dir: str,
+                            colormap: str = None) -> None:
+    """Save each generated elevation sample as an individual PNG.
 
     Args:
         samples  : (K, 1, H, W) float32 in [0, 1]
         save_dir : directory where files will be written;
                    created automatically if it does not exist
+        colormap : optional matplotlib colormap name (e.g. "jet");
+                   None saves as grayscale
     """
     out_dir = Path(save_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Convert to uint8 numpy array (K, H, W)
-    samples_np = (samples.squeeze(1).cpu().numpy() * 255).clip(0, 255).astype(np.uint8)
+    if colormap is not None:
+        cmap = plt.get_cmap(colormap)
+        samples_float = samples.squeeze(1).cpu().numpy().clip(0, 1)  # (K, H, W)
+        for i, arr in enumerate(samples_float):
+            rgba = cmap(arr)                                          # (H, W, 4) float [0,1]
+            rgb  = (rgba[:, :, :3] * 255).astype(np.uint8)           # drop alpha
+            img_path = out_dir / f"elevation_{i + 1:04d}.png"
+            Image.fromarray(rgb, mode='RGB').save(img_path)
+            print(f"  Saved {img_path}")
+    else:
+        samples_np = (samples.squeeze(1).cpu().numpy() * 255).clip(0, 255).astype(np.uint8)
+        for i, arr in enumerate(samples_np):
+            img_path = out_dir / f"elevation_{i + 1:04d}.png"
+            Image.fromarray(arr, mode='L').save(img_path)
+            print(f"  Saved {img_path}")
 
-    for i, arr in enumerate(samples_np):
-        img_path = out_dir / f"elevation_{i + 1:04d}.png"
-        Image.fromarray(arr, mode='L').save(img_path)
-        print(f"  Saved {img_path}")
-
-    print(f"\nSaved {len(samples_np)} elevation images to '{out_dir}/'.")
+    print(f"\nSaved {samples.size(0)} elevation images to '{out_dir}/'.")
 
 
 def print_sample_stats(samples: torch.Tensor):
@@ -178,6 +202,98 @@ def save_denormalized_txt(
     print(f"\nSaved {len(physical)} denormalized .txt files to '{out_dir}/'.")
 
 
+def save_txt_files(
+    samples: torch.Tensor,
+    save_dir: str,
+    elev_min: float,
+    elev_max: float,
+) -> None:
+    """Reverse the preprocessing imaging step: convert generated samples back to
+    tab-delimited .txt files with physical elevation values.
+
+    Forward transform (imaging.py):
+        pixel_float = (physical_value - global_min) / (global_max - global_min)
+
+    Inverse (applied here):
+        physical_value = pixel_float * (global_max - global_min) + global_min
+
+    Files are saved to {save_dir}/txt_data/.
+
+    Args:
+        samples  : (K, 1, H, W) float32 in [0, 1]
+        save_dir : parent output directory
+        elev_min : global minimum elevation used in original min-max scaling
+        elev_max : global maximum elevation used in original min-max scaling
+    """
+    out_dir = Path(save_dir) / "txt_data"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    samples_np = samples.squeeze(1).cpu().numpy()                     # (K, H, W) in [0, 1]
+    physical   = samples_np * (elev_max - elev_min) + elev_min        # inverse transform
+
+    for i, arr in enumerate(physical):
+        txt_path = out_dir / f"elevation_{i + 1:04d}.txt"
+        np.savetxt(str(txt_path), arr, fmt='%.6f', delimiter='\t')
+        print(f"  Saved {txt_path}")
+
+    print(f"\nSaved {len(physical)} .txt files to '{out_dir}/'.")
+
+
+# ------------------------------------------------------------------
+# Scaling metadata helpers
+# ------------------------------------------------------------------
+
+METADATA_FILENAME = "scaling_metadata.json"
+
+def _find_metadata(config: dict, metadata_override: str = None) -> str | None:
+    """Locate scaling_metadata.json, checking in order:
+    1. Explicit --metadata path
+    2. elevation_data_dir from config (e.g. data/elevation/)
+    3. Common default paths
+    """
+    if metadata_override:
+        p = Path(metadata_override)
+        if p.is_file():
+            return str(p)
+        print(f"Warning: --metadata path not found: {metadata_override}")
+        return None
+
+    # Try elevation data directory from config
+    for key in ('elevation_base_dir', 'elevation_data_dir'):
+        elev_dir = config.get(key, None)
+        if elev_dir:
+            p = Path(elev_dir) / METADATA_FILENAME
+            if p.is_file():
+                return str(p)
+
+    # Try common default locations
+    for candidate in ['data/elevation', 'data']:
+        p = Path(candidate) / METADATA_FILENAME
+        if p.is_file():
+            return str(p)
+
+    return None
+
+
+def load_scaling_metadata(config: dict, metadata_override: str = None) -> tuple[float, float] | None:
+    """Load global_min/max from scaling_metadata.json.
+
+    Returns (global_min, global_max) or None if not found.
+    """
+    path = _find_metadata(config, metadata_override)
+    if path is None:
+        return None
+
+    with open(path, 'r', encoding='utf-8') as f:
+        meta = json.load(f)
+
+    global_min = float(meta['global_min'])
+    global_max = float(meta['global_max'])
+    print(f"Loaded scaling metadata from {path}  "
+          f"(global_min={global_min:.4f}, global_max={global_max:.4f})")
+    return global_min, global_max
+
+
 # ------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------
@@ -218,7 +334,25 @@ def main():
 
     print_sample_stats(samples)
 
-    save_individual_samples(samples, save_dir=args.save)
+    save_individual_samples(samples, save_dir=args.save, colormap=args.colormap)
+
+    if args.save_txt:
+        # Priority: --metadata file > auto-detect scaling_metadata.json > config fallback
+        scaling = load_scaling_metadata(config, args.metadata)
+        if scaling is not None:
+            elev_min, elev_max = scaling
+        else:
+            elev_min = float(config.get('elevation_min', 0.0))
+            elev_max = float(config.get('elevation_max', 1.0))
+            if elev_min == 0.0 and elev_max == 1.0:
+                print("Warning: No scaling_metadata.json found and elevation_min/elevation_max "
+                      "are at default [0.0, 1.0]. Set them in config.txt or re-run "
+                      "preprocessing to generate scaling_metadata.json.")
+            else:
+                print(f"Using elevation_min/max from config.txt")
+        print(f"\nConverting to .txt files with physical range [{elev_min}, {elev_max}] ...")
+        save_txt_files(samples, save_dir=args.save,
+                       elev_min=elev_min, elev_max=elev_max)
 
     if args.denormalize:
         elev_min = float(config.get('elevation_min', 0.0))
