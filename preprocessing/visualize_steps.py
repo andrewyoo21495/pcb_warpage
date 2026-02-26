@@ -19,7 +19,7 @@ from .preprocessing import (
     smooth_gaussian,
 )
 
-ELEVATION_CMAP = "RdYlBu_r"  # red = high, blue = low
+ELEVATION_CMAP = "jet"  # red -> orange -> yellow -> green -> blue -> deep blue
 
 
 def visualize_pipeline(
