@@ -196,10 +196,10 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
     # --- Phase 2: Global scaling & image generation (Steps 6-7) ---
     print("  Phase 2/2: Generating images...")
 
-    # Compute per-subfolder and global min/max
+    # Compute per-subfolder and global min/max, and per-file elevation ranges
     global_min = np.inf
     global_max = -np.inf
-    subfolder_stats = []  # list of (subfolder_name, local_min, local_max, file_count)
+    subfolder_stats = []  # list of (subfolder_name, local_min, local_max, file_count, ranges)
 
     for subfolder in subfolders:
         interp_dir = os.path.join(subfolder, "interpolated")
@@ -209,29 +209,56 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
         local_min = np.inf
         local_max = -np.inf
         file_count = 0
+        local_ranges = []  # per-file (max - min) values
 
         for entry in sorted(os.listdir(interp_dir)):
             if not entry.endswith("_preprocessed.txt"):
                 continue
             fpath = os.path.join(interp_dir, entry)
             data = np.loadtxt(fpath, delimiter='\t')
-            local_min = min(local_min, float(np.min(data)))
-            local_max = max(local_max, float(np.max(data)))
+            file_min = float(np.min(data))
+            file_max = float(np.max(data))
+            local_min = min(local_min, file_min)
+            local_max = max(local_max, file_max)
+            local_ranges.append(file_max - file_min)
             file_count += 1
 
         if file_count > 0:
             global_min = min(global_min, local_min)
             global_max = max(global_max, local_max)
             subfolder_name = os.path.basename(subfolder)
-            subfolder_stats.append((subfolder_name, local_min, local_max, file_count))
+            subfolder_stats.append((subfolder_name, local_min, local_max, file_count, local_ranges))
 
     # Display per-subfolder min/max
     print("\n    Per-subfolder statistics:")
-    for name, smin, smax, cnt in subfolder_stats:
+    for name, smin, smax, cnt, _ in subfolder_stats:
         print(f"      {name:30s}  min={smin:10.4f}  max={smax:10.4f}  ({cnt} files)")
 
     print(f"\n    Global min: {global_min:.4f}")
-    print(f"    Global max: {global_max:.4f}\n")
+    print(f"    Global max: {global_max:.4f}")
+
+    # --- Elevation range distribution analysis ---
+    print("\n    Elevation range distributions (per-file max - min):")
+    print("    " + "-" * 76)
+    print(f"      {'Subfolder':30s}  {'Mean':>8s}  {'Std':>8s}  {'Min':>8s}  {'P25':>8s}"
+          f"  {'P50':>8s}  {'P75':>8s}  {'Max':>8s}")
+    print("    " + "-" * 76)
+
+    all_ranges = []
+    for name, _, _, cnt, ranges in subfolder_stats:
+        r = np.array(ranges)
+        all_ranges.extend(ranges)
+        p25, p50, p75 = np.percentile(r, [25, 50, 75])
+        print(f"      {name:30s}  {r.mean():8.4f}  {r.std():8.4f}  {r.min():8.4f}"
+              f"  {p25:8.4f}  {p50:8.4f}  {p75:8.4f}  {r.max():8.4f}")
+
+    if all_ranges:
+        all_r = np.array(all_ranges)
+        p25, p50, p75 = np.percentile(all_r, [25, 50, 75])
+        print("    " + "-" * 76)
+        print(f"      {'GLOBAL':30s}  {all_r.mean():8.4f}  {all_r.std():8.4f}  {all_r.min():8.4f}"
+              f"  {p25:8.4f}  {p50:8.4f}  {p75:8.4f}  {all_r.max():8.4f}")
+    print()
 
     # Generate images using global min/max
     images_generated = 0
@@ -258,15 +285,45 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
 
     # Save scaling metadata for downstream use (e.g. sample.py --save_txt)
     metadata_path = os.path.join(root_dir, "scaling_metadata.json")
+    # Build range distribution summary for metadata
+    global_range_stats = {}
+    if all_ranges:
+        all_r = np.array(all_ranges)
+        g_p25, g_p50, g_p75 = np.percentile(all_r, [25, 50, 75]).tolist()
+        global_range_stats = {
+            "mean": float(all_r.mean()),
+            "std": float(all_r.std()),
+            "min": float(all_r.min()),
+            "p25": g_p25,
+            "median": g_p50,
+            "p75": g_p75,
+            "max": float(all_r.max()),
+        }
+
     metadata = {
         "global_min": global_min,
         "global_max": global_max,
         "num_subfolders": len(subfolder_stats),
         "num_images": images_generated,
         "subfolders": [
-            {"name": name, "min": smin, "max": smax, "num_files": cnt}
-            for name, smin, smax, cnt in subfolder_stats
+            {
+                "name": name,
+                "min": smin,
+                "max": smax,
+                "num_files": cnt,
+                "range_distribution": {
+                    "mean": float(np.mean(ranges)),
+                    "std": float(np.std(ranges)),
+                    "min": float(np.min(ranges)),
+                    "p25": float(np.percentile(ranges, 25)),
+                    "median": float(np.percentile(ranges, 50)),
+                    "p75": float(np.percentile(ranges, 75)),
+                    "max": float(np.max(ranges)),
+                },
+            }
+            for name, smin, smax, cnt, ranges in subfolder_stats
         ],
+        "global_range_distribution": global_range_stats,
     }
     with open(metadata_path, 'w', encoding='utf-8') as f:
         json.dump(metadata, f, indent=2)
