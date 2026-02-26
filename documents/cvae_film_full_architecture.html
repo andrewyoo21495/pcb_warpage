@@ -1,0 +1,1232 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Conditional CVAE + FiLM — Complete Architecture Guide</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+  :root {
+    --bg: #05080f;
+    --bg2: #080c16;
+    --surf: #0c1220;
+    --surf2: #111a2d;
+    --surf3: #162035;
+    --brd: #1e2d4a;
+    --brd-light: #2a3d60;
+    --txt: #e0e7f1;
+    --txt2: #94a3c0;
+    --txt3: #556885;
+    --txt4: #344060;
+
+    /* Semantic colors */
+    --design: #00d4aa;
+    --design-d: rgba(0,212,170,0.10);
+    --design-m: rgba(0,212,170,0.25);
+
+    --elev: #6388f6;
+    --elev-d: rgba(99,136,246,0.10);
+    --elev-m: rgba(99,136,246,0.25);
+
+    --latent: #f45c7b;
+    --latent-d: rgba(244,92,123,0.10);
+    --latent-m: rgba(244,92,123,0.25);
+
+    --film: #f0ad30;
+    --film-d: rgba(240,173,48,0.08);
+    --film-m: rgba(240,173,48,0.22);
+
+    --decode: #a78bfa;
+    --decode-d: rgba(167,139,250,0.10);
+    --decode-m: rgba(167,139,250,0.25);
+
+    --out: #38bdf8;
+    --out-d: rgba(56,189,248,0.10);
+    --out-m: rgba(56,189,248,0.25);
+
+    --loss: #fb923c;
+    --loss-d: rgba(251,146,60,0.10);
+    --loss-m: rgba(251,146,60,0.22);
+
+    --hand: #e879f9;
+    --hand-d: rgba(232,121,249,0.08);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--txt);
+    font-family: 'DM Sans', sans-serif;
+    padding: 48px 20px 100px;
+    line-height: 1.6;
+  }
+
+  .wrap { max-width: 1140px; margin: 0 auto; }
+
+  /* Header */
+  header { text-align: center; margin-bottom: 64px; }
+  header h1 {
+    font-size: 36px; font-weight: 800; letter-spacing: -1.5px;
+    background: linear-gradient(135deg, var(--design), var(--film), var(--latent));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+  }
+  header p { color: var(--txt2); font-size: 15px; font-weight: 300; }
+
+  /* Phase divider */
+  .phase {
+    display: flex; align-items: center; gap: 16px;
+    margin: 56px 0 32px;
+  }
+  .phase-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+    padding: 6px 14px; border-radius: 6px;
+    white-space: nowrap;
+  }
+  .phase-line { flex: 1; height: 1px; }
+
+  /* Step blocks */
+  .step {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: 0 20px;
+    margin-bottom: 8px;
+    position: relative;
+  }
+
+  .step-num {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px; font-weight: 700;
+    position: relative;
+    z-index: 2;
+    justify-self: center;
+  }
+
+  .step-connector {
+    grid-column: 1;
+    justify-self: center;
+    width: 2px;
+    min-height: 20px;
+    margin: 0;
+  }
+
+  .step-content {
+    background: var(--surf);
+    border: 1px solid var(--brd);
+    border-radius: 16px;
+    padding: 28px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .step-content::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 2px;
+  }
+
+  .step-content h3 {
+    font-size: 17px; font-weight: 700; margin-bottom: 4px;
+    letter-spacing: -0.3px;
+  }
+
+  .step-content .role {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; margin-bottom: 16px;
+    display: inline-block;
+  }
+
+  .step-content .desc {
+    font-size: 13px; color: var(--txt2); line-height: 1.8; font-weight: 300;
+    margin-bottom: 16px;
+  }
+
+  /* Diagram inside step */
+  .diagram {
+    background: var(--bg2);
+    border: 1px solid var(--brd);
+    border-radius: 12px;
+    padding: 24px 20px;
+    margin-bottom: 16px;
+  }
+
+  .diagram .title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--txt3);
+    text-transform: uppercase; letter-spacing: 1.5px;
+    margin-bottom: 16px; text-align: center;
+  }
+
+  /* Node elements */
+  .node-row {
+    display: flex; align-items: center; justify-content: center;
+    gap: 10px; margin: 6px 0; flex-wrap: wrap;
+  }
+
+  .node {
+    padding: 10px 16px; border-radius: 10px;
+    font-size: 12px; font-weight: 600; text-align: center;
+    min-width: 100px; position: relative;
+  }
+
+  .node .sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; font-weight: 400; margin-top: 2px; opacity: 0.7;
+  }
+
+  .node.design { background: var(--design-d); border: 1px solid var(--design-m); color: var(--design); }
+  .node.elev { background: var(--elev-d); border: 1px solid var(--elev-m); color: var(--elev); }
+  .node.latent { background: var(--latent-d); border: 1px solid var(--latent-m); color: var(--latent); }
+  .node.film { background: var(--film-d); border: 1px solid var(--film-m); color: var(--film); }
+  .node.decode { background: var(--decode-d); border: 1px solid var(--decode-m); color: var(--decode); }
+  .node.output { background: var(--out-d); border: 1px solid var(--out-m); color: var(--out); }
+  .node.loss { background: var(--loss-d); border: 1px solid var(--loss-m); color: var(--loss); }
+  .node.hand { background: var(--hand-d); border: 1px solid rgba(232,121,249,0.2); color: var(--hand); }
+
+  .arrow-d { text-align: center; color: var(--txt4); font-size: 16px; margin: 4px 0; }
+  .arrow-r { color: var(--txt4); font-size: 16px; flex-shrink: 0; }
+  .arr-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--txt3); text-align: center; margin: 2px 0;
+  }
+
+  /* Equation box */
+  .eq {
+    background: var(--surf2);
+    border: 1px solid var(--brd);
+    border-radius: 10px;
+    padding: 14px 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; line-height: 2;
+    text-align: center;
+    margin: 12px auto;
+    max-width: 560px;
+  }
+
+  .eq .c { color: var(--design); }
+  .eq .z { color: var(--latent); }
+  .eq .f { color: var(--film); }
+  .eq .h { color: var(--decode); }
+  .eq .o { color: var(--out); }
+  .eq .l { color: var(--loss); }
+  .eq .e { color: var(--elev); }
+  .eq .dim { color: var(--txt3); font-size: 10px; }
+
+  /* Callout */
+  .callout {
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-size: 12px; line-height: 1.7;
+    margin: 12px 0;
+  }
+
+  .callout.film-c {
+    background: var(--film-d);
+    border-left: 3px solid var(--film);
+    color: var(--txt2);
+  }
+  .callout.film-c strong { color: var(--film); }
+
+  .callout.design-c {
+    background: var(--design-d);
+    border-left: 3px solid var(--design);
+    color: var(--txt2);
+  }
+  .callout.design-c strong { color: var(--design); }
+
+  .callout.latent-c {
+    background: var(--latent-d);
+    border-left: 3px solid var(--latent);
+    color: var(--txt2);
+  }
+  .callout.latent-c strong { color: var(--latent); }
+
+  .callout.loss-c {
+    background: var(--loss-d);
+    border-left: 3px solid var(--loss);
+    color: var(--txt2);
+  }
+  .callout.loss-c strong { color: var(--loss); }
+
+  .callout.out-c {
+    background: var(--out-d);
+    border-left: 3px solid var(--out);
+    color: var(--txt2);
+  }
+  .callout.out-c strong { color: var(--out); }
+
+  /* Decoder block detail */
+  .dec-blocks {
+    display: flex; gap: 6px; align-items: flex-end; justify-content: center;
+    padding: 12px 0; flex-wrap: wrap;
+  }
+
+  .dec-blk {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+  }
+
+  .dec-bar {
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; font-weight: 600;
+    color: rgba(255,255,255,0.7);
+    transition: transform 0.2s;
+  }
+
+  .dec-bar:hover { transform: scale(1.08); }
+
+  .dec-res {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; color: var(--txt3);
+  }
+
+  .film-inject-arrow {
+    font-size: 12px; color: var(--film);
+    text-align: center;
+    animation: glow-pulse 2.5s ease-in-out infinite;
+  }
+
+  @keyframes glow-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
+
+  .film-inject-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8px; color: var(--film);
+    text-align: center;
+    background: var(--film-d);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  /* Connector arrow between dec blocks */
+  .dec-arrow {
+    font-size: 16px; color: var(--txt4);
+    align-self: center;
+    margin-bottom: 24px;
+  }
+
+  /* Inside single decoder block */
+  .inner-block {
+    background: var(--surf2);
+    border: 1px solid var(--brd);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 12px auto;
+    max-width: 480px;
+  }
+
+  .inner-block h4 {
+    font-size: 13px; font-weight: 700; margin-bottom: 14px;
+    text-align: center;
+  }
+
+  .inner-step {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; border-radius: 8px; margin-bottom: 4px;
+    font-size: 12px;
+  }
+
+  .inner-step .ico {
+    width: 26px; height: 26px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; font-weight: 700; flex-shrink: 0;
+  }
+
+  .inner-step .shape {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--txt3); margin-top: 1px;
+  }
+
+  .inner-step.pp { background: var(--decode-d); color: var(--decode); }
+  .inner-step.pp .ico { background: var(--decode-m); }
+  .inner-step.ff { background: var(--film-d); color: var(--film); border: 1px solid var(--film-m); }
+  .inner-step.ff .ico { background: var(--film-m); }
+  .inner-step.cc { background: var(--design-d); color: var(--design); }
+  .inner-step.cc .ico { background: var(--design-m); }
+
+  .inner-arrow { text-align: center; color: var(--txt4); font-size: 13px; margin: 2px 0; }
+
+  /* Number example */
+  .num-example {
+    background: var(--bg);
+    border: 1px solid var(--brd);
+    border-radius: 10px;
+    padding: 16px 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    line-height: 1.9;
+    margin: 12px 0;
+    overflow-x: auto;
+  }
+
+  .num-example .comment { color: var(--txt4); }
+
+  /* Grid layout for side-by-side */
+  .side-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 12px 0;
+  }
+
+  @media (max-width: 780px) {
+    .side-grid { grid-template-columns: 1fr; }
+    .decoder-flow-h { flex-direction: column !important; align-items: center !important; }
+    .dec-arrow { transform: rotate(90deg); }
+  }
+
+  /* Divider */
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--brd), transparent);
+    margin: 40px 0;
+  }
+
+  /* Inference highlight */
+  .inf-note {
+    background: var(--surf);
+    border: 1px dashed var(--out-m);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin: 12px 0;
+  }
+
+  .inf-note .tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; font-weight: 700;
+    color: var(--out);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+
+  .inf-note p {
+    font-size: 12px; color: var(--txt2); line-height: 1.7;
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header>
+    <h1>Conditional CVAE + FiLM</h1>
+    <p>PCB Elevation Generation — 전체 아키텍처 상세 도식 가이드</p>
+  </header>
+
+  <!-- ================================================================ -->
+  <!--                     TRAINING PHASE                                -->
+  <!-- ================================================================ -->
+  <div class="phase">
+    <span class="phase-tag" style="background: var(--elev-d); color: var(--elev);">Training Phase</span>
+    <div class="phase-line" style="background: linear-gradient(90deg, var(--elev-m), transparent);"></div>
+  </div>
+
+  <!-- ======================== STEP 1 ======================== -->
+  <div class="step">
+    <div class="step-num" style="background: var(--design-d); color: var(--design);">1</div>
+    <div class="step-content" style="border-color: var(--design-m);">
+      <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--design);"></div>
+      <h3 style="color: var(--design);">Design Encoder — Condition 벡터 c 생성</h3>
+      <span class="role" style="color: var(--design);">deterministic · 같은 입력 → 항상 같은 출력</span>
+
+      <p class="desc">
+        PCB 설계 이미지와 handcrafted features를 받아서, 이 설계의 특성을 64차원 벡터 하나로 압축합니다.
+        이 벡터 c는 이후 모든 단계에서 "이 설계가 어떤 설계인지"를 알려주는 역할을 합니다.
+      </p>
+
+      <div class="diagram">
+        <div class="title">Design Encoder 내부 구조</div>
+
+        <!-- Inputs -->
+        <div class="node-row">
+          <div class="node design" style="min-width: 140px;">
+            Design Image
+            <div class="sub">1ch × 256×256</div>
+          </div>
+          <div style="width: 30px;"></div>
+          <div class="node hand">
+            Handcrafted Features
+            <div class="sub">3 scalars</div>
+          </div>
+        </div>
+
+        <div class="node-row" style="margin-top: 2px;">
+          <div class="arrow-d" style="margin-right: 80px;">↓</div>
+          <div class="arrow-d" style="margin-left: 60px;">↓</div>
+        </div>
+
+        <!-- Branches -->
+        <div class="node-row">
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <div class="node design" style="min-width: 160px;">
+              CNN Branch
+              <div class="sub">Conv(1→32→64→128)</div>
+            </div>
+            <div class="arr-label">AdaptiveAvgPool(4×4) → Flatten → MLP</div>
+            <div class="arrow-d">↓</div>
+            <div class="node design" style="padding: 8px 14px;">
+              c_cnn
+              <div class="sub">dim = 64</div>
+            </div>
+          </div>
+
+          <div style="width: 20px;"></div>
+
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <div class="node hand" style="min-width: 120px;">
+              MLP
+              <div class="sub">3 → 8</div>
+            </div>
+            <div class="arrow-d">↓</div>
+            <div class="node hand" style="padding: 8px 14px;">
+              c_hand
+              <div class="sub">dim = 8</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="arrow-d">↓ concat</div>
+        <div class="arr-label">cat(c_cnn, c_hand) = dim 72</div>
+        <div class="arrow-d">↓</div>
+
+        <div class="node-row">
+          <div class="node design" style="min-width: 180px; padding: 12px 20px;">
+            Projection MLP(72 → 64)
+            <div class="sub">최종 condition 벡터</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Output -->
+      <div class="node-row">
+        <div class="node design" style="min-width: 200px; padding: 14px 24px; font-size: 14px;">
+          <strong>c</strong> — Condition Vector
+          <div class="sub">shape: (B, 64) · deterministic</div>
+        </div>
+      </div>
+
+      <div class="callout design-c" style="margin-top: 16px;">
+        <strong>c가 담고 있는 정보:</strong> PCB 설계의 전체적인 구조 — 패턴 밀도, 대칭성, 배선 복잡도 등이 64개 숫자로 인코딩됩니다.
+        같은 설계 이미지를 넣으면 항상 동일한 c가 나옵니다.
+        이 c는 이후 <strong>Latent Fusion</strong>과 <strong>Decoder 4개 블록</strong>, 총 5곳에서 사용됩니다.
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-connector" style="background: linear-gradient(180deg, var(--design-m), var(--elev-m));"></div>
+    <div></div>
+  </div>
+
+  <!-- ======================== STEP 2 ======================== -->
+  <div class="step">
+    <div class="step-num" style="background: var(--elev-d); color: var(--elev);">2</div>
+    <div class="step-content" style="border-color: var(--elev-m);">
+      <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--elev);"></div>
+      <h3 style="color: var(--elev);">Elevation Encoder — Latent 벡터 z₁ 생성</h3>
+      <span class="role" style="color: var(--elev);">stochastic · 학습 시에만 사용 · 추론 시 제거</span>
+
+      <p class="desc">
+        실제 Elevation 이미지(ground truth)를 받아서, 이 elevation의 "변형 특성"을 확률 분포(μ, σ)로 인코딩합니다.
+        여기서 reparameterization trick으로 z₁을 샘플링합니다.
+      </p>
+
+      <div class="diagram">
+        <div class="title">Elevation Encoder 내부 구조</div>
+
+        <div class="node-row">
+          <div class="node elev" style="min-width: 160px;">
+            Elevation Image (GT)
+            <div class="sub">1ch × 256×256</div>
+          </div>
+        </div>
+
+        <div class="arrow-d">↓</div>
+
+        <div class="node-row">
+          <div class="node elev" style="min-width: 240px;">
+            CNN: Conv(1→32→64→128→256)
+            <div class="sub">256×256 → 128² → 64² → 32² → 16²</div>
+          </div>
+        </div>
+
+        <div class="arrow-d">↓</div>
+        <div class="arr-label">AdaptiveAvgPool(4×4) → Flatten = 256×4×4 = 4,096</div>
+        <div class="arrow-d">↓</div>
+
+        <div class="node-row">
+          <div class="node elev" style="min-width: 180px;">
+            MLP(4096 → 512)
+            <div class="sub">LeakyReLU(0.2)</div>
+          </div>
+        </div>
+
+        <div class="arrow-d">↓</div>
+
+        <!-- mu and sigma -->
+        <div class="node-row">
+          <div class="node latent" style="padding: 10px 18px;">
+            μ (mean)
+            <div class="sub">Linear(512→64)</div>
+          </div>
+          <div style="width: 20px;"></div>
+          <div class="node latent" style="padding: 10px 18px;">
+            log σ² (variance)
+            <div class="sub">Linear(512→64), clamp[-4, 4]</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="eq">
+        <span class="comment dim"># Reparameterization Trick</span><br>
+        σ = exp(0.5 × log σ²)<br>
+        ε ~ 𝒩(0, I) <span class="dim">← 표준 정규분포에서 랜덤 샘플링</span><br>
+        <span class="z"><strong>z₁</strong></span> = μ + ε × σ <span class="dim">← gradient가 μ, σ를 통해 역전파 가능</span>
+      </div>
+
+      <div class="node-row">
+        <div class="node latent" style="min-width: 200px; padding: 14px 24px; font-size: 14px;">
+          <strong>z₁</strong> — Latent Vector
+          <div class="sub">shape: (B, 64) · stochastic</div>
+        </div>
+      </div>
+
+      <div class="callout latent-c" style="margin-top: 16px;">
+        <strong>z₁이 담고 있는 정보:</strong> 같은 설계라도 elevation이 가질 수 있는 "변형"의 특성입니다.
+        μ는 "이 elevation의 평균적 특성", σ는 "얼마나 변형 가능한지"를 나타냅니다.
+        <br><br>
+        <strong>왜 확률적인가:</strong> 하나의 설계에 대해 여러 가능한 elevation이 존재할 수 있으므로,
+        하나의 고정 벡터가 아닌 분포로 모델링합니다.
+        <br><br>
+        <strong>추론 시:</strong> 이 인코더는 사용되지 않습니다. 대신 z₁ ~ 𝒩(0, I)에서 직접 샘플링합니다.
+        KL loss가 학습 시 z₁의 분포를 𝒩(0, I)에 가깝게 만들어두었기 때문에 이것이 가능합니다.
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-connector" style="background: linear-gradient(180deg, var(--elev-m), var(--film-m));"></div>
+    <div></div>
+  </div>
+
+  <!-- ======================== STEP 3 ======================== -->
+  <div class="step">
+    <div class="step-num" style="background: var(--film-d); color: var(--film);">3</div>
+    <div class="step-content" style="border-color: var(--film-m);">
+      <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--film);"></div>
+      <h3 style="color: var(--film);">Latent Space Fusion — FiLM으로 z₁과 c 결합</h3>
+      <span class="role" style="color: var(--film);">FiLM 적용 ① · 1D 벡터 × 1D 벡터</span>
+
+      <p class="desc">
+        c(설계 정보)가 z₁(변형 정보)을 element-wise로 변조합니다.
+        "이 설계에서 z₁의 어떤 차원이 중요한지"를 gamma로 스케일링하고, beta로 기본값을 설정합니다.
+      </p>
+
+      <div class="diagram">
+        <div class="title">FiLM Fusion 연산 과정</div>
+
+        <!-- Inputs side by side -->
+        <div class="node-row">
+          <div class="node design" style="padding: 10px 18px;">
+            <strong>c</strong>
+            <div class="sub">(B, 64)</div>
+          </div>
+          <div style="width: 60px; text-align: center; color: var(--txt4); font-size: 12px;">+</div>
+          <div class="node latent" style="padding: 10px 18px;">
+            <strong>z₁</strong>
+            <div class="sub">(B, 64)</div>
+          </div>
+        </div>
+
+        <div class="arrow-d">↓</div>
+
+        <!-- Linear operations -->
+        <div class="node-row">
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <div class="node film" style="padding: 8px 14px;">
+              γ = Linear(c)
+              <div class="sub">W_γ(64×64) @ c + b_γ → (B, 64)</div>
+            </div>
+          </div>
+          <div style="width: 20px;"></div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <div class="node film" style="padding: 8px 14px;">
+              β = Linear(c)
+              <div class="sub">W_β(64×64) @ c + b_β → (B, 64)</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="arrow-d">↓</div>
+
+        <div class="node-row">
+          <div class="node film" style="min-width: 260px; padding: 14px 20px;">
+            z_fused = γ ⊙ z₁ + β
+            <div class="sub">element-wise: z_fused[i] = γ[i] × z₁[i] + β[i]</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Numerical example -->
+      <div class="num-example">
+        <span class="comment"># 64차원 중 앞 4개만 추적하는 예시</span><br><br>
+        <span style="color:var(--latent);">z₁</span>    = [ 0.50, -1.20,  0.80,  2.00, ... ] <span class="comment">← 랜덤 샘플링된 latent</span><br>
+        <span style="color:var(--design);">c</span>     = [ 0.30,  0.70, -0.50,  1.10, ... ] <span class="comment">← Design Encoder 출력</span><br><br>
+        <span class="comment"># c가 학습된 Linear를 통과하여 γ, β 생성</span><br>
+        <span style="color:var(--film);">γ</span>     = [ <strong>1.80</strong>,  <strong>0.05</strong>,  <strong>2.30</strong>,  <strong>0.90</strong>, ... ] <span class="comment">← 채널별 scale</span><br>
+        <span style="color:var(--film);">β</span>     = [-0.20,  0.50,  0.00,  1.00, ... ] <span class="comment">← 채널별 shift</span><br><br>
+        <span class="comment"># element-wise 적용</span><br>
+        z_fused[0] = <strong style="color:var(--film);">1.80</strong> × <span style="color:var(--latent);">0.50</span>  + (-0.20) = <strong style="color:var(--out);">0.70</strong>  <span class="comment">← γ=1.8: 증폭됨</span><br>
+        z_fused[1] = <strong style="color:var(--film);">0.05</strong> × <span style="color:var(--latent);">(-1.20)</span> + 0.50  = <strong style="color:var(--out);">0.44</strong>  <span class="comment">← γ≈0: 거의 억제</span><br>
+        z_fused[2] = <strong style="color:var(--film);">2.30</strong> × <span style="color:var(--latent);">0.80</span>  + 0.00  = <strong style="color:var(--out);">1.84</strong>  <span class="comment">← γ=2.3: 강하게 증폭</span><br>
+        z_fused[3] = <strong style="color:var(--film);">0.90</strong> × <span style="color:var(--latent);">2.00</span>  + 1.00  = <strong style="color:var(--out);">2.80</strong>  <span class="comment">← γ≈1: 유지 + offset</span><br>
+      </div>
+
+      <div class="callout film-c">
+        <strong>γ(gamma)의 역할:</strong> 설계에 따라 latent의 특정 차원을 증폭(γ>1), 유지(γ≈1), 또는 완전히 억제(γ≈0)합니다.
+        "이 설계에서 z₁의 어떤 변형 축이 중요한가"를 결정합니다.
+        <br><br>
+        <strong>β(beta)의 역할:</strong> 설계 고유의 기본값(offset)입니다.
+        z₁이 0이어도(평균적 변형) β만으로 설계 특성이 반영됩니다.
+        <br><br>
+        <strong>핵심:</strong> γ와 β는 c의 <strong>64개 차원 전체가 혼합</strong>되어 생성됩니다 (행렬곱).
+        다른 설계가 들어오면 c가 달라지고, γ와 β도 완전히 달라져서,
+        <strong>같은 z₁이라도 설계에 따라 전혀 다른 z_fused가 생성</strong>됩니다.
+      </div>
+
+      <div class="node-row" style="margin-top: 16px;">
+        <div class="node film" style="min-width: 200px; padding: 14px 24px; font-size: 14px;">
+          <strong>z_fused</strong>
+          <div class="sub">shape: (B, 64)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-connector" style="background: linear-gradient(180deg, var(--film-m), var(--decode-m));"></div>
+    <div></div>
+  </div>
+
+  <!-- ======================== STEP 4 ======================== -->
+  <div class="step">
+    <div class="step-num" style="background: var(--decode-d); color: var(--decode);">4</div>
+    <div class="step-content" style="border-color: var(--decode-m);">
+      <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--decode);"></div>
+      <h3 style="color: var(--decode);">FiLM-Conditioned Decoder — 이미지 복원</h3>
+      <span class="role" style="color: var(--decode);">FiLM 적용 ②③④⑤ · 1D 벡터가 3D feature map을 변조</span>
+
+      <p class="desc">
+        z_fused 벡터를 8×8 feature map으로 확장한 뒤, 4번의 upsample 블록을 거쳐 256×256 이미지를 생성합니다.
+        매 블록마다 condition c가 FiLM으로 주입되어, 각 해상도 단계에서 설계 특성이 반영됩니다.
+      </p>
+
+      <!-- Projection step -->
+      <div class="diagram">
+        <div class="title">Step 4a: Projection — 벡터 → Feature Map</div>
+
+        <div class="node-row">
+          <div class="node film" style="padding: 10px 16px;">
+            z_fused
+            <div class="sub">(B, 64)</div>
+          </div>
+          <div class="arrow-r">→</div>
+          <div class="node decode" style="padding: 10px 16px;">
+            Linear(64 → 16,384)
+            <div class="sub">64 → 256 × 8 × 8</div>
+          </div>
+          <div class="arrow-r">→</div>
+          <div class="node decode" style="padding: 10px 16px;">
+            reshape
+            <div class="sub">(B, 256, 8, 8)</div>
+          </div>
+        </div>
+
+        <div class="callout" style="background: var(--decode-d); border-left: 3px solid var(--decode); color: var(--txt2); margin-top: 12px;">
+          64개의 숫자가 <strong style="color:var(--decode);">256채널 × 8×8 spatial</strong> feature map으로 확장됩니다.
+          이 시점에서 256개의 채널은 아직 의미 없는 초기값이고,
+          이후 Decoder 블록들이 점차 의미 있는 이미지 특성으로 변환합니다.
+        </div>
+      </div>
+
+      <!-- Decoder blocks flow -->
+      <div class="diagram">
+        <div class="title">Step 4b: 4개 Decoder Block — 각 블록에서 FiLM 적용</div>
+
+        <!-- Horizontal flow of decoder blocks -->
+        <div class="dec-blocks" style="display: flex; gap: 8px; align-items: stretch; justify-content: center; flex-wrap: wrap;">
+
+          <!-- Initial -->
+          <div class="dec-blk">
+            <div class="dec-bar" style="width: 40px; height: 40px; background: linear-gradient(135deg, var(--decode-m), var(--decode-d));">
+              256
+            </div>
+            <div class="dec-res">8×8</div>
+            <div class="dec-res" style="color: var(--txt4);">input</div>
+          </div>
+
+          <div class="dec-arrow">→</div>
+
+          <!-- Block 1 -->
+          <div class="dec-blk">
+            <div class="film-inject-label">γ₁·h+β₁</div>
+            <div class="film-inject-arrow">↓</div>
+            <div class="dec-bar" style="width: 48px; height: 52px; background: linear-gradient(135deg, var(--decode), var(--decode-m)); border: 1px dashed var(--film-m);">
+              128
+            </div>
+            <div class="dec-res">16×16</div>
+            <div class="dec-res" style="color: var(--film);">Block 1</div>
+          </div>
+
+          <div class="dec-arrow">→</div>
+
+          <!-- Block 2 -->
+          <div class="dec-blk">
+            <div class="film-inject-label">γ₂·h+β₂</div>
+            <div class="film-inject-arrow" style="animation-delay: 0.4s;">↓</div>
+            <div class="dec-bar" style="width: 56px; height: 62px; background: linear-gradient(135deg, var(--decode), var(--decode-m)); border: 1px dashed var(--film-m);">
+              64
+            </div>
+            <div class="dec-res">32×32</div>
+            <div class="dec-res" style="color: var(--film);">Block 2</div>
+          </div>
+
+          <div class="dec-arrow">→</div>
+
+          <!-- Block 3 -->
+          <div class="dec-blk">
+            <div class="film-inject-label">γ₃·h+β₃</div>
+            <div class="film-inject-arrow" style="animation-delay: 0.8s;">↓</div>
+            <div class="dec-bar" style="width: 66px; height: 72px; background: linear-gradient(135deg, var(--decode), var(--decode-m)); border: 1px dashed var(--film-m);">
+              32
+            </div>
+            <div class="dec-res">64×64</div>
+            <div class="dec-res" style="color: var(--film);">Block 3</div>
+          </div>
+
+          <div class="dec-arrow">→</div>
+
+          <!-- Block 4 -->
+          <div class="dec-blk">
+            <div class="film-inject-label">γ₄·h+β₄</div>
+            <div class="film-inject-arrow" style="animation-delay: 1.2s;">↓</div>
+            <div class="dec-bar" style="width: 76px; height: 82px; background: linear-gradient(135deg, var(--decode), var(--decode-m)); border: 1px dashed var(--film-m);">
+              16
+            </div>
+            <div class="dec-res">128×128</div>
+            <div class="dec-res" style="color: var(--film);">Block 4</div>
+          </div>
+
+          <div class="dec-arrow">→</div>
+
+          <!-- Final -->
+          <div class="dec-blk">
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 8px; color: var(--out); margin-bottom: 2px;">Sigmoid</div>
+            <div class="dec-bar" style="width: 86px; height: 92px; background: linear-gradient(135deg, var(--out), var(--out-m));">
+              1
+            </div>
+            <div class="dec-res">256×256</div>
+            <div class="dec-res" style="color: var(--out); font-weight: 600;">Output</div>
+          </div>
+
+        </div>
+
+        <!-- c broadcast line -->
+        <div style="text-align: center; margin: 12px 0 4px;">
+          <div style="display: inline-flex; align-items: center; gap: 8px; background: var(--design-d); padding: 6px 14px; border-radius: 8px; border: 1px solid var(--design-m);">
+            <div style="width: 8px; height: 8px; background: var(--design); border-radius: 50%;"></div>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--design); font-weight: 600;">
+              동일한 c (dim=64)가 4개 블록 모두에 입력됨
+            </span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--txt3);">
+              — 각 블록은 독립적인 Linear로 서로 다른 γ, β를 생성
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Single block detail -->
+      <div class="diagram">
+        <div class="title">Step 4c: 단일 Block 내부 — Block 2를 예시로</div>
+
+        <div class="side-grid">
+          <!-- Main path -->
+          <div class="inner-block">
+            <h4 style="color: var(--decode);">Main Path (Feature Map)</h4>
+
+            <div class="inner-step pp">
+              <div class="ico">IN</div>
+              <div>Block 1 출력<div class="shape">(B, 128, 16, 16)</div></div>
+            </div>
+            <div class="inner-arrow">↓</div>
+            <div class="inner-step pp">
+              <div class="ico">↑2</div>
+              <div>Bilinear Upsample ×2<div class="shape">(B, 128, <strong>32, 32</strong>)</div></div>
+            </div>
+            <div class="inner-arrow">↓</div>
+            <div class="inner-step pp">
+              <div class="ico">C</div>
+              <div>Conv2d(128 → 64, 3×3, pad=1)<div class="shape">(B, <strong>64</strong>, 32, 32)</div></div>
+            </div>
+            <div class="inner-arrow">↓</div>
+            <div class="inner-step pp">
+              <div class="ico">BN</div>
+              <div>BatchNorm2d(64) → ReLU<div class="shape">(B, 64, 32, 32) → <strong>h</strong></div></div>
+            </div>
+            <div class="inner-arrow">↓</div>
+            <div class="inner-step ff">
+              <div class="ico">F</div>
+              <div><strong>FiLM Modulation</strong><div class="shape">h_out = γ₂ ⊙ h + β₂</div></div>
+            </div>
+            <div class="inner-arrow">↓</div>
+            <div class="inner-step pp" style="background: var(--out-d); color: var(--out);">
+              <div class="ico" style="background: var(--out-m);">O</div>
+              <div>Output<div class="shape">(B, 64, 32, 32)</div></div>
+            </div>
+          </div>
+
+          <!-- FiLM detail -->
+          <div class="inner-block" style="border-color: var(--film-m);">
+            <h4 style="color: var(--film);">FiLM Layer 상세</h4>
+
+            <div class="inner-step cc">
+              <div class="ico">c</div>
+              <div>Condition Vector<div class="shape">(B, 64)</div></div>
+            </div>
+            <div class="inner-arrow">↓</div>
+
+            <div style="display: flex; gap: 8px; justify-content: center; margin: 6px 0;">
+              <div style="text-align: center;">
+                <div class="inner-step ff" style="padding: 6px 10px; font-size: 11px;">
+                  <div>Linear(64→64)</div>
+                </div>
+                <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--film); margin-top: 4px; font-weight: 700;">γ₂</div>
+                <div style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--txt3);">(B, 64)</div>
+              </div>
+              <div style="text-align: center;">
+                <div class="inner-step ff" style="padding: 6px 10px; font-size: 11px;">
+                  <div>Linear(64→64)</div>
+                </div>
+                <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--film); margin-top: 4px; font-weight: 700;">β₂</div>
+                <div style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--txt3);">(B, 64)</div>
+              </div>
+            </div>
+
+            <div class="inner-arrow">↓ unsqueeze</div>
+
+            <div class="eq" style="max-width: 100%; font-size: 11px; line-height: 1.8; margin: 8px 0;">
+              <span class="f">γ₂</span>: (B, 64) → (B, 64, <strong>1, 1</strong>)<br>
+              <span class="f">β₂</span>: (B, 64) → (B, 64, <strong>1, 1</strong>)<br><br>
+              <span class="dim"># broadcasting 적용</span><br>
+              (B, 64, <span style="color:var(--film);">1, 1</span>) × (B, 64, <span style="color:var(--decode);">32, 32</span>)<br><br>
+              = 각 채널의 <strong>모든 32×32 픽셀</strong>에<br>
+              동일한 γ, β가 적용됨
+            </div>
+
+            <div class="callout film-c" style="font-size: 11px;">
+              <strong>Block 2의 FiLM이 하는 일:</strong><br>
+              64개 채널 중 "중간 스케일 패턴"을 담당하는 feature들을 설계 조건에 맞게 선택적으로 증폭/억제합니다.
+            </div>
+          </div>
+        </div>
+
+        <!-- Numerical example for decoder FiLM -->
+        <div class="num-example">
+          <span class="comment"># Block 2의 FiLM — 64채널 중 채널 0, 1, 2만 추적</span><br>
+          <span class="comment"># 각 채널은 32×32 spatial map (여기서는 3×3만 표시)</span><br><br>
+          <span style="color:var(--design);">c</span> → Linear → <span style="color:var(--film);">γ₂</span> = [<strong>2.0</strong>, <strong>0.05</strong>, <strong>1.5</strong>, ...] <span class="comment">← 64개 채널 각각의 scale</span><br>
+          <span style="color:var(--design);">c</span> → Linear → <span style="color:var(--film);">β₂</span> = [0.1, 0.0, -0.3, ...] <span class="comment">← 64개 채널 각각의 shift</span><br><br>
+
+          <span class="comment">채널 0 (γ=2.0, β=0.1) — 이 설계에서 중요한 feature → 2배 증폭</span><br>
+          h  = [[0.3, 0.1, 0.5],    h_out = [[<strong style="color:var(--out);">0.7</strong>, 0.3, 1.1],<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[0.2, 0.4, 0.6],    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[0.5, 0.9, 1.3],<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[0.1, 0.3, 0.7]]    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[0.3, 0.7, 1.5]]<br><br>
+
+          <span class="comment">채널 1 (γ=0.05, β=0.0) — 이 설계에서 불필요 → 거의 0으로 억제</span><br>
+          h  = [[2.1, 1.8, 2.3],    h_out = [[<strong style="color:var(--txt3);">0.11</strong>, 0.09, 0.12],<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[1.9, 2.0, 2.4],    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[0.10, 0.10, 0.12],<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[1.7, 2.2, 2.0]]    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[0.09, 0.11, 0.10]]<br><br>
+
+          <span class="comment">핵심: γ=2.0인 채널은 살리고, γ=0.05인 채널은 죽임</span><br>
+          <span class="comment">→ 설계에 따라 "어떤 visual feature가 중요한지" 채널 단위로 선택</span>
+        </div>
+      </div>
+
+      <!-- Each block's role -->
+      <div class="callout film-c">
+        <strong>4개 블록이 각각 담당하는 스케일:</strong><br><br>
+        <strong>Block 1</strong> (8²→16²): 전체적인 elevation의 큰 구조 — 어느 영역이 높고 낮은지<br>
+        <strong>Block 2</strong> (16²→32²): 중간 크기의 구조물 패턴 — 그룹 단위 높이 변화<br>
+        <strong>Block 3</strong> (32²→64²): 개별 컴포넌트 수준의 디테일<br>
+        <strong>Block 4</strong> (64²→128²): 미세한 표면 텍스처, 엣지 디테일<br><br>
+        동일한 c가 4개 블록에 들어가지만, 각 블록의 <strong>Linear 파라미터가 독립적</strong>이므로
+        같은 c에서도 스케일에 맞는 서로 다른 γ, β를 학습합니다.
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-connector" style="background: linear-gradient(180deg, var(--decode-m), var(--loss-m));"></div>
+    <div></div>
+  </div>
+
+  <!-- ======================== STEP 5 ======================== -->
+  <div class="step">
+    <div class="step-num" style="background: var(--loss-d); color: var(--loss);">5</div>
+    <div class="step-content" style="border-color: var(--loss-m);">
+      <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--loss);"></div>
+      <h3 style="color: var(--loss);">Loss 계산 및 학습</h3>
+      <span class="role" style="color: var(--loss);">MSE + KL divergence · β annealing</span>
+
+      <div class="diagram">
+        <div class="title">Loss 구성</div>
+        <div class="node-row">
+          <div class="node output" style="padding: 10px 16px;">
+            x̂ (생성된 elevation)
+            <div class="sub">(B, 1, 256, 256)</div>
+          </div>
+          <div style="color: var(--txt4); font-size: 14px;">vs</div>
+          <div class="node elev" style="padding: 10px 16px;">
+            x (GT elevation)
+            <div class="sub">(B, 1, 256, 256)</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="eq">
+        ℒ = <span class="o">MSE(x̂, x)</span> + <span class="l">β</span> × <span class="z">KL( q(z₁|x) ‖ 𝒩(0, I) )</span>
+      </div>
+
+      <div class="side-grid">
+        <div class="callout loss-c">
+          <strong>MSE (Reconstruction Loss):</strong><br>
+          생성된 이미지 x̂와 실제 이미지 x의 픽셀별 차이를 줄입니다.
+          이 loss가 Design Encoder, Latent Fusion의 Linear, Decoder 전체의 파라미터를 업데이트합니다.
+        </div>
+        <div class="callout latent-c">
+          <strong>KL Divergence (Regularization):</strong><br>
+          Elevation Encoder가 만드는 분포 q(z₁|x)를 𝒩(0,I)에 가깝게 만듭니다.
+          이것이 추론 시 z₁ ~ 𝒩(0,I) 샘플링을 가능하게 합니다.
+          β는 0→0.5로 cyclical annealing하여 posterior collapse를 방지합니다.
+        </div>
+      </div>
+
+      <div class="callout loss-c" style="margin-top: 8px;">
+        <strong>Backpropagation 경로:</strong><br>
+        Loss → Decoder (Conv, FiLM의 γ/β Linear) → z_fused → Latent Fusion (γ/β Linear)
+        → 두 갈래: (1) Elevation Encoder의 μ, σ (2) Design Encoder의 CNN, MLP<br>
+        <strong>모든 파라미터가 동시에 end-to-end로 학습</strong>됩니다. FiLM의 Linear들도 이 과정에서 "어떤 γ, β가 좋은 reconstruction을 만드는가"를 학습합니다.
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================ -->
+  <!--                     INFERENCE PHASE                               -->
+  <!-- ================================================================ -->
+  <div class="phase" style="margin-top: 72px;">
+    <span class="phase-tag" style="background: var(--out-d); color: var(--out);">Inference Phase</span>
+    <div class="phase-line" style="background: linear-gradient(90deg, var(--out-m), transparent);"></div>
+  </div>
+
+  <div class="step">
+    <div class="step-num" style="background: var(--out-d); color: var(--out);">I</div>
+    <div class="step-content" style="border-color: var(--out-m);">
+      <div style="position:absolute;top:0;left:0;right:0;height:2px;background: linear-gradient(90deg, var(--out), var(--design));"></div>
+      <h3 style="color: var(--out);">추론: 새로운 설계에서 K개의 Elevation 생성</h3>
+      <span class="role" style="color: var(--out);">Elevation Encoder 제거 · z₁은 N(0,I)에서 샘플링</span>
+
+      <p class="desc">
+        학습된 모델에서 Elevation Encoder를 제거하고, z₁을 prior에서 직접 샘플링합니다.
+        같은 설계에 대해 K번 반복하면 K개의 서로 다른 elevation을 생성합니다.
+      </p>
+
+      <div class="diagram">
+        <div class="title">Inference 전체 흐름</div>
+
+        <!-- Step I-1: Design Encoder -->
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+          <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--design); font-weight:700; width: 20px;">①</div>
+          <div style="font-size: 12px; color: var(--txt2);">Design Encoder 실행 (1번만)</div>
+        </div>
+
+        <div class="node-row">
+          <div class="node design" style="padding: 8px 14px;">
+            New Design
+            <div class="sub">1ch × 256×256</div>
+          </div>
+          <div class="arrow-r">→</div>
+          <div class="node design" style="padding: 8px 14px;">
+            Design Encoder
+          </div>
+          <div class="arrow-r">→</div>
+          <div class="node design" style="padding: 10px 18px;">
+            <strong>c</strong>
+            <div class="sub">(1, 64) — 고정</div>
+          </div>
+        </div>
+
+        <div style="height: 20px;"></div>
+
+        <!-- Step I-2: K samples -->
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+          <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--latent); font-weight:700; width: 20px;">②</div>
+          <div style="font-size: 12px; color: var(--txt2);">K번 반복: 샘플링 → Fusion → Decode</div>
+        </div>
+
+        <!-- Loop box -->
+        <div style="border: 1px dashed var(--brd-light); border-radius: 12px; padding: 16px; margin: 8px 0; position: relative;">
+          <div style="position: absolute; top: -10px; left: 16px; background: var(--bg2); padding: 0 8px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--txt3);">
+            for k in range(K):
+          </div>
+
+          <div class="node-row" style="margin-top: 8px;">
+            <div class="node latent" style="padding: 8px 14px;">
+              z₁ ~ 𝒩(0, I) × τ
+              <div class="sub">매번 새로 샘플링</div>
+            </div>
+            <div class="arrow-r">→</div>
+            <div class="node film" style="padding: 8px 14px;">
+              FiLM Fusion
+              <div class="sub">γ(c)·z₁ + β(c)</div>
+            </div>
+            <div class="arrow-r">→</div>
+            <div class="node decode" style="padding: 8px 14px;">
+              Decoder
+              <div class="sub">4 blocks + FiLM(c)</div>
+            </div>
+            <div class="arrow-r">→</div>
+            <div class="node output" style="padding: 8px 14px;">
+              Elevation k
+              <div class="sub">256×256</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- What changes vs what stays -->
+      <div class="diagram">
+        <div class="title">K=50 샘플 생성 시 — 무엇이 고정이고 무엇이 변하는가</div>
+
+        <div class="side-grid">
+          <div style="background: var(--design-d); border: 1px solid var(--design-m); border-radius: 10px; padding: 16px;">
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--design); font-weight: 700; margin-bottom: 10px;">🔒 50번 모두 동일 (고정)</div>
+            <div style="font-size: 12px; color: var(--txt2); line-height: 1.8;">
+              • c (condition 벡터)<br>
+              • Latent Fusion의 γ, β<br>
+              • Decoder 4개 블록의 γ₁~γ₄, β₁~β₄<br>
+              • 모든 학습된 파라미터 (Conv, Linear, BN)
+            </div>
+          </div>
+          <div style="background: var(--latent-d); border: 1px solid var(--latent-m); border-radius: 10px; padding: 16px;">
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--latent); font-weight: 700; margin-bottom: 10px;">🎲 50번 모두 다름 (변동)</div>
+            <div style="font-size: 12px; color: var(--txt2); line-height: 1.8;">
+              • z₁ (매번 새로 랜덤 샘플링)<br>
+              • z_fused (z₁이 다르므로)<br>
+              • Decoder 내부 feature map 전체<br>
+              • 최종 elevation 이미지
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout out-c">
+        <strong>다양성의 유일한 원천은 z₁의 랜덤 샘플링</strong>입니다.
+        temperature τ로 다양성을 제어합니다:<br>
+        <strong>τ = 0.5</strong> → z₁이 0 근처에 몰림 → 50개 결과가 비슷 (안전하지만 단조로움)<br>
+        <strong>τ = 1.0</strong> → 표준 정규분포 → 학습 시와 동일한 다양성<br>
+        <strong>τ = 1.5</strong> → 분포가 넓어짐 → 다양하지만 품질 저하 가능 (학습 시 보지 못한 영역)<br><br>
+        50개 샘플을 모으면 pixel-wise mean(평균 elevation)과 std(불확실성 맵)를 계산하여
+        "이 설계에서 elevation이 확실한 부분"과 "변형 가능한 부분"을 분석할 수 있습니다.
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================ -->
+  <!--                     SUMMARY                                       -->
+  <!-- ================================================================ -->
+  <div class="divider" style="margin-top: 56px;"></div>
+
+  <div class="diagram" style="background: var(--surf); border-color: var(--brd-light); max-width: 800px; margin: 32px auto; padding: 28px;">
+    <div class="title" style="font-size: 12px; letter-spacing: 2px; margin-bottom: 20px;">FiLM이 적용되는 5개 지점 요약</div>
+
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+
+      <div style="display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--film-d); border-radius: 10px; border-left: 3px solid var(--film);">
+        <span style="font-family:'JetBrains Mono',monospace; font-size: 12px; font-weight: 700; color: var(--film); width: 20px;">①</span>
+        <div>
+          <div style="font-size: 13px; font-weight: 600; color: var(--txt);">Latent Fusion</div>
+          <div style="font-size: 11px; color: var(--txt2); font-family: 'JetBrains Mono', monospace;">
+            c → γ,β (dim=64) → z_fused = γ⊙z₁+β
+            <span style="color: var(--txt3);"> | 1D 벡터 ⊙ 1D 벡터</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--film-d); border-radius: 10px; border-left: 3px solid var(--film);">
+        <span style="font-family:'JetBrains Mono',monospace; font-size: 12px; font-weight: 700; color: var(--film); width: 20px;">②</span>
+        <div>
+          <div style="font-size: 13px; font-weight: 600; color: var(--txt);">Decoder Block 1 — 저주파 구조</div>
+          <div style="font-size: 11px; color: var(--txt2); font-family: 'JetBrains Mono', monospace;">
+            c → γ₁,β₁ (dim=128) → h = γ₁⊙h+β₁
+            <span style="color: var(--txt3);"> | 1D 벡터가 3D map(128,16,16) 변조</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--film-d); border-radius: 10px; border-left: 3px solid var(--film);">
+        <span style="font-family:'JetBrains Mono',monospace; font-size: 12px; font-weight: 700; color: var(--film); width: 20px;">③</span>
+        <div>
+          <div style="font-size: 13px; font-weight: 600; color: var(--txt);">Decoder Block 2 — 중간 스케일 패턴</div>
+          <div style="font-size: 11px; color: var(--txt2); font-family: 'JetBrains Mono', monospace;">
+            c → γ₂,β₂ (dim=64) → h = γ₂⊙h+β₂
+            <span style="color: var(--txt3);"> | 1D 벡터가 3D map(64,32,32) 변조</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--film-d); border-radius: 10px; border-left: 3px solid var(--film);">
+        <span style="font-family:'JetBrains Mono',monospace; font-size: 12px; font-weight: 700; color: var(--film); width: 20px;">④</span>
+        <div>
+          <div style="font-size: 13px; font-weight: 600; color: var(--txt);">Decoder Block 3 — 세부 디테일</div>
+          <div style="font-size: 11px; color: var(--txt2); font-family: 'JetBrains Mono', monospace;">
+            c → γ₃,β₃ (dim=32) → h = γ₃⊙h+β₃
+            <span style="color: var(--txt3);"> | 1D 벡터가 3D map(32,64,64) 변조</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--film-d); border-radius: 10px; border-left: 3px solid var(--film);">
+        <span style="font-family:'JetBrains Mono',monospace; font-size: 12px; font-weight: 700; color: var(--film); width: 20px;">⑤</span>
+        <div>
+          <div style="font-size: 13px; font-weight: 600; color: var(--txt);">Decoder Block 4 — 미세 텍스처</div>
+          <div style="font-size: 11px; color: var(--txt2); font-family: 'JetBrains Mono', monospace;">
+            c → γ₄,β₄ (dim=16) → h = γ₄⊙h+β₄
+            <span style="color: var(--txt3);"> | 1D 벡터가 3D map(16,128,128) 변조</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div style="text-align: center; margin-top: 20px; font-size: 12px; color: var(--txt3); line-height: 1.7;">
+      모든 FiLM 지점에서 동일한 <span style="color: var(--design);">c</span>를 사용하지만,
+      각 지점의 <span style="color: var(--film);">Linear(γ), Linear(β)</span>는 독립적인 파라미터를 가짐<br>
+      → 같은 설계 정보를 스케일/맥락에 맞게 서로 다르게 해석
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

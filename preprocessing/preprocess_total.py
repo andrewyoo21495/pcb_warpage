@@ -25,6 +25,7 @@ Usage:
 """
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -458,11 +459,24 @@ def run_single_file_mode(config: PreprocessorConfig) -> None:
 
     global_min, global_max = float(np.min(data)), float(np.max(data))
     generate_grayscale_image(data, global_min, global_max, img_path)
+
+    # Save scaling metadata alongside output
+    metadata_path = os.path.join(parent_dir, "scaling_metadata.json")
+    metadata = {
+        "global_min": global_min,
+        "global_max": global_max,
+        "num_subfolders": 1,
+        "num_images": 1,
+    }
+    with open(metadata_path, 'w', encoding='utf-8') as f:
+        json.dump(metadata, f, indent=2)
+
     print(f"  Outliers removed:     {n_outliers}")
     print(f"  Points interpolated:  {n_interpolated}")
     print(f"  Min: {global_min:.4f}  Max: {global_max:.4f}")
     print(f"  [DONE] Saved to: {txt_path}")
     print(f"         Image:    {img_path}")
+    print(f"         Metadata: {metadata_path}")
 
 
 def run_batch_mode(config: PreprocessorConfig) -> None:
@@ -604,6 +618,18 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
             images_generated += 1
 
     print(f"    -> {images_generated} images generated.")
+
+    # Save scaling metadata for downstream use (e.g. sample.py --save_txt)
+    metadata_path = os.path.join(root_dir, "scaling_metadata.json")
+    metadata = {
+        "global_min": global_min,
+        "global_max": global_max,
+        "num_subfolders": len(subfolder_stats),
+        "num_images": images_generated,
+    }
+    with open(metadata_path, 'w', encoding='utf-8') as f:
+        json.dump(metadata, f, indent=2)
+    print(f"    -> Scaling metadata saved to {metadata_path}")
 
 
 def main(config: PreprocessorConfig) -> None:
