@@ -43,7 +43,7 @@ def detect_and_remove_outliers(
     data: np.ndarray,
     grid_size: int = 8,
     z_threshold: float = 3.0,
-) -> np.ndarray:
+) -> tuple:
     """Detect outliers per region using z-score and replace with NaN.
 
     Args:
@@ -52,7 +52,7 @@ def detect_and_remove_outliers(
         z_threshold: Z-score threshold for outlier detection.
 
     Returns:
-        Array with outliers replaced by NaN.
+        (result_array, total_outliers_removed)
     """
     result = data.copy()
     H, W = result.shape
@@ -86,18 +86,15 @@ def detect_and_remove_outliers(
             if n_outliers > 0:
                 region[outlier_mask] = np.nan
                 total_removed += n_outliers
-                logger.debug("Region (%d,%d): removed %d outliers",
-                             ri, ci, n_outliers)
 
-    logger.debug("Outlier detection: removed %d total outliers", total_removed)
-    return result
+    return result, int(total_removed)
 
 
 def interpolate_surface(
     data: np.ndarray,
     poly_degree: int = 3,
     ridge_alpha: float = 0.1,
-) -> np.ndarray:
+) -> tuple:
     """Fill NaN values using polynomial surface regression with ridge regularization.
 
     Args:
@@ -106,7 +103,7 @@ def interpolate_surface(
         ridge_alpha: Ridge regularization coefficient.
 
     Returns:
-        Array with all NaN values filled by interpolation.
+        (result_array, n_interpolated) — array with NaNs filled, and count of filled pixels.
     """
     H, W = data.shape
     total_pixels = H * W
@@ -120,11 +117,12 @@ def interpolate_surface(
     nan_mask = np.isnan(vals_flat)
 
     n_valid = np.sum(valid_mask)
+    n_interpolated = int(np.sum(nan_mask))
     valid_ratio = n_valid / total_pixels
 
     if n_valid == 0:
         logger.warning("No valid values — cannot interpolate.")
-        return data
+        return data, 0
 
     if valid_ratio < 0.05:
         logger.warning("Valid values: %.1f%% (< 5%%) — potential quality degradation.",
@@ -158,17 +156,36 @@ def interpolate_surface(
         result_flat[nan_mask] = predicted
         result = result_flat.reshape(H, W)
 
-    return result
+    return result, n_interpolated
 
 
 def smooth_gaussian(data: np.ndarray, sigma: float = 1.0) -> np.ndarray:
-    """Apply Gaussian smoothing to the data.
+    """Apply Gaussian smoothing while preserving the original min and max values.
+
+    After smoothing, the result is linearly rescaled so that its min and max
+    match the original data's min and max.  This ensures smooth output without
+    altering the value range.
 
     Args:
         data: Input array (must be NaN-free).
         sigma: Gaussian kernel standard deviation.
 
     Returns:
-        Smoothed array of the same shape.
+        Smoothed array of the same shape with original min/max preserved.
     """
-    return gaussian_filter(data, sigma=sigma)
+    orig_min = np.min(data)
+    orig_max = np.max(data)
+
+    smoothed = gaussian_filter(data, sigma=sigma)
+
+    smooth_min = np.min(smoothed)
+    smooth_max = np.max(smoothed)
+
+    # Rescale smoothed data to preserve original min/max
+    if smooth_max - smooth_min < 1e-12:
+        return smoothed
+
+    rescaled = (smoothed - smooth_min) / (smooth_max - smooth_min)
+    rescaled = rescaled * (orig_max - orig_min) + orig_min
+
+    return rescaled

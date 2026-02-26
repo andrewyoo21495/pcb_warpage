@@ -200,10 +200,15 @@ def detect_and_remove_outliers(
     data: np.ndarray,
     grid_size: int = 8,
     z_threshold: float = 3.0,
-) -> np.ndarray:
-    """Detect outliers per region using z-score and replace with NaN."""
+) -> tuple:
+    """Detect outliers per region using z-score and replace with NaN.
+
+    Returns:
+        (result_array, total_outliers_removed)
+    """
     result = data.copy()
     H, W = result.shape
+    total_removed = 0
 
     row_edges = np.linspace(0, H, grid_size + 1, dtype=int)
     col_edges = np.linspace(0, W, grid_size + 1, dtype=int)
@@ -232,16 +237,21 @@ def detect_and_remove_outliers(
 
             if n_outliers > 0:
                 region[outlier_mask] = np.nan
+                total_removed += n_outliers
 
-    return result
+    return result, int(total_removed)
 
 
 def interpolate_surface(
     data: np.ndarray,
     poly_degree: int = 3,
     ridge_alpha: float = 0.1,
-) -> np.ndarray:
-    """Fill NaN values using polynomial surface regression with ridge regularization."""
+) -> tuple:
+    """Fill NaN values using polynomial surface regression with ridge regularization.
+
+    Returns:
+        (result_array, n_interpolated) — array with NaNs filled, and count of filled pixels.
+    """
     H, W = data.shape
     total_pixels = H * W
 
@@ -254,11 +264,12 @@ def interpolate_surface(
     nan_mask = np.isnan(vals_flat)
 
     n_valid = np.sum(valid_mask)
+    n_interpolated = int(np.sum(nan_mask))
     valid_ratio = n_valid / total_pixels
 
     if n_valid == 0:
         logger.warning("No valid values — cannot interpolate.")
-        return data
+        return data, 0
 
     if valid_ratio < 0.05:
         logger.warning("Valid values: %.1f%% (< 5%%) — potential quality degradation.",
@@ -289,12 +300,31 @@ def interpolate_surface(
         result_flat[nan_mask] = predicted
         result = result_flat.reshape(H, W)
 
-    return result
+    return result, n_interpolated
 
 
 def smooth_gaussian(data: np.ndarray, sigma: float = 1.0) -> np.ndarray:
-    """Apply Gaussian smoothing to the data."""
-    return gaussian_filter(data, sigma=sigma)
+    """Apply Gaussian smoothing while preserving the original min and max values.
+
+    After smoothing, the result is linearly rescaled so that its min and max
+    match the original data's min and max.
+    """
+    orig_min = np.min(data)
+    orig_max = np.max(data)
+
+    smoothed = gaussian_filter(data, sigma=sigma)
+
+    smooth_min = np.min(smoothed)
+    smooth_max = np.max(smoothed)
+
+    # Rescale smoothed data to preserve original min/max
+    if smooth_max - smooth_min < 1e-12:
+        return smoothed
+
+    rescaled = (smoothed - smooth_min) / (smooth_max - smooth_min)
+    rescaled = rescaled * (orig_max - orig_min) + orig_min
+
+    return rescaled
 
 
 # =============================================================================
@@ -344,46 +374,50 @@ def generate_grayscale_image(
 # Orchestration
 # =============================================================================
 
-def process_single_file(filepath: str, config: PreprocessorConfig) -> np.ndarray:
-    """Run Steps 1-5 on a single file and return the preprocessed data.
+def process_single_file(filepath: str, config: PreprocessorConfig) -> tuple:
+    """Run Steps 1-5 on a single file and return the preprocessed data with stats.
 
     Returns:
-        Preprocessed numpy array, or None if the file should be skipped.
+        (data, n_outliers, n_interpolated) or (None, 0, 0) if the file should be skipped.
     """
     try:
         data = read_elevation(filepath, null_value=config.null_value)
     except Exception as e:
         logger.warning("Failed to read %s: %s", filepath, e)
-        return None
+        return None, 0, 0
 
     if np.all(np.isnan(data)):
-        return None
+        return None, 0, 0
 
     data = downsample_median(data, factor=config.downsample_factor)
-    data = detect_and_remove_outliers(
+    data, n_outliers = detect_and_remove_outliers(
         data,
         grid_size=config.outlier_grid_size,
         z_threshold=config.outlier_z_threshold,
     )
-    data = interpolate_surface(
+    data, n_interpolated = interpolate_surface(
         data,
         poly_degree=config.interp_poly_degree,
         ridge_alpha=config.interp_ridge_alpha,
     )
     data = smooth_gaussian(data, sigma=config.gaussian_sigma)
 
-    return data
+    return data, n_outliers, n_interpolated
 
 
-def _process_and_save(filepath: str, output_dir: str, config: PreprocessorConfig) -> str:
-    """Process a single file and save outputs. Returns filepath on success, None on failure."""
-    data = process_single_file(filepath, config)
+def _process_and_save(filepath: str, output_dir: str, config: PreprocessorConfig) -> tuple:
+    """Process a single file and save outputs.
+
+    Returns:
+        (filepath, n_outliers, n_interpolated) on success, or (None, 0, 0) on failure.
+    """
+    data, n_outliers, n_interpolated = process_single_file(filepath, config)
     if data is None:
-        return None
+        return None, 0, 0
 
     txt_path, _ = get_output_paths(filepath, output_dir)
     save_preprocessed_txt(data, txt_path)
-    return filepath
+    return filepath, n_outliers, n_interpolated
 
 
 def run_single_file_mode(config: PreprocessorConfig) -> None:
@@ -393,7 +427,7 @@ def run_single_file_mode(config: PreprocessorConfig) -> None:
     txt_path, img_path = get_output_paths(filepath, parent_dir)
 
     print(f"  Processing: {Path(filepath).name}")
-    data = process_single_file(filepath, config)
+    data, n_outliers, n_interpolated = process_single_file(filepath, config)
     if data is None:
         print(f"  [FAILED] {filepath}")
         return
@@ -402,6 +436,9 @@ def run_single_file_mode(config: PreprocessorConfig) -> None:
 
     global_min, global_max = float(np.min(data)), float(np.max(data))
     generate_grayscale_image(data, global_min, global_max, img_path)
+    print(f"  Outliers removed:     {n_outliers}")
+    print(f"  Points interpolated:  {n_interpolated}")
+    print(f"  Min: {global_min:.4f}  Max: {global_max:.4f}")
     print(f"  [DONE] Saved to: {txt_path}")
     print(f"         Image:    {img_path}")
 
@@ -415,7 +452,7 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
         print("  No subfolders found. Nothing to do.")
         return
 
-    # Collect all files to process
+    # Collect all files to process, grouped by subfolder
     all_tasks = []  # list of (filepath, subfolder)
     for subfolder in subfolders:
         txt_files = discover_txt_files(subfolder, config.exclude_suffixes)
@@ -433,6 +470,8 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
     print("  Phase 1/2: Preprocessing files...")
     files_processed = 0
     files_skipped = 0
+    total_outliers = 0
+    total_interpolated = 0
 
     if config.max_workers > 1:
         # Parallel processing
@@ -445,9 +484,11 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
             for fut in as_completed(futures):
                 filepath = futures[fut]
                 try:
-                    result = fut.result()
-                    if result is not None:
+                    result_path, n_outliers, n_interp = fut.result()
+                    if result_path is not None:
                         files_processed += 1
+                        total_outliers += n_outliers
+                        total_interpolated += n_interp
                     else:
                         files_skipped += 1
                 except Exception as e:
@@ -459,9 +500,11 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
     else:
         # Sequential processing
         for filepath, subfolder in all_tasks:
-            result = _process_and_save(filepath, subfolder, config)
-            if result is not None:
+            result_path, n_outliers, n_interp = _process_and_save(filepath, subfolder, config)
+            if result_path is not None:
                 files_processed += 1
+                total_outliers += n_outliers
+                total_interpolated += n_interp
             else:
                 files_skipped += 1
 
@@ -469,7 +512,9 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
             print(f"\r    [{done}/{total_files}] processed", end="", flush=True)
 
     print()  # newline after progress
-    print(f"    -> {files_processed} succeeded, {files_skipped} skipped.\n")
+    print(f"    -> {files_processed} succeeded, {files_skipped} skipped.")
+    print(f"    -> Total outliers removed:    {total_outliers}")
+    print(f"    -> Total points interpolated: {total_interpolated}\n")
 
     if files_processed == 0:
         print("  No files were preprocessed. Skipping image generation.")
@@ -477,9 +522,46 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
 
     # --- Phase 2: Global scaling & image generation (Steps 6-7) ---
     print("  Phase 2/2: Generating images...")
-    global_min, global_max = compute_global_minmax(root_dir)
-    images_generated = 0
 
+    # Compute per-subfolder and global min/max
+    global_min = np.inf
+    global_max = -np.inf
+    subfolder_stats = []  # list of (subfolder_name, local_min, local_max, file_count)
+
+    for subfolder in subfolders:
+        interp_dir = os.path.join(subfolder, "interpolated")
+        if not os.path.isdir(interp_dir):
+            continue
+
+        local_min = np.inf
+        local_max = -np.inf
+        file_count = 0
+
+        for entry in sorted(os.listdir(interp_dir)):
+            if not entry.endswith("_preprocessed.txt"):
+                continue
+            fpath = os.path.join(interp_dir, entry)
+            data = np.loadtxt(fpath, delimiter='\t')
+            local_min = min(local_min, float(np.min(data)))
+            local_max = max(local_max, float(np.max(data)))
+            file_count += 1
+
+        if file_count > 0:
+            global_min = min(global_min, local_min)
+            global_max = max(global_max, local_max)
+            subfolder_name = os.path.basename(subfolder)
+            subfolder_stats.append((subfolder_name, local_min, local_max, file_count))
+
+    # Display per-subfolder min/max
+    print("\n    Per-subfolder statistics:")
+    for name, smin, smax, cnt in subfolder_stats:
+        print(f"      {name:30s}  min={smin:10.4f}  max={smax:10.4f}  ({cnt} files)")
+
+    print(f"\n    Global min: {global_min:.4f}")
+    print(f"    Global max: {global_max:.4f}\n")
+
+    # Generate images using global min/max
+    images_generated = 0
     for subfolder in subfolders:
         interp_dir = os.path.join(subfolder, "interpolated")
         images_dir = os.path.join(subfolder, "images")
