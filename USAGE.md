@@ -320,6 +320,44 @@ python sample.py --design data/design/design_A.png --k 10 --denormalize
 
 The script auto-detects the model type from the checkpoint.
 
+### Batch mode — process all designs in a folder
+
+Instead of generating samples for a single design, you can provide a folder containing multiple design PNGs. The script iterates through all `.png` files and generates K samples for each:
+
+```bash
+python sample.py --design-dir data/design/ --k 16 --save outputs/samples/
+```
+
+Output structure — a separate subfolder is created for each design:
+
+```
+outputs/samples/
+├── design_A/
+│   ├── elevation_0001.png
+│   ├── ...
+│   └── elevation_0016.png
+├── design_B/
+│   ├── elevation_0001.png
+│   └── ...
+└── design_J/
+    └── ...
+```
+
+All other flags (`--temperature`, `--colormap`, `--save_txt`, `--denormalize`) work with batch mode.
+
+### Elevation range histograms for generated samples
+
+In batch mode (`--design-dir`), after generating all samples, the script automatically plots a per-design elevation range distribution histogram and saves them to:
+
+```
+outputs/distribution/generated/
+├── dist_design_A.png
+├── dist_design_B.png
+└── ...
+```
+
+Each histogram shows the distribution of per-sample elevation ranges (max - min) with a mean marker line. This lets you verify that the generated samples have realistic and consistent range distributions across designs.
+
 ### Temperature behavior
 
 | Model | `--temperature` effect |
@@ -348,12 +386,16 @@ elevation_max    2.3    # your actual physical maximum
 
 | Flag | Default | Description |
 |---|---|---|
-| `--design` | (required) | Path to design PNG |
+| `--design` | — | Path to a single design PNG (use this **or** `--design-dir`) |
+| `--design-dir` | — | Path to a folder of design PNGs for batch processing |
 | `--k` | from config | Number of samples to generate |
 | `--temperature` | 1.0 | Diversity control (see table above) |
 | `--denormalize` | off | Save `.txt` files with physical values (requires `elevation_min`/`max` in config) |
+| `--colormap` | — | Apply a matplotlib colormap (e.g. `jet`) to saved PNGs |
+| `--save_txt` | off | Save as tab-delimited `.txt` files (reverse of preprocessing) |
+| `--metadata` | auto-detect | Path to `scaling_metadata.json` (for `--save_txt`) |
 | `--checkpoint` | from config | Override model checkpoint path |
-| `--save` | `outputs/samples` | Directory to save individual PNG files |
+| `--save` | `outputs/samples` | Directory to save individual PNG files (or base dir for batch mode) |
 | `--config` | `config.txt` | Config file path |
 
 ---
@@ -429,6 +471,11 @@ python evaluate.py
 
 # 7. Generate samples for a design of interest
 python sample.py --design data/design/design_C.png --k 16 --save outputs/design_C_samples/
+
+# 7b. Or generate for ALL designs at once (creates subfolders per design)
+python sample.py --design-dir data/design/ --k 16 --save outputs/samples/
+# -> outputs/samples/design_A/, design_B/, ...
+# -> outputs/distribution/generated/dist_design_A.png, ...
 ```
 
 ### DDPM Workflow
@@ -449,6 +496,9 @@ python evaluate.py
 
 # 6. Generate samples (auto-detects DDPM from checkpoint)
 python sample.py --design data/design/design_C.png --k 16 --save outputs/ddpm_samples_C/
+
+# 6b. Or batch generate for all designs
+python sample.py --design-dir data/design/ --k 16 --save outputs/ddpm_samples/
 ```
 
 ---

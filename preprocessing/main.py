@@ -10,6 +10,9 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 from .config import PreprocessorConfig
 from .imaging import generate_grayscale_image
@@ -275,6 +278,28 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
         print(f"      {'GLOBAL':30s}  {all_r.mean():8.4f}  {all_r.std():8.4f}  {all_r.min():8.4f}"
               f"  {p25:8.4f}  {p50:8.4f}  {p75:8.4f}  {all_r.max():8.4f}")
     print()
+
+    # --- Save elevation range distribution histograms ---
+    dist_dir = os.path.join("outputs", "distribution")
+    os.makedirs(dist_dir, exist_ok=True)
+
+    for name, _, _, cnt, ranges in subfolder_stats:
+        r = np.array(ranges)
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.hist(r, bins=max(10, len(r) // 2), color='steelblue',
+                edgecolor='white', alpha=0.85)
+        ax.set_title(f"Elevation Range Distribution — {name}")
+        ax.set_xlabel("Elevation Range (max − min)")
+        ax.set_ylabel("Count")
+        ax.axvline(r.mean(), color='red', linestyle='--', linewidth=1.2,
+                   label=f"Mean = {r.mean():.4f}")
+        ax.legend()
+        fig.tight_layout()
+        fig_path = os.path.join(dist_dir, f"dist_{name}.png")
+        fig.savefig(fig_path, dpi=150)
+        plt.close(fig)
+
+    print(f"    -> Saved {len(subfolder_stats)} range distribution histograms to '{dist_dir}/'.")
 
     # Generate images using global min/max
     images_generated = 0

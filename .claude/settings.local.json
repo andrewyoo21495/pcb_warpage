@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(python:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(git -C /d/git_repos/pcb_warpage log --oneline -20)",
+      "Bash(git -C /d/git_repos/pcb_warpage diff evaluate.py)"
     ]
   }
 }

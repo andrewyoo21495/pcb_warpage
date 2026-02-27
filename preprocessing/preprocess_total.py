@@ -39,6 +39,9 @@ from typing import List, Optional, Tuple
 import numpy as np
 from PIL import Image
 from scipy.ndimage import gaussian_filter
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import PolynomialFeatures
 
@@ -78,6 +81,9 @@ class PreprocessorConfig:
     # Polynomial interpolation
     interp_poly_degree: int = 3
     interp_ridge_alpha: float = 0.1
+
+    # Tilt correction
+    tilt_patch_size: int = 16
 
     # Gaussian smoothing
     gaussian_sigma: float = 2.0
@@ -305,6 +311,56 @@ def interpolate_surface(
     return result, n_interpolated
 
 
+def flatten_tilt(data: np.ndarray, patch_size: int = 16) -> tuple:
+    """Remove linear tilt by fitting and subtracting a plane through four corner patches.
+
+    Computes the mean elevation of each corner patch, fits a least-squares plane
+    z = a*x + b*y + c through the four (centroid, mean_z) points, and subtracts
+    it from the surface.  The result is shifted so that its minimum is zero.
+
+    Args:
+        data: Input 2D array (H, W), must be NaN-free (run after interpolation).
+        patch_size: Side length of the square patch at each corner used to
+                    compute stable corner elevation estimates.
+
+    Returns:
+        (flattened_data, plane_amplitude) where plane_amplitude is the max-min
+        of the subtracted plane (a diagnostic for how much tilt was removed).
+    """
+    H, W = data.shape
+    ps = min(patch_size, H // 4, W // 4)  # clamp to avoid overlap
+
+    # Corner patches: mean elevation and centroid coordinates (row, col)
+    corners = [
+        (data[:ps, :ps],             ps / 2,       ps / 2),        # top-left
+        (data[:ps, W - ps:],         ps / 2,       W - ps / 2),    # top-right
+        (data[H - ps:, :ps],         H - ps / 2,   ps / 2),        # bottom-left
+        (data[H - ps:, W - ps:],     H - ps / 2,   W - ps / 2),   # bottom-right
+    ]
+
+    # Build 4×3 system: [row, col, 1] @ [a, b, c]^T = z
+    A = np.empty((4, 3), dtype=np.float64)
+    z = np.empty(4, dtype=np.float64)
+    for i, (patch, r_center, c_center) in enumerate(corners):
+        A[i] = [r_center, c_center, 1.0]
+        z[i] = float(np.mean(patch))
+
+    # Least-squares solve (exact for 4 points / 3 unknowns, overdetermined by 1)
+    coeffs, _, _, _ = np.linalg.lstsq(A, z, rcond=None)  # [a, b, c]
+
+    # Build the full plane surface
+    rows, cols = np.indices((H, W), dtype=np.float64)
+    plane = coeffs[0] * rows + coeffs[1] * cols + coeffs[2]
+
+    plane_amplitude = float(plane.max() - plane.min())
+
+    # Subtract plane and shift minimum to zero
+    flattened = data.astype(np.float64) - plane
+    flattened -= flattened.min()
+
+    return flattened.astype(np.float32), plane_amplitude
+
+
 def smooth_gaussian(
     data: np.ndarray,
     sigma: float = 2.0,
@@ -396,19 +452,20 @@ def generate_grayscale_image(
 # =============================================================================
 
 def process_single_file(filepath: str, config: PreprocessorConfig) -> tuple:
-    """Run Steps 1-5 on a single file and return the preprocessed data with stats.
+    """Run Steps 1-6 on a single file and return the preprocessed data with stats.
 
     Returns:
-        (data, n_outliers, n_interpolated) or (None, 0, 0) if the file should be skipped.
+        (data, n_outliers, n_interpolated, plane_amplitude) or
+        (None, 0, 0, 0.0) if the file should be skipped.
     """
     try:
         data = read_elevation(filepath, null_value=config.null_value)
     except Exception as e:
         logger.warning("Failed to read %s: %s", filepath, e)
-        return None, 0, 0
+        return None, 0, 0, 0.0
 
     if np.all(np.isnan(data)):
-        return None, 0, 0
+        return None, 0, 0, 0.0
 
     data = downsample_median(data, factor=config.downsample_factor)
     data, n_outliers = detect_and_remove_outliers(
@@ -421,26 +478,30 @@ def process_single_file(filepath: str, config: PreprocessorConfig) -> tuple:
         poly_degree=config.interp_poly_degree,
         ridge_alpha=config.interp_ridge_alpha,
     )
+    data, plane_amplitude = flatten_tilt(
+        data, patch_size=config.tilt_patch_size,
+    )
     data = smooth_gaussian(
         data, sigma=config.gaussian_sigma, iterations=config.gaussian_iterations,
     )
 
-    return data, n_outliers, n_interpolated
+    return data, n_outliers, n_interpolated, plane_amplitude
 
 
 def _process_and_save(filepath: str, output_dir: str, config: PreprocessorConfig) -> tuple:
     """Process a single file and save outputs.
 
     Returns:
-        (filepath, n_outliers, n_interpolated) on success, or (None, 0, 0) on failure.
+        (filepath, n_outliers, n_interpolated, plane_amplitude) on success,
+        or (None, 0, 0, 0.0) on failure.
     """
-    data, n_outliers, n_interpolated = process_single_file(filepath, config)
+    data, n_outliers, n_interpolated, plane_amplitude = process_single_file(filepath, config)
     if data is None:
-        return None, 0, 0
+        return None, 0, 0, 0.0
 
     txt_path, _ = get_output_paths(filepath, output_dir)
     save_preprocessed_txt(data, txt_path)
-    return filepath, n_outliers, n_interpolated
+    return filepath, n_outliers, n_interpolated, plane_amplitude
 
 
 def run_single_file_mode(config: PreprocessorConfig) -> None:
@@ -450,7 +511,7 @@ def run_single_file_mode(config: PreprocessorConfig) -> None:
     txt_path, img_path = get_output_paths(filepath, parent_dir)
 
     print(f"  Processing: {Path(filepath).name}")
-    data, n_outliers, n_interpolated = process_single_file(filepath, config)
+    data, n_outliers, n_interpolated, plane_amplitude = process_single_file(filepath, config)
     if data is None:
         print(f"  [FAILED] {filepath}")
         return
@@ -473,6 +534,7 @@ def run_single_file_mode(config: PreprocessorConfig) -> None:
 
     print(f"  Outliers removed:     {n_outliers}")
     print(f"  Points interpolated:  {n_interpolated}")
+    print(f"  Tilt plane amplitude: {plane_amplitude:.4f}")
     print(f"  Min: {global_min:.4f}  Max: {global_max:.4f}")
     print(f"  [DONE] Saved to: {txt_path}")
     print(f"         Image:    {img_path}")
@@ -502,12 +564,13 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
 
     print(f"  Found {total_files} files across {len(subfolders)} subfolders.\n")
 
-    # --- Phase 1: Per-file preprocessing (Steps 1-5) ---
+    # --- Phase 1: Per-file preprocessing (Steps 1-6) ---
     print("  Phase 1/2: Preprocessing files...")
     files_processed = 0
     files_skipped = 0
     total_outliers = 0
     total_interpolated = 0
+    total_plane_amplitude = 0.0
 
     if config.max_workers > 1:
         # Parallel processing
@@ -520,11 +583,12 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
             for fut in as_completed(futures):
                 filepath = futures[fut]
                 try:
-                    result_path, n_outliers, n_interp = fut.result()
+                    result_path, n_outliers, n_interp, plane_amp = fut.result()
                     if result_path is not None:
                         files_processed += 1
                         total_outliers += n_outliers
                         total_interpolated += n_interp
+                        total_plane_amplitude += plane_amp
                     else:
                         files_skipped += 1
                 except Exception as e:
@@ -536,11 +600,14 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
     else:
         # Sequential processing
         for filepath, subfolder in all_tasks:
-            result_path, n_outliers, n_interp = _process_and_save(filepath, subfolder, config)
+            result_path, n_outliers, n_interp, plane_amp = _process_and_save(
+                filepath, subfolder, config,
+            )
             if result_path is not None:
                 files_processed += 1
                 total_outliers += n_outliers
                 total_interpolated += n_interp
+                total_plane_amplitude += plane_amp
             else:
                 files_skipped += 1
 
@@ -550,7 +617,11 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
     print()  # newline after progress
     print(f"    -> {files_processed} succeeded, {files_skipped} skipped.")
     print(f"    -> Total outliers removed:    {total_outliers}")
-    print(f"    -> Total points interpolated: {total_interpolated}\n")
+    print(f"    -> Total points interpolated: {total_interpolated}")
+    if files_processed > 0:
+        avg_plane = total_plane_amplitude / files_processed
+        print(f"    -> Avg tilt plane amplitude:  {avg_plane:.4f}")
+    print()
 
     if files_processed == 0:
         print("  No files were preprocessed. Skipping image generation.")
@@ -559,10 +630,10 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
     # --- Phase 2: Global scaling & image generation (Steps 6-7) ---
     print("  Phase 2/2: Generating images...")
 
-    # Compute per-subfolder and global min/max
+    # Compute per-subfolder and global min/max, and per-file elevation ranges
     global_min = np.inf
     global_max = -np.inf
-    subfolder_stats = []  # list of (subfolder_name, local_min, local_max, file_count)
+    subfolder_stats = []  # list of (subfolder_name, local_min, local_max, file_count, ranges)
 
     for subfolder in subfolders:
         interp_dir = os.path.join(subfolder, "interpolated")
@@ -572,29 +643,78 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
         local_min = np.inf
         local_max = -np.inf
         file_count = 0
+        local_ranges = []  # per-file (max - min) values
 
         for entry in sorted(os.listdir(interp_dir)):
             if not entry.endswith("_preprocessed.txt"):
                 continue
             fpath = os.path.join(interp_dir, entry)
             data = np.loadtxt(fpath, delimiter='\t')
-            local_min = min(local_min, float(np.min(data)))
-            local_max = max(local_max, float(np.max(data)))
+            file_min = float(np.min(data))
+            file_max = float(np.max(data))
+            local_min = min(local_min, file_min)
+            local_max = max(local_max, file_max)
+            local_ranges.append(file_max - file_min)
             file_count += 1
 
         if file_count > 0:
             global_min = min(global_min, local_min)
             global_max = max(global_max, local_max)
             subfolder_name = os.path.basename(subfolder)
-            subfolder_stats.append((subfolder_name, local_min, local_max, file_count))
+            subfolder_stats.append((subfolder_name, local_min, local_max, file_count, local_ranges))
 
     # Display per-subfolder min/max
     print("\n    Per-subfolder statistics:")
-    for name, smin, smax, cnt in subfolder_stats:
+    for name, smin, smax, cnt, _ in subfolder_stats:
         print(f"      {name:30s}  min={smin:10.4f}  max={smax:10.4f}  ({cnt} files)")
 
     print(f"\n    Global min: {global_min:.4f}")
-    print(f"    Global max: {global_max:.4f}\n")
+    print(f"    Global max: {global_max:.4f}")
+
+    # --- Elevation range distribution analysis ---
+    print("\n    Elevation range distributions (per-file max - min):")
+    print("    " + "-" * 76)
+    print(f"      {'Subfolder':30s}  {'Mean':>8s}  {'Std':>8s}  {'Min':>8s}  {'P25':>8s}"
+          f"  {'P50':>8s}  {'P75':>8s}  {'Max':>8s}")
+    print("    " + "-" * 76)
+
+    all_ranges = []
+    for name, _, _, cnt, ranges in subfolder_stats:
+        r = np.array(ranges)
+        all_ranges.extend(ranges)
+        p25, p50, p75 = np.percentile(r, [25, 50, 75])
+        print(f"      {name:30s}  {r.mean():8.4f}  {r.std():8.4f}  {r.min():8.4f}"
+              f"  {p25:8.4f}  {p50:8.4f}  {p75:8.4f}  {r.max():8.4f}")
+
+    if all_ranges:
+        all_r = np.array(all_ranges)
+        p25, p50, p75 = np.percentile(all_r, [25, 50, 75])
+        print("    " + "-" * 76)
+        print(f"      {'GLOBAL':30s}  {all_r.mean():8.4f}  {all_r.std():8.4f}  {all_r.min():8.4f}"
+              f"  {p25:8.4f}  {p50:8.4f}  {p75:8.4f}  {all_r.max():8.4f}")
+    print()
+
+    # --- Save elevation range distribution histograms ---
+    dist_dir = os.path.join("outputs", "distribution")
+    os.makedirs(dist_dir, exist_ok=True)
+
+    for name, _, _, cnt, ranges in subfolder_stats:
+        r = np.array(ranges)
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.hist(r, bins=max(10, len(r) // 2), color='steelblue',
+                edgecolor='white', alpha=0.85)
+        ax.set_title(f"Elevation Range Distribution — {name}")
+        ax.set_xlabel("Elevation Range (max − min)")
+        ax.set_ylabel("Count")
+        ax.axvline(r.mean(), color='red', linestyle='--', linewidth=1.2,
+                   label=f"Mean = {r.mean():.4f}")
+        ax.legend()
+        fig.tight_layout()
+        fig_path = os.path.join(dist_dir, f"dist_{name}.png")
+        fig.savefig(fig_path, dpi=150)
+        plt.close(fig)
+
+    print(f"    -> Saved {len(subfolder_stats)} range distribution histograms to '{dist_dir}/'.")
 
     # Generate images using global min/max
     images_generated = 0
@@ -621,11 +741,45 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
 
     # Save scaling metadata for downstream use (e.g. sample.py --save_txt)
     metadata_path = os.path.join(root_dir, "scaling_metadata.json")
+    # Build range distribution summary for metadata
+    global_range_stats = {}
+    if all_ranges:
+        all_r = np.array(all_ranges)
+        g_p25, g_p50, g_p75 = np.percentile(all_r, [25, 50, 75]).tolist()
+        global_range_stats = {
+            "mean": float(all_r.mean()),
+            "std": float(all_r.std()),
+            "min": float(all_r.min()),
+            "p25": g_p25,
+            "median": g_p50,
+            "p75": g_p75,
+            "max": float(all_r.max()),
+        }
+
     metadata = {
         "global_min": global_min,
         "global_max": global_max,
         "num_subfolders": len(subfolder_stats),
         "num_images": images_generated,
+        "subfolders": [
+            {
+                "name": name,
+                "min": smin,
+                "max": smax,
+                "num_files": cnt,
+                "range_distribution": {
+                    "mean": float(np.mean(ranges)),
+                    "std": float(np.std(ranges)),
+                    "min": float(np.min(ranges)),
+                    "p25": float(np.percentile(ranges, 25)),
+                    "median": float(np.percentile(ranges, 50)),
+                    "p75": float(np.percentile(ranges, 75)),
+                    "max": float(np.max(ranges)),
+                },
+            }
+            for name, smin, smax, cnt, ranges in subfolder_stats
+        ],
+        "global_range_distribution": global_range_stats,
     }
     with open(metadata_path, 'w', encoding='utf-8') as f:
         json.dump(metadata, f, indent=2)
@@ -686,6 +840,8 @@ def parse_args() -> PreprocessorConfig:
                         help="Polynomial degree for interpolation (default: 3).")
     parser.add_argument("--ridge-alpha", type=float, default=0.1,
                         help="Ridge regularization alpha (default: 0.1).")
+    parser.add_argument("--tilt-patch-size", type=int, default=16,
+                        help="Corner patch size for tilt correction (default: 16).")
     parser.add_argument("--gaussian-sigma", type=float, default=2.0,
                         help="Gaussian smoothing sigma per iteration (default: 2.0).")
     parser.add_argument("--smooth-iterations", type=int, default=3,
@@ -703,6 +859,7 @@ def parse_args() -> PreprocessorConfig:
         outlier_grid_size=args.grid_size,
         interp_poly_degree=args.poly_degree,
         interp_ridge_alpha=args.ridge_alpha,
+        tilt_patch_size=args.tilt_patch_size,
         gaussian_sigma=args.gaussian_sigma,
         gaussian_iterations=args.smooth_iterations,
         max_workers=args.workers,

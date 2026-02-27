@@ -27,7 +27,7 @@ class PreprocessorConfig:
     outlier_z_threshold: float = 3.0
     outlier_grid_size: int = 8
 
-    # Polynomial interpolation
+    # Polynomial interpolationkl
     interp_poly_degree: int = 3
     interp_ridge_alpha: float = 0.1
 

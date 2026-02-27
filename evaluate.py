@@ -38,6 +38,10 @@ def parse_args():
                         help='Evaluate a single fold (0-indexed); default: all folds')
     parser.add_argument('--k',      type=int, default=None,
                         help='Override num_gen_samples from config')
+    parser.add_argument('--batch-size', type=int, default=None,
+                        help='Max samples to generate per GPU batch (reduces VRAM usage)')
+    parser.add_argument('--cpu',    action='store_true',
+                        help='Force CPU evaluation (avoids GPU usage entirely)')
     return parser.parse_args()
 
 
@@ -141,8 +145,12 @@ def load_model_from_checkpoint(checkpoint: dict, config: dict, device: torch.dev
 # ------------------------------------------------------------------
 
 @torch.no_grad()
-def evaluate_fold(config: dict, fold: int, k: int, device: torch.device) -> dict:
+def evaluate_fold(config: dict, fold: int, k: int, device: torch.device,
+                  batch_size: int = None) -> dict:
     """Run evaluation for one leave-one-out fold.
+
+    Args:
+        batch_size: Max samples per forward pass. If None, generate all K at once.
 
     Returns:
         dict of metric name -> value
@@ -192,8 +200,17 @@ def evaluate_fold(config: dict, fold: int, k: int, device: torch.device) -> dict
 
     real_flat = torch.cat(real_flat_list, dim=0)  # (N_real, H*W)
 
-    # 3. Generate K samples for the held-out design
-    gen_samples = model.sample(design_batch, hand_batch, num_samples=k)  # (K, 1, H, W)
+    # 3. Generate K samples for the held-out design (batched to limit VRAM)
+    if batch_size and batch_size < k:
+        chunks = []
+        remaining = k
+        while remaining > 0:
+            n = min(batch_size, remaining)
+            chunks.append(model.sample(design_batch, hand_batch, num_samples=n))
+            remaining -= n
+        gen_samples = torch.cat(chunks, dim=0)  # (K, 1, H, W)
+    else:
+        gen_samples = model.sample(design_batch, hand_batch, num_samples=k)  # (K, 1, H, W)
 
     # 4. Diversity metric
     diversity = sample_diversity(gen_samples)
@@ -227,14 +244,15 @@ def main():
     config = load_config(args.config)
     display_config(config)
 
-    device = get_device(config)
+    device = torch.device('cpu') if args.cpu else get_device(config)
     k      = args.k if args.k else int(config.get('num_gen_samples', 10))
+    batch_size = args.batch_size
     design_names = _resolve_design_names(config)
     folds  = [args.fold] if args.fold is not None else list(range(len(design_names)))
 
     all_results = []
     for fold in folds:
-        result = evaluate_fold(config, fold, k, device)
+        result = evaluate_fold(config, fold, k, device, batch_size=batch_size)
         if result:
             all_results.append(result)
 

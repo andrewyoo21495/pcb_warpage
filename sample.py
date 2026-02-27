@@ -2,11 +2,15 @@
 """Generate K elevation samples for a given design image and save each as an individual PNG.
 
 Supports both CVAE and DDPM (auto-detected from checkpoint).
+Supports single-design mode (--design) or batch mode (--design-dir).
 
 Usage:
+  # Single design
   python sample.py --design data/design/design_A.png --save outputs/samples_A/
   python sample.py --design data/design/design_C.png --k 16 --save outputs/samples_C/
-  python sample.py --config config.txt --design data/design/design_B.png --k 10 --save outputs/B/
+
+  # Batch: process all designs in a folder (creates subfolders per design)
+  python sample.py --design-dir data/design/ --k 16 --save outputs/samples/
 """
 
 import argparse
@@ -31,8 +35,11 @@ from models import build_model
 def parse_args():
     parser = argparse.ArgumentParser(description='Sample elevation images from trained model')
     parser.add_argument('--config',     type=str, default='config.txt')
-    parser.add_argument('--design',     type=str, required=True,
-                        help='Path to design image (PNG, grayscale)')
+    parser.add_argument('--design',     type=str, default=None,
+                        help='Path to a single design image (PNG, grayscale)')
+    parser.add_argument('--design-dir', type=str, default=None,
+                        help='Path to a folder containing multiple design PNGs; '
+                             'generates k samples for each design into separate subfolders')
     parser.add_argument('--checkpoint', type=str, default=None,
                         help='Override modelpath from config')
     parser.add_argument('--k',          type=int,   default=None,
@@ -298,13 +305,107 @@ def load_scaling_metadata(config: dict, metadata_override: str = None) -> tuple[
 # Main
 # ------------------------------------------------------------------
 
+def plot_generated_histograms(all_samples: dict, base_save_dir) -> None:
+    """Plot elevation range distribution histograms for generated samples.
+
+    For each design, computes per-sample elevation range (max - min)
+    and saves a histogram to outputs/distribution/generated/.
+
+    Args:
+        all_samples : dict mapping design_name -> (K, 1, H, W) tensor
+        base_save_dir : Path to the base output directory
+    """
+    hist_dir = Path("outputs/distribution/generated")
+    hist_dir.mkdir(parents=True, exist_ok=True)
+
+    for design_name, samples in all_samples.items():
+        samples_np = samples.squeeze(1).cpu().numpy()  # (K, H, W)
+        ranges = [arr.max() - arr.min() for arr in samples_np]
+        ranges = np.array(ranges)
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.hist(ranges, bins=max(10, len(ranges) // 2), color='steelblue',
+                edgecolor='white', alpha=0.85)
+        ax.set_title(f"Elevation Range Distribution — {design_name}")
+        ax.set_xlabel("Elevation Range (max − min)")
+        ax.set_ylabel("Count")
+        ax.axvline(ranges.mean(), color='red', linestyle='--', linewidth=1.2,
+                   label=f"Mean = {ranges.mean():.4f}")
+        ax.legend()
+        fig.tight_layout()
+
+        out_path = hist_dir / f"dist_{design_name}.png"
+        fig.savefig(str(out_path), dpi=150)
+        plt.close(fig)
+        print(f"  Saved histogram: {out_path}")
+
+
+def _resolve_scaling(args, config):
+    """Resolve elevation scaling parameters from metadata or config."""
+    scaling = load_scaling_metadata(config, args.metadata)
+    if scaling is not None:
+        return scaling
+    elev_min = float(config.get('elevation_min', 0.0))
+    elev_max = float(config.get('elevation_max', 1.0))
+    if elev_min == 0.0 and elev_max == 1.0:
+        print("Warning: No scaling_metadata.json found and elevation_min/elevation_max "
+              "are at default [0.0, 1.0]. Set them in config.txt or re-run "
+              "preprocessing to generate scaling_metadata.json.")
+    else:
+        print(f"Using elevation_min/max from config.txt")
+    return elev_min, elev_max
+
+
+def generate_for_design(design_path: str, model, model_type: str, config: dict,
+                        device: torch.device, args, save_dir: str) -> torch.Tensor:
+    """Generate and save k samples for a single design image.
+
+    Returns the generated samples tensor (K, 1, H, W).
+    """
+    image_size = int(config.get('image_size', 256))
+    k = args.k if args.k else int(config.get('num_gen_samples', 10))
+
+    design_tensor, design_np, design_orig = load_design(design_path, image_size)
+    design_tensor = design_tensor.to(device)
+
+    hand_features = extract_handcrafted_features(design_orig)
+    hand_features = hand_features.unsqueeze(0).to(device)
+
+    print(f"Generating {k} elevation samples for {design_path}  "
+          f"(temperature={args.temperature}, model={model_type.upper()}) ...")
+    samples = model.sample(design_tensor, hand_features,
+                           num_samples=k, temperature=args.temperature)
+
+    print_sample_stats(samples)
+    save_individual_samples(samples, save_dir=save_dir, colormap=args.colormap)
+
+    if args.save_txt:
+        elev_min, elev_max = _resolve_scaling(args, config)
+        print(f"\nConverting to .txt files with physical range [{elev_min}, {elev_max}] ...")
+        save_txt_files(samples, save_dir=save_dir,
+                       elev_min=elev_min, elev_max=elev_max)
+
+    if args.denormalize:
+        elev_min = float(config.get('elevation_min', 0.0))
+        elev_max = float(config.get('elevation_max', 1.0))
+        if elev_min == 0.0 and elev_max == 1.0:
+            print("Warning: elevation_min/elevation_max are both at default [0.0, 1.0]. "
+                  "Set them in config.txt to obtain physically meaningful values.")
+        print(f"\nDenormalizing to physical range [{elev_min}, {elev_max}] ...")
+        save_denormalized_txt(samples, save_dir=save_dir,
+                              elev_min=elev_min, elev_max=elev_max)
+
+    return samples
+
+
 def main():
     args   = parse_args()
     config = load_config(args.config)
 
+    if not args.design and not args.design_dir:
+        raise ValueError("Specify either --design (single image) or --design-dir (folder of images).")
+
     device     = get_device(config)
-    image_size = int(config.get('image_size', 256))
-    k          = args.k if args.k else int(config.get('num_gen_samples', 10))
 
     # Checkpoint
     model_path = args.checkpoint or config.get('modelpath', './outputs/cvae_pcb.pth')
@@ -318,51 +419,47 @@ def main():
     print(f"Loaded {model_type.upper()} model from {model_path}  "
           f"(epoch {checkpoint.get('epoch', '?')})")
 
-    # Load design image
-    design_tensor, design_np, design_orig = load_design(args.design, image_size)
-    design_tensor = design_tensor.to(device)    # (1, 1, H, W)
+    if args.design_dir:
+        # --- Batch mode: iterate all design PNGs in the folder ---
+        design_dir = Path(args.design_dir)
+        if not design_dir.is_dir():
+            raise FileNotFoundError(f"Design directory not found: {design_dir}")
 
-    # Compute handcrafted features at original resolution (preserves H, W, thin lines)
-    hand_features = extract_handcrafted_features(design_orig)               # (HAND_FEATURE_DIM,)
-    hand_features = hand_features.unsqueeze(0).to(device)                   # (1, HAND_FEATURE_DIM)
+        design_files = sorted(design_dir.glob("*.png"))
+        if not design_files:
+            raise FileNotFoundError(f"No .png files found in {design_dir}")
 
-    # Generate samples
-    print(f"Generating {k} elevation samples for {args.design}  "
-          f"(temperature={args.temperature}, model={model_type.upper()}) ...")
-    samples = model.sample(design_tensor, hand_features,
-                           num_samples=k, temperature=args.temperature)
+        print(f"\nBatch mode: found {len(design_files)} design images in '{design_dir}'")
+        print("=" * 60)
 
-    print_sample_stats(samples)
+        base_save_dir = Path(args.save)
+        all_samples = {}
 
-    save_individual_samples(samples, save_dir=args.save, colormap=args.colormap)
+        for design_path in design_files:
+            design_name = design_path.stem  # e.g. "design_A"
+            save_dir = str(base_save_dir / design_name)
 
-    if args.save_txt:
-        # Priority: --metadata file > auto-detect scaling_metadata.json > config fallback
-        scaling = load_scaling_metadata(config, args.metadata)
-        if scaling is not None:
-            elev_min, elev_max = scaling
-        else:
-            elev_min = float(config.get('elevation_min', 0.0))
-            elev_max = float(config.get('elevation_max', 1.0))
-            if elev_min == 0.0 and elev_max == 1.0:
-                print("Warning: No scaling_metadata.json found and elevation_min/elevation_max "
-                      "are at default [0.0, 1.0]. Set them in config.txt or re-run "
-                      "preprocessing to generate scaling_metadata.json.")
-            else:
-                print(f"Using elevation_min/max from config.txt")
-        print(f"\nConverting to .txt files with physical range [{elev_min}, {elev_max}] ...")
-        save_txt_files(samples, save_dir=args.save,
-                       elev_min=elev_min, elev_max=elev_max)
+            print(f"\n{'─' * 60}")
+            print(f"  Design: {design_path.name}  →  {save_dir}/")
+            print(f"{'─' * 60}")
 
-    if args.denormalize:
-        elev_min = float(config.get('elevation_min', 0.0))
-        elev_max = float(config.get('elevation_max', 1.0))
-        if elev_min == 0.0 and elev_max == 1.0:
-            print("Warning: elevation_min/elevation_max are both at default [0.0, 1.0]. "
-                  "Set them in config.txt to obtain physically meaningful values.")
-        print(f"\nDenormalizing to physical range [{elev_min}, {elev_max}] ...")
-        save_denormalized_txt(samples, save_dir=args.save,
-                              elev_min=elev_min, elev_max=elev_max)
+            samples = generate_for_design(
+                str(design_path), model, model_type, config, device, args, save_dir
+            )
+            all_samples[design_name] = samples
+
+        # Generate elevation range histograms for generated data
+        print(f"\n{'=' * 60}")
+        print("  Generating elevation range histograms for generated samples...")
+        plot_generated_histograms(all_samples, base_save_dir)
+
+        print(f"\n{'=' * 60}")
+        print(f"  Batch complete: processed {len(design_files)} designs.")
+        print(f"{'=' * 60}\n")
+
+    else:
+        # --- Single design mode (original behaviour) ---
+        generate_for_design(args.design, model, model_type, config, device, args, args.save)
 
 
 if __name__ == '__main__':

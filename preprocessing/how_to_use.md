@@ -159,6 +159,7 @@ The pipeline displays:
 - Average tilt plane amplitude (how much tilt was removed)
 - Per-subfolder min/max statistics
 - Elevation range distribution table (per-subfolder and global): mean, std, min, P25, P50, P75, max of per-file (max - min) ranges
+- Per-subfolder range distribution histograms saved to `outputs/distribution/`
 - Global min/max values used for image scaling
 
 ---
@@ -215,6 +216,7 @@ data = smooth_gaussian(data, sigma=2.0, iterations=3)
 | 6 | `smooth_gaussian()` | Adaptive anisotropic Gaussian with min/max preservation |
 | 7 | Global min/max computation | Find min/max across all preprocessed files |
 | 7a | Elevation range analysis | Per-subfolder and global distribution of per-file (max - min) ranges |
+| 7b | Range distribution histograms | Save per-subfolder histograms to `outputs/distribution/` |
 | 8 | `generate_grayscale_image()` | Min-max scale to [0, 255] and save PNG |
 
 ---
@@ -259,6 +261,19 @@ A summary table is printed showing mean, std, min, P25, P50 (median), P75, and m
 ### Saved metadata
 
 The range distribution statistics are also saved in `scaling_metadata.json` under each subfolder entry (`range_distribution`) and at the top level (`global_range_distribution`), with fields: `mean`, `std`, `min`, `p25`, `median`, `p75`, `max`.
+
+### Distribution histograms
+
+In batch mode, histograms of per-file elevation ranges are automatically saved as PNG files:
+
+```
+outputs/distribution/
+├── dist_board_A.png
+├── dist_board_B.png
+└── ...
+```
+
+Each histogram shows the distribution of per-file (max - min) ranges for that subfolder, with a red dashed line marking the mean. The naming convention is `dist_{folder_name}.png`.
 
 This analysis is useful for:
 - Detecting subfolders with unusually narrow or wide warpage ranges
