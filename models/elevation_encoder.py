@@ -34,6 +34,10 @@ class ElevationEncoder(nn.Module):
     def __init__(self, config: dict):
         super().__init__()
         z_dim = int(config.get('z_dim', 64))
+        # Clamp bounds for logvar — widen the lower bound to allow more
+        # expressive posteriors and reduce posterior collapse risk.
+        self._logvar_min = float(config.get('logvar_clamp_min', -6.0))
+        self._logvar_max = float(config.get('logvar_clamp_max',  4.0))
 
         # Spatial: 256 → 128 → 64 → 32 → 16  (4× stride-2 convs)
         self.cnn = nn.Sequential(
@@ -64,7 +68,7 @@ class ElevationEncoder(nn.Module):
         """
         h      = self.mlp(self.cnn(elevation))
         mu     = self.mu_layer(h)
-        logvar = self.logvar_layer(h).clamp(-4.0, 4.0)
+        logvar = self.logvar_layer(h).clamp(self._logvar_min, self._logvar_max)
         return mu, logvar
 
     @staticmethod

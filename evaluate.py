@@ -61,6 +61,46 @@ def get_device(config: dict) -> torch.device:
 # Metrics
 # ------------------------------------------------------------------
 
+@torch.no_grad()
+def active_kl_dims(model, loader, device, threshold: float = 0.1) -> tuple[int, int]:
+    """Count latent dimensions whose mean KL exceeds `threshold` nats.
+
+    Runs the elevation encoder over the dataset and computes the per-dim KL
+    averaged across all batches.  A dimension is 'active' (not collapsed) when
+    its mean KL is above the threshold — meaning the encoder learned to encode
+    real information there rather than defaulting to the prior N(0, 1).
+
+    Args:
+        model     : CVAE model (must have a .forward() returning (recon, mu, logvar))
+        loader    : DataLoader over the evaluation set
+        device    : torch.device
+        threshold : minimum mean KL (nats) for a dim to be considered active
+
+    Returns:
+        (n_active, z_dim)
+    """
+    model.eval()
+    kl_per_dim_acc = None
+    n_batches = 0
+
+    for design, elevation, hand_features in loader:
+        design        = design.to(device)
+        elevation     = elevation.to(device)
+        hand_features = hand_features.to(device)
+
+        _, mu, logvar = model(elevation, design, hand_features)
+        kl_dims = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp()).mean(dim=0)
+        kl_per_dim_acc = kl_dims if kl_per_dim_acc is None else kl_per_dim_acc + kl_dims
+        n_batches += 1
+
+    if kl_per_dim_acc is None:
+        return 0, model.z_dim
+
+    mean_kl = kl_per_dim_acc / max(n_batches, 1)
+    n_active = int((mean_kl > threshold).sum().item())
+    return n_active, model.z_dim
+
+
 def sample_diversity(samples: torch.Tensor) -> float:
     """Mean per-pixel variance across K generated samples.
 
@@ -179,12 +219,16 @@ def evaluate_fold(config: dict, fold: int, k: int, device: torch.device,
     model, model_type = load_model_from_checkpoint(checkpoint, cfg, device)
     print(f"Loaded {model_type.upper()} checkpoint (epoch {checkpoint.get('epoch', '?')})")
 
-    # 1. Reconstruction MSE (CVAE only)
+    # 1. Reconstruction MSE + active KL dims (CVAE only)
     if model_type == 'cvae':
         recon_mse = reconstruction_mse(model, val_loader, device)
         print(f"  Reconstruction MSE : {recon_mse:.6f}")
+        n_active, z_dim = active_kl_dims(model, val_loader, device)
+        print(f"  Active KL dims     : {n_active}/{z_dim}  "
+              f"({'healthy' if n_active > z_dim // 4 else 'WARNING: possible posterior collapse'})")
     else:
         recon_mse = float('nan')
+        n_active  = None
         print(f"  Reconstruction MSE : N/A (DDPM)")
 
     # 2. Collect real elevation images (flattened)
@@ -230,6 +274,7 @@ def evaluate_fold(config: dict, fold: int, k: int, device: torch.device,
         'fold':        fold,
         'design':      design_names[fold],
         'recon_mse':   recon_mse,
+        'active_dims': n_active,
         'diversity':   diversity,
         'mmd':         mmd_val,
     }
@@ -267,6 +312,10 @@ def main():
                 print(f"  {m:<18} : mean={np.mean(vals):.6f}  std={np.std(vals):.6f}")
             else:
                 print(f"  {m:<18} : N/A")
+        active_vals = [r['active_dims'] for r in all_results if r.get('active_dims') is not None]
+        if active_vals:
+            print(f"  {'active_kl_dims':<18} : mean={np.mean(active_vals):.1f}  "
+                  f"min={min(active_vals)}  max={max(active_vals)}")
 
 
 if __name__ == '__main__':

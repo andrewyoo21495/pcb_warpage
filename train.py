@@ -84,9 +84,25 @@ def setup_logger(log_path: str) -> logging.Logger:
 # CVAE training functions
 # ==================================================================
 
-def train_one_epoch_cvae(model, loader, optimizer, device, beta):
+def _count_active_kl_dims(
+    kl_per_dim_acc: torch.Tensor,
+    n_batches: int,
+    threshold: float = 0.1,
+) -> int:
+    """Return number of latent dims whose mean KL exceeds threshold.
+
+    A dim is 'active' (not collapsed) when the encoder has learned to
+    encode real information there rather than defaulting to the prior.
+    """
+    mean_kl = kl_per_dim_acc / max(n_batches, 1)  # (z_dim,)
+    return int((mean_kl > threshold).sum().item())
+
+
+def train_one_epoch_cvae(model, loader, optimizer, device, beta,
+                         free_bits, spectral_weight):
     model.train()
     total_loss = recon_sum = kl_sum = 0.0
+    kl_per_dim_acc = None
     n_batches = 0
 
     for design, elevation, hand_features in loader:
@@ -96,7 +112,9 @@ def train_one_epoch_cvae(model, loader, optimizer, device, beta):
 
         optimizer.zero_grad()
         x_recon, mu, logvar = model(elevation, design, hand_features)
-        loss, recon, kl     = cvae_loss(x_recon, elevation, mu, logvar, beta)
+        loss, recon, kl = cvae_loss(
+            x_recon, elevation, mu, logvar, beta,
+            free_bits=free_bits, spectral_weight=spectral_weight)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
         optimizer.step()
@@ -104,16 +122,27 @@ def train_one_epoch_cvae(model, loader, optimizer, device, beta):
         total_loss += loss.item()
         recon_sum  += recon.item()
         kl_sum     += kl.item()
-        n_batches  += 1
+
+        # Accumulate per-dim KL for active dim counting (detached, no grad)
+        with torch.no_grad():
+            kl_dims = -0.5 * (
+                1 + logvar.detach() - mu.detach().pow(2) - logvar.detach().exp()
+            ).mean(dim=0)
+            kl_per_dim_acc = kl_dims if kl_per_dim_acc is None else kl_per_dim_acc + kl_dims
+
+        n_batches += 1
 
     n = max(n_batches, 1)
-    return total_loss / n, recon_sum / n, kl_sum / n
+    active_dims = (_count_active_kl_dims(kl_per_dim_acc, n_batches)
+                   if kl_per_dim_acc is not None else 0)
+    return total_loss / n, recon_sum / n, kl_sum / n, active_dims
 
 
 @torch.no_grad()
-def validate_cvae(model, loader, device, beta):
+def validate_cvae(model, loader, device, beta, free_bits, spectral_weight):
     model.eval()
     total_loss = recon_sum = kl_sum = 0.0
+    kl_per_dim_acc = None
     n_batches = 0
 
     for design, elevation, hand_features in loader:
@@ -122,15 +151,25 @@ def validate_cvae(model, loader, device, beta):
         hand_features = hand_features.to(device)
 
         x_recon, mu, logvar = model(elevation, design, hand_features)
-        loss, recon, kl     = cvae_loss(x_recon, elevation, mu, logvar, beta)
+        loss, recon, kl = cvae_loss(
+            x_recon, elevation, mu, logvar, beta,
+            free_bits=free_bits, spectral_weight=spectral_weight)
 
         total_loss += loss.item()
         recon_sum  += recon.item()
         kl_sum     += kl.item()
-        n_batches  += 1
+
+        kl_dims = -0.5 * (
+            1 + logvar - mu.pow(2) - logvar.exp()
+        ).mean(dim=0)
+        kl_per_dim_acc = kl_dims if kl_per_dim_acc is None else kl_per_dim_acc + kl_dims
+
+        n_batches += 1
 
     n = max(n_batches, 1)
-    return total_loss / n, recon_sum / n, kl_sum / n
+    active_dims = (_count_active_kl_dims(kl_per_dim_acc, n_batches)
+                   if kl_per_dim_acc is not None else 0)
+    return total_loss / n, recon_sum / n, kl_sum / n, active_dims
 
 
 # ==================================================================
@@ -232,31 +271,37 @@ def main():
         scheduler = optim.lr_scheduler.CosineAnnealingLR(
             optimizer, T_max=total_epochs, eta_min=1e-6)
 
-        beta_max    = float(config.get('beta_max',    4.0))
-        beta_cycles = int(config.get('beta_cycles',   4))
+        beta_max        = float(config.get('beta_max',        0.2))
+        beta_cycles     = int(config.get('beta_cycles',       4))
+        free_bits       = float(config.get('free_bits',       0.5))
+        spectral_weight = float(config.get('spectral_weight', 0.1))
+        z_dim           = int(config.get('z_dim', 64))
 
         logger.info("=" * 60)
         logger.info(f"Training CVAE  |  fusion={config.get('fusion_method')}  "
                     f"|  val_fold={config.get('val_fold')}  "
-                    f"|  epochs={total_epochs}{stop_info}")
+                    f"|  epochs={total_epochs}  "
+                    f"|  free_bits={free_bits}  spectral_weight={spectral_weight}{stop_info}")
         logger.info("=" * 60)
 
         for epoch in range(total_epochs):
             beta = get_cyclical_beta(epoch, total_epochs, beta_max, beta_cycles)
 
             t0 = time.time()
-            train_loss, train_recon, train_kl = train_one_epoch_cvae(
-                model, train_loader, optimizer, device, beta)
-            val_loss, val_recon, val_kl = validate_cvae(
-                model, val_loader, device, beta)
+            train_loss, train_recon, train_kl, train_active = train_one_epoch_cvae(
+                model, train_loader, optimizer, device, beta, free_bits, spectral_weight)
+            val_loss, val_recon, val_kl, val_active = validate_cvae(
+                model, val_loader, device, beta, free_bits, spectral_weight)
             scheduler.step()
             elapsed = time.time() - t0
 
             logger.info(
                 f"Epoch {epoch+1:4d}/{total_epochs}  "
                 f"beta={beta:.3f}  "
-                f"train[loss={train_loss:.4f} recon={train_recon:.4f} kl={train_kl:.4f}]  "
-                f"val[loss={val_loss:.4f} recon={val_recon:.4f} kl={val_kl:.4f}]  "
+                f"train[loss={train_loss:.4f} recon={train_recon:.4f} "
+                f"kl={train_kl:.4f} active={train_active}/{z_dim}]  "
+                f"val[loss={val_loss:.4f} recon={val_recon:.4f} "
+                f"kl={val_kl:.4f} active={val_active}/{z_dim}]  "
                 f"lr={scheduler.get_last_lr()[0]:.2e}  "
                 f"({elapsed:.1f}s)"
             )

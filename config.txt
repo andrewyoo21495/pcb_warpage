@@ -36,8 +36,14 @@ early_stop_threshold    0.001     # halt when val loss < this value; 0 = disable
 
 %   KL weight (beta) and cyclical annealing  (CVAE only)
 beta_start  0.0
-beta_max    0.5
+beta_max    0.2
 beta_cycles 4
+
+%   Diversity / anti-collapse settings  (CVAE only)
+free_bits       0.5     # min KL per latent dim (nats); 0 = disabled
+spectral_weight 0.1     # FFT magnitude loss weight; 0 = disabled
+logvar_clamp_min -6.0   # lower bound on logvar (wider = more expressive posterior)
+logvar_clamp_max  4.0   # upper bound on logvar
 
 %   DDPM parameters
 ddpm_T              1000    # diffusion timesteps

@@ -292,7 +292,7 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
         ax.set_xlabel("Elevation Range (max − min)")
         ax.set_ylabel("Count")
         ax.axvline(r.mean(), color='red', linestyle='--', linewidth=1.2,
-                   label=f"Mean = {r.mean():.4f}")
+                   label=f"Mean = {r.mean():.4f}\nMin = {r.min():.4f}  |  Max = {r.max():.4f}")
         ax.legend()
         fig.tight_layout()
         fig_path = os.path.join(dist_dir, f"dist_{name}.png")

@@ -339,7 +339,7 @@ def plot_generated_histograms(all_samples: dict, base_save_dir,
         ax.set_xlabel("Elevation Range (max − min)")
         ax.set_ylabel("Count")
         ax.axvline(ranges.mean(), color='red', linestyle='--', linewidth=1.2,
-                   label=f"Mean = {ranges.mean():.4f}")
+                   label=f"Mean = {ranges.mean():.4f}\nMin = {ranges.min():.4f}  |  Max = {ranges.max():.4f}")
         ax.legend()
         fig.tight_layout()
 
