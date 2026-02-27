@@ -421,8 +421,67 @@
 
   <header>
     <h1>Conditional CVAE + FiLM</h1>
-    <p>PCB Elevation Generation — 전체 아키텍처 상세 도식 가이드</p>
+    <p>PCB Elevation Generation — Complete Architecture &amp; Detailed Flow Guide (전체 아키텍처 상세 도식 가이드)</p>
   </header>
+
+  <!-- ================================================================ -->
+  <!--                     INTRODUCTION / OVERVIEW                       -->
+  <!-- ================================================================ -->
+  <div class="diagram" style="background: var(--surf); border-color: var(--brd-light); max-width: 900px; margin: 0 auto 56px; padding: 32px 36px;">
+    <div class="title" style="font-size: 13px; letter-spacing: 2px; margin-bottom: 20px;">WHAT IS THIS SYSTEM?</div>
+
+    <p style="font-size: 14px; color: var(--txt); line-height: 1.9; margin-bottom: 12px;">
+      This system predicts <strong>PCB warpage elevation maps</strong> from a circuit board design image.
+      Warpage (bowing or twisting of the board) depends on manufacturing tolerances and material variation,
+      so a single design does not produce one fixed warpage pattern — it produces a
+      <em>distribution</em> of possible patterns.
+    </p>
+    <p style="font-size: 14px; color: var(--txt2); line-height: 1.9; margin-bottom: 24px;">
+      A <strong>Conditional VAE (CVAE)</strong> with <strong>FiLM conditioning</strong> learns this distribution.
+      Given a new PCB design, the model generates K different plausible elevation maps in one pass.
+      Their mean reveals the expected warpage; their spread shows which areas are physically uncertain.
+    </p>
+
+    <!-- Variable cheat sheet -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-bottom: 20px;">
+      <div style="background: var(--design-d); border: 1px solid var(--design-m); border-radius: 10px; padding: 14px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--design); margin-bottom: 6px;">c — Condition Vector</div>
+        <div style="font-size: 12px; color: var(--txt2); line-height: 1.7;">64-dim summary of the PCB design. Computed once; fixed across all K samples. Tells the model <em>what board this is</em>.</div>
+      </div>
+      <div style="background: var(--latent-d); border: 1px solid var(--latent-m); border-radius: 10px; padding: 14px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--latent); margin-bottom: 6px;">z₁ — Latent Vector</div>
+        <div style="font-size: 12px; color: var(--txt2); line-height: 1.7;">64-dim random code sampled from 𝒩(0,I). Re-sampled for each of the K outputs — the <em>sole source of diversity</em>.</div>
+      </div>
+      <div style="background: var(--film-d); border: 1px solid var(--film-m); border-radius: 10px; padding: 14px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--film); margin-bottom: 6px;">z_fused — Fused Latent</div>
+        <div style="font-size: 12px; color: var(--txt2); line-height: 1.7;">z₁ modulated by c via FiLM. Carries both "what kind of warpage" and "which design" — the decoder's starting point.</div>
+      </div>
+      <div style="background: var(--out-d); border: 1px solid var(--out-m); border-radius: 10px; padding: 14px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--out); margin-bottom: 6px;">x̂ — Generated Elevation</div>
+        <div style="font-size: 12px; color: var(--txt2); line-height: 1.7;">256×256 grayscale output. Each pixel value = normalised warpage height [0,1] at that board location.</div>
+      </div>
+    </div>
+
+    <!-- Two-phase overview -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+      <div style="background: var(--elev-d); border: 1px dashed var(--elev-m); border-radius: 10px; padding: 16px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--elev); margin-bottom: 8px;">TRAINING PHASE (Steps 1–5)</div>
+        <div style="font-size: 12px; color: var(--txt2); line-height: 1.8;">
+          Both the PCB design <em>and</em> the ground-truth elevation image are fed in.<br>
+          The model learns to encode, fuse, and reconstruct elevation accurately.<br>
+          The Elevation Encoder teaches the latent space what different warpage patterns "feel like."
+        </div>
+      </div>
+      <div style="background: var(--out-d); border: 1px dashed var(--out-m); border-radius: 10px; padding: 16px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--out); margin-bottom: 8px;">INFERENCE PHASE (Step I)</div>
+        <div style="font-size: 12px; color: var(--txt2); line-height: 1.8;">
+          Only the PCB design is needed — no elevation image required.<br>
+          z₁ is sampled randomly from 𝒩(0,I); the Elevation Encoder is not used.<br>
+          Run K times → K diverse, plausible elevation maps for that design.
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- ================================================================ -->
   <!--                     TRAINING PHASE                                -->
@@ -437,12 +496,18 @@
     <div class="step-num" style="background: var(--design-d); color: var(--design);">1</div>
     <div class="step-content" style="border-color: var(--design-m);">
       <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--design);"></div>
-      <h3 style="color: var(--design);">Design Encoder — Condition 벡터 c 생성</h3>
-      <span class="role" style="color: var(--design);">deterministic · 같은 입력 → 항상 같은 출력</span>
+      <h3 style="color: var(--design);">Design Encoder — Building the Condition Vector c</h3>
+      <span class="role" style="color: var(--design);">deterministic · same input always gives the same output (같은 입력 → 항상 같은 출력)</span>
 
       <p class="desc">
-        PCB 설계 이미지와 handcrafted features를 받아서, 이 설계의 특성을 64차원 벡터 하나로 압축합니다.
-        이 벡터 c는 이후 모든 단계에서 "이 설계가 어떤 설계인지"를 알려주는 역할을 합니다.
+        The Design Encoder receives a 256×256 grayscale PCB design image plus 24 handcrafted geometric
+        features, and compresses the design's structural properties into a single 64-dimensional vector
+        <strong>c</strong>. Think of c as the PCB's "fingerprint" — it captures pattern density,
+        symmetry, component layout, and wiring complexity in 64 numbers.<br><br>
+        This vector c is then reused at <strong>5 different points</strong> in the pipeline (once in
+        the Latent Fusion step, and once at each of the 4 Decoder blocks) to continuously remind
+        the model which design is being generated.<br><br>
+        <span style="opacity:0.65;">[PCB 설계 이미지와 24개의 handcrafted features를 받아서 설계의 특성을 64차원 벡터 c로 압축합니다. c는 이후 총 5곳에서 사용됩니다.]</span>
       </p>
 
       <div class="diagram">
@@ -457,7 +522,7 @@
           <div style="width: 30px;"></div>
           <div class="node hand">
             Handcrafted Features
-            <div class="sub">3 scalars</div>
+            <div class="sub">24 features</div>
           </div>
         </div>
 
@@ -486,24 +551,24 @@
           <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
             <div class="node hand" style="min-width: 120px;">
               MLP
-              <div class="sub">3 → 8</div>
+              <div class="sub">24 → 32</div>
             </div>
             <div class="arrow-d">↓</div>
             <div class="node hand" style="padding: 8px 14px;">
               c_hand
-              <div class="sub">dim = 8</div>
+              <div class="sub">dim = 32</div>
             </div>
           </div>
         </div>
 
         <div class="arrow-d">↓ concat</div>
-        <div class="arr-label">cat(c_cnn, c_hand) = dim 72</div>
+        <div class="arr-label">cat(c_cnn, c_hand) = dim 96</div>
         <div class="arrow-d">↓</div>
 
         <div class="node-row">
           <div class="node design" style="min-width: 180px; padding: 12px 20px;">
-            Projection MLP(72 → 64)
-            <div class="sub">최종 condition 벡터</div>
+            Fusion MLP(96 → 64)
+            <div class="sub">Final condition vector (최종 condition 벡터)</div>
           </div>
         </div>
       </div>
@@ -517,9 +582,22 @@
       </div>
 
       <div class="callout design-c" style="margin-top: 16px;">
-        <strong>c가 담고 있는 정보:</strong> PCB 설계의 전체적인 구조 — 패턴 밀도, 대칭성, 배선 복잡도 등이 64개 숫자로 인코딩됩니다.
-        같은 설계 이미지를 넣으면 항상 동일한 c가 나옵니다.
-        이 c는 이후 <strong>Latent Fusion</strong>과 <strong>Decoder 4개 블록</strong>, 총 5곳에서 사용됩니다.
+        <strong>What c encodes:</strong> The overall structure of the PCB — pattern density, symmetry,
+        wiring complexity, component layout, edge orientation, etc. — compressed to 64 numbers.
+        The same design image always yields the identical c (deterministic).
+        This c is used in <strong>5 places total</strong>: Latent Fusion ① + Decoder Blocks ②③④⑤.<br><br>
+        <span style="opacity:0.65;">[c가 담고 있는 정보: 패턴 밀도, 대칭성, 배선 복잡도 등이 64개 숫자로 인코딩됩니다. 이 c는 Latent Fusion과 Decoder 4개 블록, 총 5곳에서 사용됩니다.]</span>
+      </div>
+
+      <div class="callout design-c" style="margin-top: 8px; background: rgba(0,212,170,0.04);">
+        <strong>Why CNN branch + Handcrafted branch?</strong><br>
+        The <strong>CNN branch</strong> discovers spatial patterns automatically — texture gradients,
+        local trace density, coarse spatial layout. It uses a <strong>4×4 spatial pool</strong> (instead
+        of a single global average) so two designs with similar overall statistics but different spatial
+        arrangements still get different c vectors.<br><br>
+        The <strong>Handcrafted branch</strong> injects 24 domain-knowledge features (symmetry scores,
+        edge-orientation ratios, component density, Hu moments) that are hard to learn reliably from the
+        small set of training designs. The two branches are concatenated and fused via a final MLP.
       </div>
     </div>
   </div>
@@ -534,12 +612,18 @@
     <div class="step-num" style="background: var(--elev-d); color: var(--elev);">2</div>
     <div class="step-content" style="border-color: var(--elev-m);">
       <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--elev);"></div>
-      <h3 style="color: var(--elev);">Elevation Encoder — Latent 벡터 z₁ 생성</h3>
-      <span class="role" style="color: var(--elev);">stochastic · 학습 시에만 사용 · 추론 시 제거</span>
+      <h3 style="color: var(--elev);">Elevation Encoder — Producing the Latent Vector z₁</h3>
+      <span class="role" style="color: var(--elev);">stochastic · used during training only · discarded at inference (학습 시에만 사용 · 추론 시 제거)</span>
 
       <p class="desc">
-        실제 Elevation 이미지(ground truth)를 받아서, 이 elevation의 "변형 특성"을 확률 분포(μ, σ)로 인코딩합니다.
-        여기서 reparameterization trick으로 z₁을 샘플링합니다.
+        During training, the Elevation Encoder receives the real (ground-truth) elevation image and
+        encodes its warpage characteristics as a <strong>probability distribution</strong> — described by
+        mean <strong>μ</strong> and log-variance <strong>log σ²</strong>, each 64-dimensional.<br><br>
+        Rather than a fixed code, a distribution is learned because one design can produce many different
+        warpage patterns. A single sample z₁ is then drawn from this distribution using the
+        <strong>reparameterization trick</strong> (see equation below), allowing gradients to flow back
+        through the sampling step during training.<br><br>
+        <span style="opacity:0.65;">[실제 Elevation 이미지(GT)를 받아서 변형 특성을 확률 분포(μ, σ)로 인코딩하고, reparameterization trick으로 z₁을 샘플링합니다.]</span>
       </p>
 
       <div class="diagram">
@@ -603,14 +687,25 @@
       </div>
 
       <div class="callout latent-c" style="margin-top: 16px;">
-        <strong>z₁이 담고 있는 정보:</strong> 같은 설계라도 elevation이 가질 수 있는 "변형"의 특성입니다.
-        μ는 "이 elevation의 평균적 특성", σ는 "얼마나 변형 가능한지"를 나타냅니다.
-        <br><br>
-        <strong>왜 확률적인가:</strong> 하나의 설계에 대해 여러 가능한 elevation이 존재할 수 있으므로,
-        하나의 고정 벡터가 아닌 분포로 모델링합니다.
-        <br><br>
-        <strong>추론 시:</strong> 이 인코더는 사용되지 않습니다. 대신 z₁ ~ 𝒩(0, I)에서 직접 샘플링합니다.
-        KL loss가 학습 시 z₁의 분포를 𝒩(0, I)에 가깝게 만들어두었기 때문에 이것이 가능합니다.
+        <strong>What z₁ captures:</strong> The "warpage personality" of a specific elevation image —
+        how much it deviates from the average, which regions bow up vs. down, and the magnitude of
+        the deformation. μ = "the central character of this warpage", σ = "how uncertain or variable
+        this warpage mode is".<br><br>
+        <strong>Why stochastic?</strong> A single PCB design produces many different warpage outcomes
+        depending on manufacturing conditions. Modeling z₁ as a distribution (not a fixed point) lets
+        the model represent this one-to-many mapping naturally.<br><br>
+        <strong>Why does inference work without this encoder?</strong> The KL loss (Step 5) forces the
+        learned z₁ distribution q(z₁|x) to stay close to 𝒩(0, I) during training. So at inference,
+        sampling z₁ ~ 𝒩(0, I) directly yields valid warpage codes — the encoder is no longer needed.<br><br>
+        <span style="opacity:0.65;">[z₁: 변형의 특성. 왜 확률적인가: 하나의 설계에 여러 elevation 존재 가능. 추론 시: KL loss가 분포를 𝒩(0,I)에 가깝게 만들어 직접 샘플링 가능.]</span>
+      </div>
+
+      <div class="callout latent-c" style="margin-top: 8px; background: rgba(244,92,123,0.04);">
+        <strong>Reparameterization Trick — Why it matters:</strong><br>
+        Normally you cannot backpropagate through a random sampling operation. The trick rewrites the
+        sample as <em>z₁ = μ + ε × σ</em> where ε ~ 𝒩(0, I) is treated as a fixed external noise input
+        (not a parameter). Now μ and σ are deterministic functions, and gradients flow through them
+        normally. The randomness is "moved outside" the computational graph.
       </div>
     </div>
   </div>
@@ -625,12 +720,19 @@
     <div class="step-num" style="background: var(--film-d); color: var(--film);">3</div>
     <div class="step-content" style="border-color: var(--film-m);">
       <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--film);"></div>
-      <h3 style="color: var(--film);">Latent Space Fusion — FiLM으로 z₁과 c 결합</h3>
-      <span class="role" style="color: var(--film);">FiLM 적용 ① · 1D 벡터 × 1D 벡터</span>
+      <h3 style="color: var(--film);">Latent Space Fusion — Combining z₁ and c with FiLM</h3>
+      <span class="role" style="color: var(--film);">FiLM application ① · 1D vector × 1D vector (1D 벡터 × 1D 벡터)</span>
 
       <p class="desc">
-        c(설계 정보)가 z₁(변형 정보)을 element-wise로 변조합니다.
-        "이 설계에서 z₁의 어떤 차원이 중요한지"를 gamma로 스케일링하고, beta로 기본값을 설정합니다.
+        The condition vector <strong>c</strong> (design identity) modulates the latent vector
+        <strong>z₁</strong> (warpage sample) element-wise via <strong>FiLM (Feature-wise Linear
+        Modulation)</strong>: for each of the 64 dimensions, c decides how much to amplify or
+        suppress that dimension of z₁ (via γ — scale), and what baseline offset to apply
+        regardless of z₁'s value (via β — shift).<br><br>
+        <strong>Analogy:</strong> Think of z₁ as a raw audio recording and γ/β as an equalizer
+        whose frequency settings are determined by the design. The same raw recording sounds
+        different depending on the EQ preset chosen by c.<br><br>
+        <span style="opacity:0.65;">[c(설계 정보)가 z₁(변형 정보)을 element-wise로 변조합니다. gamma로 스케일링, beta로 기본값을 설정합니다.]</span>
       </p>
 
       <div class="diagram">
@@ -694,15 +796,26 @@
       </div>
 
       <div class="callout film-c">
-        <strong>γ(gamma)의 역할:</strong> 설계에 따라 latent의 특정 차원을 증폭(γ>1), 유지(γ≈1), 또는 완전히 억제(γ≈0)합니다.
-        "이 설계에서 z₁의 어떤 변형 축이 중요한가"를 결정합니다.
+        <strong>Role of γ (scale):</strong> Amplifies (γ &gt; 1), preserves (γ ≈ 1), or suppresses
+        (γ ≈ 0) each dimension of z₁. Answers: "For <em>this</em> design, which axes of the latent
+        space carry meaningful warpage variation?"<br>
+        <span style="opacity:0.65;">[설계에 따라 z₁의 각 차원을 증폭/유지/억제합니다.]</span>
         <br><br>
-        <strong>β(beta)의 역할:</strong> 설계 고유의 기본값(offset)입니다.
-        z₁이 0이어도(평균적 변형) β만으로 설계 특성이 반영됩니다.
+        <strong>Role of β (shift):</strong> Design-specific baseline offset added after scaling.
+        Even when z₁ = 0 (the "average" warpage), β alone injects the design's characteristic bias
+        into the fused vector.<br>
+        <span style="opacity:0.65;">[설계 고유의 기본값(offset). z₁=0이어도 β만으로 설계 특성이 반영됩니다.]</span>
         <br><br>
-        <strong>핵심:</strong> γ와 β는 c의 <strong>64개 차원 전체가 혼합</strong>되어 생성됩니다 (행렬곱).
-        다른 설계가 들어오면 c가 달라지고, γ와 β도 완전히 달라져서,
-        <strong>같은 z₁이라도 설계에 따라 전혀 다른 z_fused가 생성</strong>됩니다.
+        <strong>Key insight:</strong> γ and β are produced by mixing all 64 dimensions of c through a
+        learned linear layer (matrix multiply). A different design → different c → completely different
+        γ and β → <strong>the same z₁ produces a completely different z_fused for each design</strong>.<br>
+        <span style="opacity:0.65;">[다른 설계 → 다른 c → 다른 γ,β → 같은 z₁이라도 설계에 따라 전혀 다른 z_fused 생성.]</span>
+        <br><br>
+        <strong>Why FiLM instead of simple concatenation?</strong> Concatenating c to z₁ just
+        appends the two — the network must learn on its own how to mix them, which is harder with
+        limited data. FiLM gives the model a structured mechanism: c explicitly <em>controls the
+        interpretation</em> of z₁ by rescaling and shifting each dimension, which is more
+        parameter-efficient and easier to optimise.
       </div>
 
       <div class="node-row" style="margin-top: 16px;">
@@ -724,12 +837,19 @@
     <div class="step-num" style="background: var(--decode-d); color: var(--decode);">4</div>
     <div class="step-content" style="border-color: var(--decode-m);">
       <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--decode);"></div>
-      <h3 style="color: var(--decode);">FiLM-Conditioned Decoder — 이미지 복원</h3>
-      <span class="role" style="color: var(--decode);">FiLM 적용 ②③④⑤ · 1D 벡터가 3D feature map을 변조</span>
+      <h3 style="color: var(--decode);">FiLM-Conditioned Decoder — Reconstructing the Elevation Image</h3>
+      <span class="role" style="color: var(--decode);">FiLM applications ②③④⑤ · 1D condition vector modulates 3D feature maps (1D 벡터가 3D feature map을 변조)</span>
 
       <p class="desc">
-        z_fused 벡터를 8×8 feature map으로 확장한 뒤, 4번의 upsample 블록을 거쳐 256×256 이미지를 생성합니다.
-        매 블록마다 condition c가 FiLM으로 주입되어, 각 해상도 단계에서 설계 특성이 반영됩니다.
+        The decoder "paints" an elevation image progressively: starting from a tiny 8×8 canvas, it
+        doubles the resolution at each of 4 upsampling blocks until reaching the full 256×256 output.
+        At <strong>every block</strong>, the condition vector c injects design-specific guidance via
+        FiLM — ensuring the growing image reflects the correct PCB structure at every spatial scale.<br><br>
+        <strong>Why apply FiLM at every block, not just once?</strong> Without repeated conditioning,
+        the design information injected via z_fused can "wash out" as it passes through multiple
+        convolutions. Re-injecting c at each resolution keeps the design constraints active throughout
+        the entire decoding process.<br><br>
+        <span style="opacity:0.65;">[z_fused를 8×8 feature map으로 확장한 뒤 4번의 upsample 블록으로 256×256 이미지를 생성합니다. 매 블록마다 c가 FiLM으로 주입됩니다.]</span>
       </p>
 
       <!-- Projection step -->
@@ -754,9 +874,15 @@
         </div>
 
         <div class="callout" style="background: var(--decode-d); border-left: 3px solid var(--decode); color: var(--txt2); margin-top: 12px;">
-          64개의 숫자가 <strong style="color:var(--decode);">256채널 × 8×8 spatial</strong> feature map으로 확장됩니다.
-          이 시점에서 256개의 채널은 아직 의미 없는 초기값이고,
-          이후 Decoder 블록들이 점차 의미 있는 이미지 특성으로 변환합니다.
+          64 numbers are expanded into a <strong style="color:var(--decode);">256-channel × 8×8 spatial</strong>
+          feature map via a learned linear projection and reshape. At this stage the 256 channels
+          are not yet interpretable image features — they are a learned "unfolding" of the latent
+          code into spatial form. The subsequent Decoder blocks progressively transform them into
+          coherent visual structure.<br><br>
+          <strong>Why start at 8×8?</strong> It is the smallest spatial resolution that still preserves
+          coarse positional structure (e.g., which board quadrant is higher). Smaller would discard
+          spatial information; larger would increase parameter count unnecessarily.<br>
+          <span style="opacity:0.65;">[64개 숫자가 256채널×8×8 feature map으로 확장됩니다. 이후 Decoder 블록들이 의미 있는 이미지 특성으로 변환합니다.]</span>
         </div>
       </div>
 
@@ -965,13 +1091,24 @@
 
       <!-- Each block's role -->
       <div class="callout film-c">
-        <strong>4개 블록이 각각 담당하는 스케일:</strong><br><br>
-        <strong>Block 1</strong> (8²→16²): 전체적인 elevation의 큰 구조 — 어느 영역이 높고 낮은지<br>
-        <strong>Block 2</strong> (16²→32²): 중간 크기의 구조물 패턴 — 그룹 단위 높이 변화<br>
-        <strong>Block 3</strong> (32²→64²): 개별 컴포넌트 수준의 디테일<br>
-        <strong>Block 4</strong> (64²→128²): 미세한 표면 텍스처, 엣지 디테일<br><br>
-        동일한 c가 4개 블록에 들어가지만, 각 블록의 <strong>Linear 파라미터가 독립적</strong>이므로
-        같은 c에서도 스케일에 맞는 서로 다른 γ, β를 학습합니다.
+        <strong>What each block is responsible for:</strong><br><br>
+        <strong>Block 1</strong> (8²→16²): Board-level coarse structure — which quadrants are high/low overall<br>
+        <strong>Block 2</strong> (16²→32²): Mid-scale component group patterns — height variation at cluster level<br>
+        <strong>Block 3</strong> (32²→64²): Individual component-level detail<br>
+        <strong>Block 4</strong> (64²→128²): Fine surface texture, edge sharpness, micro-warpage<br>
+        <em>(Final Upsample + Conv, no FiLM): 128²→256² — pixel-level output refinement)</em><br><br>
+        The same c feeds into all 4 FiLM blocks, but each block has <strong>independent Linear layers</strong>
+        for γ and β. So the same design condition is "re-read" differently at each scale, producing
+        scale-appropriate modulation (coarse layout guidance early; fine texture guidance late).<br>
+        <span style="opacity:0.65;">[Block1(큰 구조), Block2(중간 패턴), Block3(컴포넌트), Block4(미세 텍스처). 동일한 c가 4개 블록에 입력되지만 각 블록의 Linear는 독립적인 파라미터를 가집니다.]</span>
+      </div>
+
+      <div class="callout" style="background: rgba(167,139,250,0.05); border-left: 3px solid var(--decode); color: var(--txt2); margin-top: 8px; font-size: 12px; line-height: 1.7;">
+        <strong>Inside each Decoder block (e.g. Block 2):</strong><br>
+        <strong>1. Bilinear Upsample ×2</strong> — doubles spatial resolution smoothly. Preferred over transposed convolution because it avoids "checkerboard" artifacts.<br>
+        <strong>2. Conv2d (3×3, stride 1)</strong> — refines features after upsampling; also reduces channel count (e.g. 128→64 in Block 2).<br>
+        <strong>3. BatchNorm + ReLU</strong> — BatchNorm normalises activations within each channel across the batch, stabilising training and allowing higher learning rates. ReLU discards negative values, introducing non-linearity so the model can learn complex mappings.<br>
+        <strong>4. FiLM</strong> — applies design conditioning at this resolution before passing to the next block.
       </div>
     </div>
   </div>
@@ -986,7 +1123,7 @@
     <div class="step-num" style="background: var(--loss-d); color: var(--loss);">5</div>
     <div class="step-content" style="border-color: var(--loss-m);">
       <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--loss);"></div>
-      <h3 style="color: var(--loss);">Loss 계산 및 학습</h3>
+      <h3 style="color: var(--loss);">Loss Calculation and Training (Loss 계산 및 학습)</h3>
       <span class="role" style="color: var(--loss);">MSE + KL divergence · β annealing</span>
 
       <div class="diagram">
@@ -1011,22 +1148,36 @@
       <div class="side-grid">
         <div class="callout loss-c">
           <strong>MSE (Reconstruction Loss):</strong><br>
-          생성된 이미지 x̂와 실제 이미지 x의 픽셀별 차이를 줄입니다.
-          이 loss가 Design Encoder, Latent Fusion의 Linear, Decoder 전체의 파라미터를 업데이트합니다.
+          Minimises the pixel-wise squared difference between generated x̂ and the real elevation x.
+          This signal propagates back through the entire pipeline — Decoder Conv weights, FiLM γ/β
+          Linear layers, Latent Fusion, and the Design Encoder — updating all parameters simultaneously.<br>
+          <span style="opacity:0.65;">[생성된 x̂와 실제 x의 픽셀별 차이를 줄입니다. Design Encoder, Latent Fusion, Decoder 전체의 파라미터를 업데이트합니다.]</span>
         </div>
         <div class="callout latent-c">
-          <strong>KL Divergence (Regularization):</strong><br>
-          Elevation Encoder가 만드는 분포 q(z₁|x)를 𝒩(0,I)에 가깝게 만듭니다.
-          이것이 추론 시 z₁ ~ 𝒩(0,I) 샘플링을 가능하게 합니다.
-          β는 0→0.5로 cyclical annealing하여 posterior collapse를 방지합니다.
+          <strong>KL Divergence (Regularisation):</strong><br>
+          Pushes the Elevation Encoder's learned posterior q(z₁|x) toward the standard normal prior
+          𝒩(0, I). This is what makes inference possible: because z₁ always resembles 𝒩(0, I)
+          after training, we can sample directly from 𝒩(0, I) at inference time.<br><br>
+          <strong>Why β annealing (0 → 0.5, cyclical)?</strong> If the KL weight β is too large from
+          the start, the model can simply collapse all z₁ values to 𝒩(0, I) trivially and learn
+          nothing useful from the latent space (called <em>posterior collapse</em>). Starting β at 0
+          lets the model first learn to reconstruct well, then gradually introduces the KL constraint
+          to organise the latent space — preventing collapse while maintaining diversity.<br>
+          <span style="opacity:0.65;">[q(z₁|x)를 𝒩(0,I)에 가깝게 만들어 추론 시 직접 샘플링 가능. β cyclical annealing(0→0.5)으로 posterior collapse를 방지합니다.]</span>
         </div>
       </div>
 
       <div class="callout loss-c" style="margin-top: 8px;">
-        <strong>Backpropagation 경로:</strong><br>
-        Loss → Decoder (Conv, FiLM의 γ/β Linear) → z_fused → Latent Fusion (γ/β Linear)
-        → 두 갈래: (1) Elevation Encoder의 μ, σ (2) Design Encoder의 CNN, MLP<br>
-        <strong>모든 파라미터가 동시에 end-to-end로 학습</strong>됩니다. FiLM의 Linear들도 이 과정에서 "어떤 γ, β가 좋은 reconstruction을 만드는가"를 학습합니다.
+        <strong>Backpropagation Path:</strong><br>
+        Loss → Decoder (Conv weights + FiLM γ/β Linear layers) → z_fused → Latent Fusion (γ/β Linear)
+        → two branches: <strong>(1)</strong> Elevation Encoder μ and σ heads &nbsp;
+        <strong>(2)</strong> Design Encoder CNN and MLP<br><br>
+        <strong>All parameters are trained simultaneously end-to-end.</strong> The FiLM Linear layers
+        learn "which γ and β values produce accurate reconstructions" — in other words, they learn how
+        to re-interpret the design condition c to guide generation at each location in the pipeline.
+        The reparameterization trick is what enables gradients to flow through z₁ back into the
+        Elevation Encoder.<br>
+        <span style="opacity:0.65;">[Loss → Decoder → z_fused → Latent Fusion → (1) Elevation Encoder μ,σ / (2) Design Encoder. 모든 파라미터가 end-to-end로 동시 학습됩니다.]</span>
       </div>
     </div>
   </div>
@@ -1043,12 +1194,17 @@
     <div class="step-num" style="background: var(--out-d); color: var(--out);">I</div>
     <div class="step-content" style="border-color: var(--out-m);">
       <div style="position:absolute;top:0;left:0;right:0;height:2px;background: linear-gradient(90deg, var(--out), var(--design));"></div>
-      <h3 style="color: var(--out);">추론: 새로운 설계에서 K개의 Elevation 생성</h3>
-      <span class="role" style="color: var(--out);">Elevation Encoder 제거 · z₁은 N(0,I)에서 샘플링</span>
+      <h3 style="color: var(--out);">Inference: Generating K Elevation Maps from a New Design</h3>
+      <span class="role" style="color: var(--out);">Elevation Encoder removed · z₁ sampled directly from 𝒩(0,I) (Elevation Encoder 제거 · z₁은 N(0,I)에서 샘플링)</span>
 
       <p class="desc">
-        학습된 모델에서 Elevation Encoder를 제거하고, z₁을 prior에서 직접 샘플링합니다.
-        같은 설계에 대해 K번 반복하면 K개의 서로 다른 elevation을 생성합니다.
+        At inference time, the Elevation Encoder is discarded — we have no real elevation to encode.
+        Instead, z₁ is sampled directly from the prior 𝒩(0, I), scaled by temperature τ.
+        The KL regularisation from training ensures these samples are valid inputs for the decoder.<br><br>
+        Repeating this K times for the same design (c is computed once and reused) produces K
+        different but all plausible elevation maps, capturing the full range of warpage outcomes
+        the model has learned for that PCB design.<br><br>
+        <span style="opacity:0.65;">[학습된 모델에서 Elevation Encoder를 제거하고 z₁을 prior에서 직접 샘플링합니다. K번 반복으로 K개의 다른 elevation을 생성합니다.]</span>
       </p>
 
       <div class="diagram">
@@ -1057,7 +1213,7 @@
         <!-- Step I-1: Design Encoder -->
         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
           <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--design); font-weight:700; width: 20px;">①</div>
-          <div style="font-size: 12px; color: var(--txt2);">Design Encoder 실행 (1번만)</div>
+          <div style="font-size: 12px; color: var(--txt2);">Run Design Encoder once — same <strong>c</strong> is reused for all K samples (1번만 실행)</div>
         </div>
 
         <div class="node-row">
@@ -1081,7 +1237,7 @@
         <!-- Step I-2: K samples -->
         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
           <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--latent); font-weight:700; width: 20px;">②</div>
-          <div style="font-size: 12px; color: var(--txt2);">K번 반복: 샘플링 → Fusion → Decode</div>
+          <div style="font-size: 12px; color: var(--txt2);">Repeat K times: Sample → Fuse → Decode (K번 반복: 샘플링 → Fusion → Decode)</div>
         </div>
 
         <!-- Loop box -->
@@ -1120,7 +1276,7 @@
 
         <div class="side-grid">
           <div style="background: var(--design-d); border: 1px solid var(--design-m); border-radius: 10px; padding: 16px;">
-            <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--design); font-weight: 700; margin-bottom: 10px;">🔒 50번 모두 동일 (고정)</div>
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--design); font-weight: 700; margin-bottom: 10px;">🔒 Fixed across all K samples (모두 동일 — 고정)</div>
             <div style="font-size: 12px; color: var(--txt2); line-height: 1.8;">
               • c (condition 벡터)<br>
               • Latent Fusion의 γ, β<br>
@@ -1129,7 +1285,7 @@
             </div>
           </div>
           <div style="background: var(--latent-d); border: 1px solid var(--latent-m); border-radius: 10px; padding: 16px;">
-            <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--latent); font-weight: 700; margin-bottom: 10px;">🎲 50번 모두 다름 (변동)</div>
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--latent); font-weight: 700; margin-bottom: 10px;">🎲 Different each sample (매번 변동)</div>
             <div style="font-size: 12px; color: var(--txt2); line-height: 1.8;">
               • z₁ (매번 새로 랜덤 샘플링)<br>
               • z_fused (z₁이 다르므로)<br>
@@ -1141,13 +1297,18 @@
       </div>
 
       <div class="callout out-c">
-        <strong>다양성의 유일한 원천은 z₁의 랜덤 샘플링</strong>입니다.
-        temperature τ로 다양성을 제어합니다:<br>
-        <strong>τ = 0.5</strong> → z₁이 0 근처에 몰림 → 50개 결과가 비슷 (안전하지만 단조로움)<br>
-        <strong>τ = 1.0</strong> → 표준 정규분포 → 학습 시와 동일한 다양성<br>
-        <strong>τ = 1.5</strong> → 분포가 넓어짐 → 다양하지만 품질 저하 가능 (학습 시 보지 못한 영역)<br><br>
-        50개 샘플을 모으면 pixel-wise mean(평균 elevation)과 std(불확실성 맵)를 계산하여
-        "이 설계에서 elevation이 확실한 부분"과 "변형 가능한 부분"을 분석할 수 있습니다.
+        <strong>The sole source of diversity is the random z₁ sampling.</strong>
+        Temperature τ controls how wide that distribution is:<br><br>
+        <strong>τ = 0.5</strong> → z₁ values cluster near 0 → K outputs are similar (conservative, lower diversity)<br>
+        <strong>τ = 1.0</strong> → standard normal → same spread as during training <em>(recommended starting point)</em><br>
+        <strong>τ = 1.5</strong> → wider spread → more diverse but quality may degrade (unseen latent regions)<br><br>
+        <strong>Analysing the K samples:</strong> Compute pixel-wise statistics over all K elevation maps:<br>
+        <ul style="margin: 6px 0 0 16px; font-size: 12px; line-height: 1.9;">
+          <li><strong>Mean map</strong> — expected warpage pattern for this design</li>
+          <li><strong>Std map</strong> — uncertainty map; high std = the model predicts variable warpage here, indicating that region is sensitive to manufacturing variation</li>
+          <li>Low-std regions are structurally determined by the design geometry; high-std regions reflect physical uncertainty</li>
+        </ul><br>
+        <span style="opacity:0.65;">[다양성의 유일한 원천은 z₁의 랜덤 샘플링. τ로 다양성 제어: τ=0.5(안전), τ=1.0(표준), τ=1.5(다양하지만 품질 저하 가능). 50개 샘플 → mean(평균 elevation) + std(불확실성 맵).]</span>
       </div>
     </div>
   </div>
@@ -1158,7 +1319,7 @@
   <div class="divider" style="margin-top: 56px;"></div>
 
   <div class="diagram" style="background: var(--surf); border-color: var(--brd-light); max-width: 800px; margin: 32px auto; padding: 28px;">
-    <div class="title" style="font-size: 12px; letter-spacing: 2px; margin-bottom: 20px;">FiLM이 적용되는 5개 지점 요약</div>
+    <div class="title" style="font-size: 12px; letter-spacing: 2px; margin-bottom: 20px;">SUMMARY: 5 FiLM Application Points (FiLM이 적용되는 5개 지점 요약)</div>
 
     <div style="display: flex; flex-direction: column; gap: 12px;">
 
@@ -1220,9 +1381,10 @@
     </div>
 
     <div style="text-align: center; margin-top: 20px; font-size: 12px; color: var(--txt3); line-height: 1.7;">
-      모든 FiLM 지점에서 동일한 <span style="color: var(--design);">c</span>를 사용하지만,
-      각 지점의 <span style="color: var(--film);">Linear(γ), Linear(β)</span>는 독립적인 파라미터를 가짐<br>
-      → 같은 설계 정보를 스케일/맥락에 맞게 서로 다르게 해석
+      All 5 FiLM points receive the same <span style="color: var(--design);">c</span>, but each point's
+      <span style="color: var(--film);">Linear(γ) and Linear(β)</span> has independent learned parameters.<br>
+      → The same design information is "re-read" at each scale and context, adapting its influence appropriately.<br>
+      <span style="opacity:0.6;">[모든 FiLM 지점에서 동일한 c를 사용하지만 각 지점의 Linear(γ), Linear(β)는 독립적인 파라미터를 가집니다. 같은 설계 정보를 스케일/맥락에 맞게 서로 다르게 해석합니다.]</span>
     </div>
   </div>
 
