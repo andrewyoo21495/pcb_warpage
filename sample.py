@@ -305,22 +305,31 @@ def load_scaling_metadata(config: dict, metadata_override: str = None) -> tuple[
 # Main
 # ------------------------------------------------------------------
 
-def plot_generated_histograms(all_samples: dict, base_save_dir) -> None:
+def plot_generated_histograms(all_samples: dict, base_save_dir,
+                              elev_min: float = 0.0,
+                              elev_max: float = 1.0) -> None:
     """Plot elevation range distribution histograms for generated samples.
 
-    For each design, computes per-sample elevation range (max - min)
+    For each design, applies inverse min-max scaling to recover physical
+    elevation values, computes per-sample elevation range (max - min),
     and saves a histogram to outputs/distribution/generated/.
 
     Args:
         all_samples : dict mapping design_name -> (K, 1, H, W) tensor
         base_save_dir : Path to the base output directory
+        elev_min : global minimum elevation used in preprocessing scaling
+        elev_max : global maximum elevation used in preprocessing scaling
     """
     hist_dir = Path("outputs/distribution/generated")
     hist_dir.mkdir(parents=True, exist_ok=True)
 
+    scale = elev_max - elev_min
+
     for design_name, samples in all_samples.items():
         samples_np = samples.squeeze(1).cpu().numpy()  # (K, H, W)
-        ranges = [arr.max() - arr.min() for arr in samples_np]
+        # Inverse min-max scaling: physical = normalized * (max - min) + min
+        samples_physical = samples_np * scale + elev_min
+        ranges = [arr.max() - arr.min() for arr in samples_physical]
         ranges = np.array(ranges)
 
         fig, ax = plt.subplots(figsize=(8, 5))
@@ -448,10 +457,13 @@ def main():
             )
             all_samples[design_name] = samples
 
-        # Generate elevation range histograms for generated data
+        # Generate elevation range histograms for generated data (in physical scale)
+        elev_min, elev_max = _resolve_scaling(args, config)
         print(f"\n{'=' * 60}")
         print("  Generating elevation range histograms for generated samples...")
-        plot_generated_histograms(all_samples, base_save_dir)
+        print(f"  (physical scale: [{elev_min:.4f}, {elev_max:.4f}])")
+        plot_generated_histograms(all_samples, base_save_dir,
+                                  elev_min=elev_min, elev_max=elev_max)
 
         print(f"\n{'=' * 60}")
         print(f"  Batch complete: processed {len(design_files)} designs.")
