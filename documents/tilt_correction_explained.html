@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tilt Correction & Zero-Baseline Alignment — Explained</title>
+<style>
+  :root {
+    --bg: #f8f9fa; --card: #ffffff; --accent: #2563eb;
+    --accent2: #7c3aed; --text: #1e293b; --muted: #64748b;
+    --border: #e2e8f0; --success: #16a34a; --warn: #ea580c;
+    --red: #dc2626; --code-bg: #f1f5f9;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--text);
+    line-height: 1.7; padding: 2rem;
+    max-width: 1100px; margin: 0 auto;
+  }
+  h1 { font-size: 2rem; margin-bottom: 0.5rem; color: var(--accent); }
+  h2 { font-size: 1.5rem; margin: 2.5rem 0 1rem; color: var(--text);
+       border-bottom: 2px solid var(--accent); padding-bottom: 0.4rem; }
+  h3 { font-size: 1.15rem; margin: 1.5rem 0 0.7rem; color: var(--accent2); }
+  p { margin-bottom: 1rem; }
+  .subtitle { color: var(--muted); font-size: 1.05rem; margin-bottom: 2rem; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.5rem; margin: 1.5rem 0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .card-accent { border-left: 4px solid var(--accent); }
+  .card-purple { border-left: 4px solid var(--accent2); }
+  .card-green  { border-left: 4px solid var(--success); }
+  .card-warn   { border-left: 4px solid var(--warn); }
+
+  code {
+    background: var(--code-bg); padding: 0.15em 0.4em;
+    border-radius: 4px; font-size: 0.9em; font-family: 'Consolas', monospace;
+  }
+  pre {
+    background: #1e293b; color: #e2e8f0; padding: 1.2rem;
+    border-radius: 8px; overflow-x: auto; margin: 1rem 0;
+    font-size: 0.88rem; line-height: 1.6;
+  }
+  pre .kw  { color: #c084fc; }
+  pre .fn  { color: #67e8f9; }
+  pre .cm  { color: #64748b; font-style: italic; }
+  pre .num { color: #fbbf24; }
+  pre .str { color: #86efac; }
+
+  .pipeline {
+    display: flex; align-items: center; flex-wrap: wrap;
+    gap: 0.5rem; margin: 1.5rem 0;
+  }
+  .pipeline .step {
+    background: var(--accent); color: #fff; padding: 0.5rem 1rem;
+    border-radius: 8px; font-size: 0.85rem; font-weight: 600;
+    white-space: nowrap;
+  }
+  .pipeline .step.highlight { background: var(--warn); }
+  .pipeline .arrow { color: var(--muted); font-size: 1.2rem; }
+
+  /* Canvas containers */
+  .viz-container {
+    display: flex; flex-wrap: wrap; gap: 1.5rem;
+    justify-content: center; margin: 1.5rem 0;
+  }
+  .viz-box {
+    text-align: center;
+  }
+  .viz-box canvas {
+    border: 1px solid var(--border); border-radius: 8px;
+    background: #fff;
+  }
+  .viz-box .label {
+    margin-top: 0.5rem; font-weight: 600; font-size: 0.9rem;
+    color: var(--muted);
+  }
+
+  /* Interactive controls */
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 1rem; align-items: center;
+    margin: 1rem 0; padding: 1rem; background: var(--code-bg);
+    border-radius: 8px;
+  }
+  .controls label { font-weight: 600; font-size: 0.85rem; color: var(--muted); }
+  .controls input[type="range"] { width: 180px; accent-color: var(--accent); }
+  .controls .val { font-family: monospace; font-size: 0.85rem; min-width: 3em; }
+  .controls button {
+    background: var(--accent); color: #fff; border: none;
+    padding: 0.45rem 1rem; border-radius: 6px; cursor: pointer;
+    font-weight: 600; font-size: 0.85rem;
+  }
+  .controls button:hover { opacity: 0.85; }
+
+  /* Number line */
+  .numline-container { margin: 1.5rem 0; text-align: center; }
+
+  /* Tables */
+  table {
+    width: 100%; border-collapse: collapse; margin: 1rem 0;
+    font-size: 0.9rem;
+  }
+  th, td {
+    padding: 0.6rem 1rem; text-align: center;
+    border: 1px solid var(--border);
+  }
+  th { background: var(--accent); color: #fff; font-weight: 600; }
+  tr:nth-child(even) { background: var(--code-bg); }
+  .mono { font-family: monospace; }
+
+  /* Formula */
+  .formula {
+    background: var(--code-bg); padding: 1.2rem;
+    border-radius: 8px; text-align: center;
+    font-size: 1.1rem; margin: 1rem 0;
+    font-family: 'Cambria Math', 'Times New Roman', serif;
+    letter-spacing: 0.02em;
+  }
+  .formula .sub { font-size: 0.75em; vertical-align: sub; }
+  .formula .hl { color: var(--accent); font-weight: 700; }
+  .formula .hl2 { color: var(--warn); font-weight: 700; }
+
+  /* Legend dots */
+  .legend { display: flex; gap: 1.2rem; flex-wrap: wrap; margin: 0.5rem 0; font-size: 0.85rem; }
+  .legend-item { display: flex; align-items: center; gap: 0.3rem; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+
+  /* Summary box */
+  .summary-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0;
+  }
+  @media (max-width: 700px) { .summary-grid { grid-template-columns: 1fr; } }
+  .summary-item {
+    background: var(--code-bg); padding: 1rem; border-radius: 8px;
+    border-left: 3px solid var(--accent);
+  }
+  .summary-item h4 { font-size: 0.9rem; color: var(--accent); margin-bottom: 0.3rem; }
+  .summary-item p { font-size: 0.85rem; margin: 0; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>Tilt Correction & Zero-Baseline Alignment</h1>
+<p class="subtitle">
+  A visual walkthrough of how PCB elevation data is flattened and zero-based
+  before downstream processing.
+</p>
+
+<!-- ===== Section 1: Where It Fits ===== -->
+<h2>1. Where Tilt Correction Fits in the Pipeline</h2>
+
+<div class="pipeline">
+  <div class="step">1. Read .txt</div><span class="arrow">→</span>
+  <div class="step">2. Downsample</div><span class="arrow">→</span>
+  <div class="step">3. Outlier Removal</div><span class="arrow">→</span>
+  <div class="step">4. Interpolation</div><span class="arrow">→</span>
+  <div class="step highlight">5. Tilt Correction</div><span class="arrow">→</span>
+  <div class="step">6. Smoothing</div><span class="arrow">→</span>
+  <div class="step">7. Image Scaling</div>
+</div>
+
+<div class="card card-accent">
+  <h3>Why here (after interpolation, before smoothing)?</h3>
+  <p>
+    <strong>After interpolation</strong> — The surface is NaN-free, so all four corner
+    patches have valid elevation data for stable plane fitting.
+  </p>
+  <p>
+    <strong>Before smoothing</strong> — Gaussian smoothing preserves the true warpage
+    extremes rather than tilt-inflated ones. If we smoothed first, the smoother
+    would blend real warpage with the tilt artifact.
+  </p>
+</div>
+
+
+<!-- ===== Section 2: Why Tilt Exists ===== -->
+<h2>2. Why Does Tilt Exist?</h2>
+
+<div class="summary-grid">
+  <div class="summary-item">
+    <h4>Fixture Misalignment</h4>
+    <p>The measurement jig may not be perfectly level, adding a systematic linear slope to every scan.</p>
+  </div>
+  <div class="summary-item">
+    <h4>Component Weight</h4>
+    <p>Heavy components near edges can cause one side to sag, introducing asymmetric tilt.</p>
+  </div>
+  <div class="summary-item">
+    <h4>Gravitational Sag</h4>
+    <p>A board supported at two edges will bow under its own weight, creating a linear gradient.</p>
+  </div>
+  <div class="summary-item">
+    <h4>Thermal Gradients</h4>
+    <p>Uneven heating during reflow can produce a temperature-driven tilt component.</p>
+  </div>
+</div>
+
+<p>
+  This tilt is <strong>not</strong> part of the actual warpage pattern we want to study.
+  It must be removed so the model learns only genuine deformation.
+</p>
+
+
+<!-- ===== Section 3: Step-by-Step Algorithm ===== -->
+<h2>3. Algorithm — Step by Step</h2>
+
+<!-- Step A: Corner patches -->
+<h3>Step A — Extract Corner Patches</h3>
+
+<div class="card card-purple">
+  <p>
+    A square patch of size <code>patch_size × patch_size</code> (default 16×16 pixels)
+    is taken at each of the four corners. Using a patch rather than a single pixel
+    makes the corner elevation estimate <strong>robust to local noise</strong>.
+  </p>
+</div>
+
+<div class="viz-container">
+  <div class="viz-box">
+    <canvas id="cvCornerPatches" width="400" height="320"></canvas>
+    <div class="label">Corner patch positions on the surface</div>
+  </div>
+</div>
+
+<div class="legend" style="justify-content:center;">
+  <div class="legend-item"><span class="dot" style="background:#ef4444;"></span> Corner patches (16×16)</div>
+  <div class="legend-item"><span class="dot" style="background:#3b82f6;"></span> Patch centroid</div>
+  <div class="legend-item"><span class="dot" style="background:#e2e8f0;border:1px solid #94a3b8;"></span> Surface grid</div>
+</div>
+
+<p>For each patch <em>i</em> (i = 0…3), we compute:</p>
+<div class="formula">
+  z<span class="sub">i</span> = mean( patch<span class="sub">i</span> ) ,&nbsp;&nbsp;&nbsp;
+  centroid<span class="sub">i</span> = ( r<span class="sub">center</span> , c<span class="sub">center</span> )
+</div>
+
+<table>
+  <tr><th>Corner</th><th>Patch Region</th><th>Centroid (row, col)</th></tr>
+  <tr><td>Top-Left</td><td class="mono">[0 : ps, 0 : ps]</td><td class="mono">(ps/2, ps/2)</td></tr>
+  <tr><td>Top-Right</td><td class="mono">[0 : ps, W-ps : W]</td><td class="mono">(ps/2, W - ps/2)</td></tr>
+  <tr><td>Bottom-Left</td><td class="mono">[H-ps : H, 0 : ps]</td><td class="mono">(H - ps/2, ps/2)</td></tr>
+  <tr><td>Bottom-Right</td><td class="mono">[H-ps : H, W-ps : W]</td><td class="mono">(H - ps/2, W - ps/2)</td></tr>
+</table>
+
+
+<!-- Step B: Plane fitting -->
+<h3>Step B — Fit a Least-Squares Plane</h3>
+
+<div class="card card-accent">
+  <p>
+    We fit a plane <strong>z = a·row + b·col + c</strong> through the four
+    (centroid, mean_z) points. With 4 data points and 3 unknowns (a, b, c),
+    the system is <strong>overdetermined by 1 degree</strong> — the least-squares
+    solution finds the best-fit plane that minimises the sum of squared residuals.
+  </p>
+</div>
+
+<div class="formula">
+  <table style="margin:0 auto; border:none; width:auto;">
+    <tr style="background:none;">
+      <td style="border:none; padding:0.3rem 0.5rem; font-family:inherit;">
+        ⎡ r<span class="sub">0</span> &nbsp; c<span class="sub">0</span> &nbsp; 1 ⎤
+      </td>
+      <td style="border:none; padding:0.3rem 0.5rem; font-family:inherit;" rowspan="4">
+        &nbsp; × &nbsp;
+        ⎡ <span class="hl">a</span> ⎤<br>
+        ⎢ <span class="hl">b</span> ⎥<br>
+        ⎣ <span class="hl">c</span> ⎦
+        &nbsp; = &nbsp;
+        ⎡ z<span class="sub">0</span> ⎤<br>
+        ⎢ z<span class="sub">1</span> ⎥<br>
+        ⎢ z<span class="sub">2</span> ⎥<br>
+        ⎣ z<span class="sub">3</span> ⎦
+      </td>
+    </tr>
+    <tr style="background:none;">
+      <td style="border:none; padding:0.3rem 0.5rem; font-family:inherit;">
+        ⎢ r<span class="sub">1</span> &nbsp; c<span class="sub">1</span> &nbsp; 1 ⎥
+      </td>
+    </tr>
+    <tr style="background:none;">
+      <td style="border:none; padding:0.3rem 0.5rem; font-family:inherit;">
+        ⎢ r<span class="sub">2</span> &nbsp; c<span class="sub">2</span> &nbsp; 1 ⎥
+      </td>
+    </tr>
+    <tr style="background:none;">
+      <td style="border:none; padding:0.3rem 0.5rem; font-family:inherit;">
+        ⎣ r<span class="sub">3</span> &nbsp; c<span class="sub">3</span> &nbsp; 1 ⎦
+      </td>
+    </tr>
+  </table>
+</div>
+
+<p>Solved via <code>np.linalg.lstsq(A, z)</code>, which returns coefficients [a, b, c].</p>
+
+
+<!-- Step C: Build & subtract plane -->
+<h3>Step C — Build Full Plane & Subtract</h3>
+
+<div class="formula">
+  plane(row, col) = <span class="hl">a</span> · row + <span class="hl">b</span> · col + <span class="hl">c</span>
+  <br><br>
+  flattened = data − plane
+</div>
+
+<div class="viz-container">
+  <div class="viz-box">
+    <canvas id="cvSubtraction" width="700" height="280"></canvas>
+    <div class="label">Surface − Tilt Plane = Flattened Surface</div>
+  </div>
+</div>
+
+
+<!-- Step D: Zero-baseline shift -->
+<h3>Step D — Zero-Baseline Shift</h3>
+
+<div class="card card-green">
+  <p>
+    After subtracting the plane, the values may have a negative offset.
+    We shift the entire surface so that the <strong>minimum becomes exactly 0.0</strong>:
+  </p>
+</div>
+
+<div class="formula">
+  flattened = flattened − min(flattened)
+  <br><br>
+  ∴&nbsp; <span class="hl2">min(result) = 0.0</span> ,&nbsp;&nbsp;
+  <span class="hl2">max(result) = max − min</span> (the actual warpage range)
+</div>
+
+<!-- Interactive number line -->
+<div class="card">
+  <h3 style="margin-top:0;">Interactive: See the Zero-Baseline Shift</h3>
+  <div class="controls">
+    <label>Tilt severity:</label>
+    <input type="range" id="sliderTilt" min="0" max="100" value="50">
+    <span class="val" id="valTilt">0.50</span>
+    &nbsp;&nbsp;
+    <label>Warpage amplitude:</label>
+    <input type="range" id="sliderWarp" min="10" max="80" value="30">
+    <span class="val" id="valWarp">0.30</span>
+    &nbsp;&nbsp;
+    <button id="btnAnimate">Animate</button>
+  </div>
+  <div class="viz-container">
+    <div class="viz-box">
+      <canvas id="cvNumberLine" width="700" height="260"></canvas>
+    </div>
+  </div>
+  <div class="legend" style="justify-content:center;">
+    <div class="legend-item"><span class="dot" style="background:#94a3b8;"></span> Before correction (with tilt)</div>
+    <div class="legend-item"><span class="dot" style="background:#f97316;"></span> After plane subtraction</div>
+    <div class="legend-item"><span class="dot" style="background:#22c55e;"></span> After zero-baseline shift</div>
+  </div>
+</div>
+
+
+<!-- ===== Section 4: Full Before/After Visualization ===== -->
+<h2>4. Interactive Surface — Before & After</h2>
+
+<div class="controls">
+  <label>Tilt a:</label>
+  <input type="range" id="sliderA" min="-80" max="80" value="40">
+  <span class="val" id="valA">0.40</span>
+  &nbsp;&nbsp;
+  <label>Tilt b:</label>
+  <input type="range" id="sliderB" min="-80" max="80" value="25">
+  <span class="val" id="valB">0.25</span>
+  &nbsp;&nbsp;
+  <label>Patch size:</label>
+  <input type="range" id="sliderPs" min="4" max="32" value="16">
+  <span class="val" id="valPs">16</span>
+</div>
+
+<div class="viz-container">
+  <div class="viz-box">
+    <canvas id="cvBefore" width="320" height="320"></canvas>
+    <div class="label">Before: Data with Tilt</div>
+  </div>
+  <div class="viz-box">
+    <canvas id="cvPlane" width="320" height="320"></canvas>
+    <div class="label">Fitted Tilt Plane</div>
+  </div>
+  <div class="viz-box">
+    <canvas id="cvAfter" width="320" height="320"></canvas>
+    <div class="label">After: Flattened + Zero-Based</div>
+  </div>
+</div>
+
+<div id="statsBox" class="card card-accent" style="font-family:monospace; font-size:0.88rem; white-space:pre-wrap;"></div>
+
+
+<!-- ===== Section 5: plane_amplitude diagnostic ===== -->
+<h2>5. Plane Amplitude Diagnostic</h2>
+
+<div class="card card-warn">
+  <p>
+    The function returns <code>plane_amplitude = max(plane) − min(plane)</code>,
+    which tells you <strong>how much tilt was removed</strong>.
+  </p>
+</div>
+
+<table>
+  <tr><th>plane_amplitude</th><th>Interpretation</th></tr>
+  <tr><td class="mono">≈ 0.0</td><td>Sample was already level — almost no correction needed</td></tr>
+  <tr><td class="mono">0.01 – 0.05</td><td>Mild tilt — typical for well-fixtured boards</td></tr>
+  <tr><td class="mono">0.05 – 0.20</td><td>Moderate tilt — common in production data</td></tr>
+  <tr><td class="mono">> 0.20</td><td>Significant tilt — may indicate fixture issues or heavy sag</td></tr>
+</table>
+
+
+<!-- ===== Section 6: Why Zero-Baseline ===== -->
+<h2>6. Why Zero-Baseline? — Four Reasons</h2>
+
+<div class="summary-grid">
+  <div class="summary-item" style="border-left-color: var(--accent);">
+    <h4>① Relative Warpage Matters</h4>
+    <p>PCB warpage analysis studies the <em>shape</em> of deformation (peaks vs valleys).
+    The absolute elevation from the fixture is physically meaningless and varies per scan setup.</p>
+  </div>
+  <div class="summary-item" style="border-left-color: var(--accent2);">
+    <h4>② Consistent Cross-Sample Comparison</h4>
+    <p>Without zeroing, each sample has an arbitrary offset depending on how much tilt was removed.
+    A common baseline enables fair min/max statistics across all samples.</p>
+  </div>
+  <div class="summary-item" style="border-left-color: var(--success);">
+    <h4>③ Clean Input for Global Scaling</h4>
+    <p>Global min/max image scaling (Step 7) benefits from <code>global_min ≥ 0</code> always.
+    Per-file range = <code>max − 0 = max</code>, simplifying interpretation.</p>
+  </div>
+  <div class="summary-item" style="border-left-color: var(--warn);">
+    <h4>④ Model Training Stability</h4>
+    <p>The generative model (CVAE/DDPM) receives data globally scaled to [0, 1].
+    A consistent [0, max_warpage] per sample means cleaner training signal — no arbitrary offsets to learn.</p>
+  </div>
+</div>
+
+<div class="viz-container">
+  <div class="viz-box">
+    <canvas id="cvWhyZero" width="700" height="220"></canvas>
+    <div class="label">Three samples: without vs with zero-baseline alignment</div>
+  </div>
+</div>
+
+
+<!-- ===== Section 7: Code Reference ===== -->
+<h2>7. Code Reference</h2>
+
+<pre><span class="kw">def</span> <span class="fn">flatten_tilt</span>(data: np.ndarray, patch_size: int = <span class="num">16</span>) -> tuple:
+    H, W = data.shape
+    ps = <span class="fn">min</span>(patch_size, H // <span class="num">4</span>, W // <span class="num">4</span>)  <span class="cm"># clamp to avoid overlap</span>
+
+    <span class="cm"># Step A: Corner patches → mean elevation + centroid</span>
+    corners = [
+        (data[:ps, :ps],           ps/<span class="num">2</span>,     ps/<span class="num">2</span>),       <span class="cm"># top-left</span>
+        (data[:ps, W-ps:],         ps/<span class="num">2</span>,     W - ps/<span class="num">2</span>),   <span class="cm"># top-right</span>
+        (data[H-ps:, :ps],         H - ps/<span class="num">2</span>, ps/<span class="num">2</span>),       <span class="cm"># bottom-left</span>
+        (data[H-ps:, W-ps:],       H - ps/<span class="num">2</span>, W - ps/<span class="num">2</span>),  <span class="cm"># bottom-right</span>
+    ]
+
+    <span class="cm"># Step B: Build 4×3 system and solve for [a, b, c]</span>
+    A = np.empty((<span class="num">4</span>, <span class="num">3</span>), dtype=np.float64)
+    z = np.empty(<span class="num">4</span>, dtype=np.float64)
+    <span class="kw">for</span> i, (patch, r_center, c_center) <span class="kw">in</span> <span class="fn">enumerate</span>(corners):
+        A[i] = [r_center, c_center, <span class="num">1.0</span>]
+        z[i] = <span class="fn">float</span>(np.<span class="fn">mean</span>(patch))
+
+    coeffs, _, _, _ = np.linalg.<span class="fn">lstsq</span>(A, z, rcond=<span class="kw">None</span>)
+
+    <span class="cm"># Step C: Build full plane and subtract</span>
+    rows, cols = np.<span class="fn">indices</span>((H, W), dtype=np.float64)
+    plane = coeffs[<span class="num">0</span>]*rows + coeffs[<span class="num">1</span>]*cols + coeffs[<span class="num">2</span>]
+
+    plane_amplitude = <span class="fn">float</span>(plane.<span class="fn">max</span>() - plane.<span class="fn">min</span>())
+
+    flattened = data.astype(np.float64) - plane
+
+    <span class="cm"># Step D: Zero-baseline shift</span>
+    flattened -= flattened.<span class="fn">min</span>()            <span class="cm"># min → 0.0</span>
+
+    <span class="kw">return</span> flattened.astype(np.float32), plane_amplitude</pre>
+
+
+<!-- ===== Scripts ===== -->
+<script>
+// ---- Utility ----
+function heatColor(v) {  // 0..1 -> blue..red
+  const r = Math.min(1, Math.max(0, (v - 0.25) * 4));
+  const g = v < 0.5 ? Math.min(1, v * 4) : Math.min(1, (1 - v) * 4);
+  const b = Math.min(1, Math.max(0, (0.75 - v) * 4));
+  return `rgb(${r*255|0},${g*255|0},${b*255|0})`;
+}
+function grayColor(v) { const c = (v*255)|0; return `rgb(${c},${c},${c})`; }
+
+// ---- Synthetic warpage surface ----
+function makeWarpage(rows, cols) {
+  const data = [];
+  for (let r = 0; r < rows; r++) {
+    data[r] = [];
+    for (let c = 0; c < cols; c++) {
+      const nr = r / (rows - 1), nc = c / (cols - 1);
+      // Dome + saddle + small bump
+      const dome = 0.4 * Math.exp(-((nr-0.5)**2 + (nc-0.5)**2) / 0.08);
+      const saddle = 0.15 * (nr - 0.5) * (nc - 0.5);
+      const bump = 0.08 * Math.sin(nr * 6) * Math.cos(nc * 5);
+      data[r][c] = dome + saddle + bump;
+    }
+  }
+  return data;
+}
+
+function addTilt(data, a, b) {
+  const rows = data.length, cols = data[0].length;
+  const result = [];
+  for (let r = 0; r < rows; r++) {
+    result[r] = [];
+    for (let c = 0; c < cols; c++) {
+      result[r][c] = data[r][c] + a * r / (rows-1) + b * c / (cols-1);
+    }
+  }
+  return result;
+}
+
+function getMinMax(data) {
+  let mn = Infinity, mx = -Infinity;
+  for (const row of data) for (const v of row) { mn = Math.min(mn,v); mx = Math.max(mx,v); }
+  return [mn, mx];
+}
+
+function normData(data) {
+  const [mn, mx] = getMinMax(data);
+  const range = mx - mn || 1;
+  return data.map(row => row.map(v => (v - mn) / range));
+}
+
+function drawHeatmap(ctx, data, x, y, w, h, patches, colorFn) {
+  const rows = data.length, cols = data[0].length;
+  const norm = normData(data);
+  const cw = w / cols, ch = h / rows;
+  const fn = colorFn || heatColor;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      ctx.fillStyle = fn(norm[r][c]);
+      ctx.fillRect(x + c * cw, y + r * ch, cw + 0.5, ch + 0.5);
+    }
+  }
+
+  // Draw patches
+  if (patches) {
+    const ps = patches.ps;
+    ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2;
+    const positions = [
+      [0, 0], [0, cols - ps], [rows - ps, 0], [rows - ps, cols - ps]
+    ];
+    for (const [pr, pc] of positions) {
+      ctx.strokeRect(x + pc * cw, y + pr * ch, ps * cw, ps * ch);
+    }
+    // Centroids
+    ctx.fillStyle = '#3b82f6';
+    const centroids = [
+      [ps/2, ps/2], [ps/2, cols - ps/2], [rows - ps/2, ps/2], [rows - ps/2, cols - ps/2]
+    ];
+    for (const [cr, cc] of centroids) {
+      ctx.beginPath();
+      ctx.arc(x + cc * cw, y + cr * ch, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+// ---- 1. Corner patches diagram ----
+(function() {
+  const cv = document.getElementById('cvCornerPatches');
+  const ctx = cv.getContext('2d');
+  const warp = makeWarpage(64, 64);
+  const tilted = addTilt(warp, 0.3, 0.2);
+
+  const pad = 40;
+  const mapW = cv.width - pad * 2, mapH = cv.height - pad * 2;
+
+  drawHeatmap(ctx, tilted, pad, pad, mapW, mapH, { ps: 16 });
+
+  // Labels
+  ctx.fillStyle = '#1e293b'; ctx.font = 'bold 12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('col →', cv.width / 2, 25);
+  ctx.save(); ctx.translate(15, cv.height / 2); ctx.rotate(-Math.PI/2);
+  ctx.fillText('row →', 0, 0); ctx.restore();
+
+  // Corner labels
+  const cw = mapW / 64, ch = mapH / 64;
+  ctx.font = '10px monospace'; ctx.fillStyle = '#fff';
+  ctx.fillText('TL', pad + 8 * cw, pad + 8 * ch + 4);
+  ctx.fillText('TR', pad + 56 * cw, pad + 8 * ch + 4);
+  ctx.fillText('BL', pad + 8 * cw, pad + 56 * ch + 4);
+  ctx.fillText('BR', pad + 56 * cw, pad + 56 * ch + 4);
+})();
+
+// ---- 2. Subtraction diagram ----
+(function() {
+  const cv = document.getElementById('cvSubtraction');
+  const ctx = cv.getContext('2d');
+  const warp = makeWarpage(48, 48);
+  const tilted = addTilt(warp, 0.4, 0.25);
+
+  // Make plane
+  const plane = [];
+  for (let r = 0; r < 48; r++) {
+    plane[r] = [];
+    for (let c = 0; c < 48; c++) {
+      plane[r][c] = 0.4 * r / 47 + 0.25 * c / 47 + 0.1;
+    }
+  }
+
+  // Subtract
+  const flat = [];
+  for (let r = 0; r < 48; r++) {
+    flat[r] = [];
+    for (let c = 0; c < 48; c++) flat[r][c] = tilted[r][c] - plane[r][c];
+  }
+  const [fmin] = getMinMax(flat);
+  const zeroed = flat.map(row => row.map(v => v - fmin));
+
+  const s = 180, gap = 25, topPad = 30, leftPad = (700 - 3*s - 2*gap) / 2;
+
+  drawHeatmap(ctx, tilted, leftPad, topPad, s, s);
+  drawHeatmap(ctx, plane, leftPad + s + gap, topPad, s, s);
+  drawHeatmap(ctx, zeroed, leftPad + 2*(s + gap), topPad, s, s);
+
+  // Labels and operators
+  ctx.fillStyle = '#1e293b'; ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('−', leftPad + s + gap/2, topPad + s/2 + 7);
+  ctx.fillText('=', leftPad + s + gap + s + gap/2, topPad + s/2 + 7);
+
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillText('Data + Tilt', leftPad + s/2, topPad + s + 22);
+  ctx.fillText('Tilt Plane', leftPad + s + gap + s/2, topPad + s + 22);
+  ctx.fillText('Warpage Only', leftPad + 2*(s+gap) + s/2, topPad + s + 22);
+})();
+
+
+// ---- 3. Interactive number line ----
+const slTilt = document.getElementById('sliderTilt');
+const slWarp = document.getElementById('sliderWarp');
+const vTilt = document.getElementById('valTilt');
+const vWarp = document.getElementById('valWarp');
+const btnAnim = document.getElementById('btnAnimate');
+
+function drawNumberLine() {
+  const cv = document.getElementById('cvNumberLine');
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+
+  const tilt = slTilt.value / 100;
+  const warp = slWarp.value / 100;
+  vTilt.textContent = tilt.toFixed(2);
+  vWarp.textContent = warp.toFixed(2);
+
+  // Values for 3 stages
+  const beforeMin = 0.5, beforeMax = 0.5 + warp + tilt;
+  const afterSubMin = beforeMin - tilt * 0.3, afterSubMax = beforeMax - tilt * 0.7;
+  const shift = afterSubMin;
+  const zeroMin = 0, zeroMax = afterSubMax - afterSubMin;
+
+  const pad = 60, lineY0 = 60, lineY1 = 130, lineY2 = 200;
+  const lineL = pad, lineR = cv.width - pad;
+
+  // Scale: map value range to pixel range
+  const allMin = Math.min(beforeMin, afterSubMin, zeroMin) - 0.1;
+  const allMax = Math.max(beforeMax, afterSubMax, zeroMax) + 0.1;
+  const scale = (lineR - lineL) / (allMax - allMin);
+  const toX = v => lineL + (v - allMin) * scale;
+
+  function drawAxis(y, label) {
+    ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(lineL, y); ctx.lineTo(lineR, y); ctx.stroke();
+    // Tick marks
+    ctx.fillStyle = '#94a3b8'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+    for (let v = Math.ceil(allMin * 10) / 10; v <= allMax; v += 0.1) {
+      const x = toX(v);
+      ctx.beginPath(); ctx.moveTo(x, y - 3); ctx.lineTo(x, y + 3); ctx.stroke();
+      ctx.fillText(v.toFixed(1), x, y + 16);
+    }
+    // Zero line
+    const x0 = toX(0);
+    ctx.strokeStyle = '#e2e8f0'; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(x0, y - 20); ctx.lineTo(x0, y + 20); ctx.stroke();
+    ctx.setLineDash([]);
+    // Label
+    ctx.fillStyle = '#64748b'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'right';
+    ctx.fillText(label, lineL - 8, y + 4);
+  }
+
+  function drawRange(y, mn, mx, color) {
+    const x1 = toX(mn), x2 = toX(mx);
+    ctx.fillStyle = color + '33';
+    ctx.fillRect(x1, y - 12, x2 - x1, 24);
+    ctx.strokeStyle = color; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
+    // End caps
+    for (const x of [x1, x2]) {
+      ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
+    }
+    // Values
+    ctx.fillStyle = '#1e293b'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(mn.toFixed(2), x1, y - 18);
+    ctx.fillText(mx.toFixed(2), x2, y - 18);
+  }
+
+  drawAxis(lineY0, 'Before');
+  drawAxis(lineY1, 'Subtracted');
+  drawAxis(lineY2, 'Zero-based');
+
+  drawRange(lineY0, beforeMin, beforeMax, '#94a3b8');
+  drawRange(lineY1, afterSubMin, afterSubMax, '#f97316');
+  drawRange(lineY2, zeroMin, zeroMax, '#22c55e');
+
+  // Arrow showing shift
+  if (Math.abs(shift) > 0.02) {
+    const fromX = toX(afterSubMin), toXv = toX(0);
+    ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 1.5; ctx.setLineDash([4,3]);
+    ctx.beginPath(); ctx.moveTo(fromX, lineY1 + 25); ctx.lineTo(toXv, lineY2 - 25); ctx.stroke();
+    ctx.setLineDash([]);
+    // Arrowhead
+    ctx.fillStyle = '#22c55e';
+    ctx.beginPath(); ctx.moveTo(toXv, lineY2 - 25);
+    ctx.lineTo(toXv - 4, lineY2 - 33); ctx.lineTo(toXv + 4, lineY2 - 33); ctx.fill();
+  }
+}
+
+slTilt.addEventListener('input', drawNumberLine);
+slWarp.addEventListener('input', drawNumberLine);
+drawNumberLine();
+
+// Animate button
+btnAnim.addEventListener('click', () => {
+  let frame = 0;
+  const totalFrames = 60;
+  const startTilt = parseInt(slTilt.value);
+  function step() {
+    frame++;
+    const progress = frame / totalFrames;
+    slTilt.value = Math.round(startTilt * (1 - progress));
+    drawNumberLine();
+    if (frame < totalFrames) requestAnimationFrame(step);
+  }
+  slTilt.value = 80; drawNumberLine();
+  setTimeout(step, 500);
+});
+
+
+// ---- 4. Interactive Before/After surfaces ----
+const slA = document.getElementById('sliderA');
+const slB = document.getElementById('sliderB');
+const slPs = document.getElementById('sliderPs');
+const vA = document.getElementById('valA');
+const vB = document.getElementById('valB');
+const vPs = document.getElementById('valPs');
+
+const baseWarp = makeWarpage(64, 64);
+
+function drawSurfaces() {
+  const a = slA.value / 100, b = slB.value / 100, ps = parseInt(slPs.value);
+  vA.textContent = a.toFixed(2);
+  vB.textContent = b.toFixed(2);
+  vPs.textContent = ps;
+
+  const tilted = addTilt(baseWarp, a, b);
+  const N = 64;
+
+  // Compute corner means
+  const cornerZs = [
+    meanRegion(tilted, 0, 0, ps),
+    meanRegion(tilted, 0, N - ps, ps),
+    meanRegion(tilted, N - ps, 0, ps),
+    meanRegion(tilted, N - ps, N - ps, ps),
+  ];
+  const cornerCoords = [
+    [ps/2, ps/2], [ps/2, N - ps/2], [N - ps/2, ps/2], [N - ps/2, N - ps/2]
+  ];
+
+  // Fit plane (simple: solve 4x3 least squares analytically)
+  // Using normal equations: [a,b,c] = (A^T A)^-1 A^T z
+  const Am = cornerCoords.map((rc, i) => [rc[0], rc[1], 1]);
+  const zv = cornerZs;
+  const coeffs = solveLeastSquares3(Am, zv);
+
+  // Build plane
+  const plane = [];
+  for (let r = 0; r < N; r++) {
+    plane[r] = [];
+    for (let c = 0; c < N; c++) {
+      plane[r][c] = coeffs[0] * r + coeffs[1] * c + coeffs[2];
+    }
+  }
+
+  // Flatten
+  const flat = [];
+  for (let r = 0; r < N; r++) {
+    flat[r] = [];
+    for (let c = 0; c < N; c++) flat[r][c] = tilted[r][c] - plane[r][c];
+  }
+  const [fmin, fmax] = getMinMax(flat);
+  const zeroed = flat.map(row => row.map(v => v - fmin));
+
+  // Draw
+  const pad = 20, sz = 280;
+  const cvBefore = document.getElementById('cvBefore').getContext('2d');
+  const cvPlane = document.getElementById('cvPlane').getContext('2d');
+  const cvAfter = document.getElementById('cvAfter').getContext('2d');
+
+  cvBefore.clearRect(0, 0, 320, 320);
+  cvPlane.clearRect(0, 0, 320, 320);
+  cvAfter.clearRect(0, 0, 320, 320);
+
+  drawHeatmap(cvBefore, tilted, pad, pad, sz, sz, { ps });
+  drawHeatmap(cvPlane, plane, pad, pad, sz, sz);
+  drawHeatmap(cvAfter, zeroed, pad, pad, sz, sz);
+
+  // Stats
+  const [tMin, tMax] = getMinMax(tilted);
+  const [pMin, pMax] = getMinMax(plane);
+  const [zMin, zMax] = getMinMax(zeroed);
+  const planeAmp = pMax - pMin;
+
+  const statsBox = document.getElementById('statsBox');
+  statsBox.innerHTML =
+    `<strong>Statistics</strong>\n` +
+    `  Before (with tilt):     min = ${tMin.toFixed(4)},  max = ${tMax.toFixed(4)},  range = ${(tMax-tMin).toFixed(4)}\n` +
+    `  Tilt plane:             min = ${pMin.toFixed(4)},  max = ${pMax.toFixed(4)},  <strong>plane_amplitude = ${planeAmp.toFixed(4)}</strong>\n` +
+    `  After (zero-based):     min = ${zMin.toFixed(4)},  max = ${zMax.toFixed(4)},  range = ${(zMax-zMin).toFixed(4)}\n` +
+    `\n  Plane coefficients:     a = ${coeffs[0].toFixed(6)},  b = ${coeffs[1].toFixed(6)},  c = ${coeffs[2].toFixed(6)}`;
+}
+
+function meanRegion(data, rStart, cStart, size) {
+  let sum = 0, cnt = 0;
+  for (let r = rStart; r < rStart + size && r < data.length; r++) {
+    for (let c = cStart; c < cStart + size && c < data[0].length; c++) {
+      sum += data[r][c]; cnt++;
+    }
+  }
+  return sum / cnt;
+}
+
+function solveLeastSquares3(A, z) {
+  // A is 4x3, z is 4-vec. Solve via normal equations.
+  const AT = [[0,0,0,0],[0,0,0,0],[0,0,0,0]];
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 4; j++) AT[i][j] = A[j][i];
+
+  const ATA = [[0,0,0],[0,0,0],[0,0,0]];
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++)
+    for (let k = 0; k < 4; k++) ATA[i][j] += AT[i][k] * A[k][j];
+
+  const ATz = [0,0,0];
+  for (let i = 0; i < 3; i++) for (let k = 0; k < 4; k++) ATz[i] += AT[i][k] * z[k];
+
+  // 3x3 inverse via cofactors
+  const m = ATA;
+  const det = m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1])
+            - m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0])
+            + m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
+  const inv = [
+    [(m[1][1]*m[2][2]-m[1][2]*m[2][1])/det, (m[0][2]*m[2][1]-m[0][1]*m[2][2])/det, (m[0][1]*m[1][2]-m[0][2]*m[1][1])/det],
+    [(m[1][2]*m[2][0]-m[1][0]*m[2][2])/det, (m[0][0]*m[2][2]-m[0][2]*m[2][0])/det, (m[0][2]*m[1][0]-m[0][0]*m[1][2])/det],
+    [(m[1][0]*m[2][1]-m[1][1]*m[2][0])/det, (m[0][1]*m[2][0]-m[0][0]*m[2][1])/det, (m[0][0]*m[1][1]-m[0][1]*m[1][0])/det],
+  ];
+
+  const result = [0, 0, 0];
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) result[i] += inv[i][j] * ATz[j];
+  return result;
+}
+
+slA.addEventListener('input', drawSurfaces);
+slB.addEventListener('input', drawSurfaces);
+slPs.addEventListener('input', drawSurfaces);
+drawSurfaces();
+
+
+// ---- 5. Why zero-baseline diagram ----
+(function() {
+  const cv = document.getElementById('cvWhyZero');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+
+  const samples = [
+    { name: 'Sample A', rawMin: 0.8, rawMax: 1.3 },
+    { name: 'Sample B', rawMin: -0.2, rawMax: 0.5 },
+    { name: 'Sample C', rawMin: 1.5, rawMax: 2.1 },
+  ];
+
+  const padL = 90, padR = 40, padT = 35, barH = 20, gap = 8;
+  const blockH = (barH + gap) * 2 + 15;
+
+  // Scale
+  const allMin = -0.5, allMax = 2.5;
+  const lineL = padL, lineR = W - padR;
+  const toX = v => lineL + (v - allMin) / (allMax - allMin) * (lineR - lineL);
+
+  // Axis
+  ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1;
+  ctx.fillStyle = '#94a3b8'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+  for (let v = -0.5; v <= 2.5; v += 0.5) {
+    const x = toX(v);
+    ctx.beginPath(); ctx.moveTo(x, padT - 10); ctx.lineTo(x, H - 5); ctx.stroke();
+    ctx.fillText(v.toFixed(1), x, padT - 15);
+  }
+
+  // Zero line
+  ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2; ctx.setLineDash([5,3]);
+  const x0 = toX(0);
+  ctx.beginPath(); ctx.moveTo(x0, padT - 10); ctx.lineTo(x0, H - 5); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#22c55e'; ctx.font = 'bold 10px sans-serif';
+  ctx.fillText('0.0', x0, H);
+
+  const colors = ['#6366f1', '#f97316', '#0ea5e9'];
+
+  samples.forEach((s, i) => {
+    const y = padT + i * blockH;
+    const zeroMin = 0, zeroMax = s.rawMax - s.rawMin;
+
+    // Label
+    ctx.fillStyle = '#1e293b'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'right';
+    ctx.fillText(s.name, padL - 10, y + barH / 2 + 4);
+
+    // Without zero-baseline (top bar)
+    ctx.fillStyle = colors[i] + '55';
+    ctx.fillRect(toX(s.rawMin), y, toX(s.rawMax) - toX(s.rawMin), barH);
+    ctx.strokeStyle = colors[i]; ctx.lineWidth = 2;
+    ctx.strokeRect(toX(s.rawMin), y, toX(s.rawMax) - toX(s.rawMin), barH);
+
+    // With zero-baseline (bottom bar)
+    const y2 = y + barH + gap;
+    ctx.fillStyle = '#22c55e44';
+    ctx.fillRect(toX(zeroMin), y2, toX(zeroMax) - toX(zeroMin), barH);
+    ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2;
+    ctx.strokeRect(toX(zeroMin), y2, toX(zeroMax) - toX(zeroMin), barH);
+
+    // Values
+    ctx.fillStyle = '#64748b'; ctx.font = '9px monospace'; ctx.textAlign = 'left';
+    ctx.fillText(`[${s.rawMin.toFixed(1)}, ${s.rawMax.toFixed(1)}]`, toX(s.rawMax) + 5, y + 14);
+    ctx.fillText(`[0.0, ${zeroMax.toFixed(1)}]`, toX(zeroMax) + 5, y2 + 14);
+  });
+
+  // Legend
+  ctx.fillStyle = '#6366f155'; ctx.fillRect(padL, H - 15, 12, 10);
+  ctx.strokeStyle = '#6366f1'; ctx.strokeRect(padL, H - 15, 12, 10);
+  ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('Without zero-baseline (arbitrary offsets)', padL + 16, H - 6);
+
+  ctx.fillStyle = '#22c55e44'; ctx.fillRect(padL + 280, H - 15, 12, 10);
+  ctx.strokeStyle = '#22c55e'; ctx.strokeRect(padL + 280, H - 15, 12, 10);
+  ctx.fillText('With zero-baseline (all start at 0)', padL + 296, H - 6);
+})();
+
+</script>
+</body>
+</html>
