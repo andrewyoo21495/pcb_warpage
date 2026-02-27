@@ -1,8 +1,8 @@
 """Step-by-step visualization of the PCB elevation preprocessing pipeline.
 
 Usage:
-    python -m preprocessing.visualize_steps --input-file path/to/sample.txt
-    python -m preprocessing.visualize_steps --input-file path/to/sample.txt --output steps.png
+    python -m preprocess.visualize_steps --input-file path/to/sample.txt
+    python -m preprocess.visualize_steps --input-file path/to/sample.txt --output steps.png
 """
 
 import argparse

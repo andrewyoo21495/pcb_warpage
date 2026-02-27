@@ -52,13 +52,13 @@ Run from the **project root** (`pcb_warpage/`).
 ### Batch mode — process all subfolders
 
 ```bash
-python -m preprocessing.main --root-dir /path/to/root_data_dir
+python -m preprocess.main --root-dir /path/to/root_data_dir
 ```
 
 ### Single-file mode — process one file
 
 ```bash
-python -m preprocessing.main --input-file /path/to/sample_001.txt
+python -m preprocess.main --input-file /path/to/sample_001.txt
 ```
 
 > `--root-dir` and `--input-file` are mutually exclusive.
@@ -80,7 +80,7 @@ python -m preprocessing.main --input-file /path/to/sample_001.txt
 ### Example with custom parameters
 
 ```bash
-python -m preprocessing.main \
+python -m preprocess.main \
     --root-dir /path/to/data \
     --downsample-factor 4 \
     --z-threshold 2.5 \
@@ -99,7 +99,7 @@ python -m preprocessing.main \
 To visually inspect each preprocessing stage on a single file, use `visualize_steps.py`:
 
 ```bash
-python -m preprocessing.visualize_steps --input-file /path/to/sample_001.txt
+python -m preprocess.visualize_steps --input-file /path/to/sample_001.txt
 ```
 
 This displays a 2x3 figure with:
@@ -112,7 +112,7 @@ This displays a 2x3 figure with:
 To save the figure:
 
 ```bash
-python -m preprocessing.visualize_steps --input-file /path/to/sample.txt --output steps.png
+python -m preprocess.visualize_steps --input-file /path/to/sample.txt --output steps.png
 ```
 
 All preprocessing parameters (`--downsample-factor`, `--z-threshold`, etc.) are accepted.
@@ -124,8 +124,8 @@ All preprocessing parameters (`--downsample-factor`, `--z-threshold`, etc.) are 
 A consolidated single-file version is also available at `preprocess_total.py`. It contains all functionality in one file and can be run directly without package imports:
 
 ```bash
-python preprocessing/preprocess_total.py --root-dir /path/to/data
-python preprocessing/preprocess_total.py --input-file /path/to/sample.txt
+python preprocess/preprocess_total.py --root-dir /path/to/data
+python preprocess/preprocess_total.py --input-file /path/to/sample.txt
 ```
 
 ---
@@ -169,8 +169,8 @@ The pipeline displays:
 You can also call the pipeline programmatically:
 
 ```python
-from preprocessing.config import PreprocessorConfig
-from preprocessing.main import main
+from preprocess.config import PreprocessorConfig
+from preprocess.main import main
 
 config = PreprocessorConfig(
     root_dir="/path/to/data",
@@ -185,8 +185,8 @@ main(config)
 Or process individual steps:
 
 ```python
-from preprocessing.io_utils import read_elevation
-from preprocessing.preprocessing import (
+from preprocess.io_utils import read_elevation
+from preprocess.preprocessing import (
     downsample_median,
     detect_and_remove_outliers,
     interpolate_surface,
