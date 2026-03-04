@@ -15,6 +15,7 @@ from .io_utils import read_elevation
 from .preprocessing import (
     detect_and_remove_outliers,
     downsample_median,
+    flatten_tilt,
     interpolate_surface,
     smooth_gaussian,
 )
@@ -31,6 +32,7 @@ def visualize_pipeline(
     interp_ridge_alpha: float = 0.1,
     gaussian_sigma: float = 2.0,
     gaussian_iterations: int = 3,
+    tilt_patch_size: int = 16,
     null_value: float = 9999.0,
     output_path: str = None,
 ) -> None:
@@ -55,19 +57,43 @@ def visualize_pipeline(
         outlier_result, poly_degree=interp_poly_degree, ridge_alpha=interp_ridge_alpha,
     )
 
-    # --- Step 5: Gaussian smoothing ---
+    # --- Step 5: Smoothing ---
     smoothed = smooth_gaussian(
         interpolated, sigma=gaussian_sigma, iterations=gaussian_iterations,
     )
 
-    # --- Compute shared color range (across all elevation colormapped plots) ---
+    # --- Step 6: Tilt correction (plane subtraction only, before zero shift) ---
+    H, W = smoothed.shape
+    ps = min(tilt_patch_size, H // 4, W // 4)
+    corners = [
+        (smoothed[:ps, :ps],             ps / 2,       ps / 2),
+        (smoothed[:ps, W - ps:],         ps / 2,       W - ps / 2),
+        (smoothed[H - ps:, :ps],         H - ps / 2,   ps / 2),
+        (smoothed[H - ps:, W - ps:],     H - ps / 2,   W - ps / 2),
+    ]
+    A = np.empty((4, 3), dtype=np.float64)
+    z = np.empty(4, dtype=np.float64)
+    for i, (patch, r_center, c_center) in enumerate(corners):
+        A[i] = [r_center, c_center, 1.0]
+        z[i] = float(np.mean(patch))
+    coeffs, _, _, _ = np.linalg.lstsq(A, z, rcond=None)
+    rows, cols = np.indices((H, W), dtype=np.float64)
+    plane = coeffs[0] * rows + coeffs[1] * cols + coeffs[2]
+    plane_amplitude = float(plane.max() - plane.min())
+
+    tilt_corrected = smoothed.astype(np.float64) - plane  # plane subtracted, not zero-shifted
+
+    # --- Step 7: Zero alignment (shift minimum to zero) ---
+    zero_aligned = (tilt_corrected - tilt_corrected.min()).astype(np.float32)
+
+    # --- Compute shared color range (for elevation colormapped plots) ---
     all_values = [raw_data, downsampled, outlier_result, interpolated, smoothed]
     vmin = min(float(np.nanmin(a)) for a in all_values)
     vmax = max(float(np.nanmax(a)) for a in all_values)
 
-    # --- Plot ---
-    fig, axes = plt.subplots(2, 3, figsize=(16, 10))
-    fig.suptitle(f"Preprocessing Pipeline Steps", fontsize=14, fontweight="bold")
+    # --- Plot (2 rows x 4 columns) ---
+    fig, axes = plt.subplots(2, 4, figsize=(22, 10))
+    fig.suptitle("Preprocessing Pipeline Steps", fontsize=14, fontweight="bold")
 
     cmap = plt.get_cmap(ELEVATION_CMAP).copy()
     cmap.set_bad(color="white")  # NaN pixels shown as white
@@ -96,21 +122,33 @@ def visualize_pipeline(
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
     # (4) Interpolated
-    ax = axes[1, 0]
+    ax = axes[0, 3]
     im = ax.imshow(interpolated, cmap=cmap, vmin=vmin, vmax=vmax, aspect="auto")
     ax.set_title(f"4. Interpolated ({n_interpolated} filled)")
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
     # (5) Smoothed
-    ax = axes[1, 1]
+    ax = axes[1, 0]
     im = ax.imshow(smoothed, cmap=cmap, vmin=vmin, vmax=vmax, aspect="auto")
-    ax.set_title(f"5. Smoothed (σ={gaussian_sigma}, iter={gaussian_iterations})")
+    ax.set_title(f"5. Smoothed (\u03c3={gaussian_sigma}, iter={gaussian_iterations})")
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
     # (6) Grayscale
-    ax = axes[1, 2]
+    ax = axes[1, 1]
     im = ax.imshow(smoothed, cmap="gray", aspect="auto")
     ax.set_title("6. Grayscale")
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+    # (7) Tilt-corrected grayscale
+    ax = axes[1, 2]
+    im = ax.imshow(tilt_corrected, cmap="gray", aspect="auto")
+    ax.set_title(f"7. Tilt Corrected (amp={plane_amplitude:.2f})")
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+    # (8) Zero-aligned grayscale
+    ax = axes[1, 3]
+    im = ax.imshow(zero_aligned, cmap="gray", aspect="auto")
+    ax.set_title("8. Zero Aligned")
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
     plt.tight_layout()
@@ -137,6 +175,7 @@ def parse_args():
     parser.add_argument("--ridge-alpha", type=float, default=0.1)
     parser.add_argument("--gaussian-sigma", type=float, default=2.0)
     parser.add_argument("--smooth-iterations", type=int, default=3)
+    parser.add_argument("--tilt-patch-size", type=int, default=16)
     return parser.parse_args()
 
 
@@ -152,6 +191,7 @@ if __name__ == "__main__":
             interp_ridge_alpha=args.ridge_alpha,
             gaussian_sigma=args.gaussian_sigma,
             gaussian_iterations=args.smooth_iterations,
+            tilt_patch_size=args.tilt_patch_size,
             output_path=args.output,
         )
     except Exception as e:

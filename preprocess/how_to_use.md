@@ -102,12 +102,12 @@ To visually inspect each preprocessing stage on a single file, use `visualize_st
 python -m preprocess.visualize_steps --input-file /path/to/sample_001.txt
 ```
 
-This displays a 2x3 figure with:
+This displays a 2x4 figure with:
 
-| | | |
-|---|---|---|
-| 1. Original (jet colormap) | 2. Downsampled | 3. Outliers (red circles) |
-| 4. Interpolated | 5. Tilt-corrected | 6. Smoothed & Grayscale |
+| | | | |
+|---|---|---|---|
+| 1. Original (jet colormap) | 2. Downsampled | 3. Outliers (red circles) | 4. Interpolated |
+| 5. Smoothed | 6. Grayscale | 7. Tilt Corrected (grayscale) | 8. Zero Aligned (grayscale) |
 
 To save the figure:
 
