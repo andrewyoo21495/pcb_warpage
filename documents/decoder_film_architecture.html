@@ -958,6 +958,164 @@
     </table>
   </div>
 
+  <!-- ============================================================ -->
+  <!-- SECTION 4: FiLM IN TRAINING vs INFERENCE, AND vs CONCAT    -->
+  <!-- ============================================================ -->
+  <div class="section-label">
+    <div class="num" style="background: var(--film-dim); color: var(--film);">4</div>
+    <h2>FiLM: 학습 단계 vs 추론 단계, 그리고 단순 Concatenation과의 차이</h2>
+  </div>
+
+  <!-- 4A: Training -->
+  <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 32px; margin-bottom: 28px; position: relative; overflow: hidden;">
+    <div style="position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--film), var(--cond));"></div>
+    <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--film); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 16px;">A. 학습 단계 — FiLM 레이어가 배우는 것</div>
+
+    <div style="font-size: 13px; color: var(--text-dim); line-height: 1.8; font-weight: 300; margin-bottom: 20px;">
+      학습 초기, FiLM의 Linear 레이어(W_γ, W_β)는 <strong style="color: var(--text);">랜덤 초기화</strong>됩니다.
+      순전파(forward pass)에서 c → γ, β → <code style="background: var(--surface2); padding: 2px 6px; border-radius: 4px; font-size: 12px;">γ⊙h + β</code>로 feature map이 변조됩니다.
+      역전파(backpropagation)에서 MSE 재구성 손실이 다음 경로로 흘러 들어옵니다:
+    </div>
+
+    <!-- Backprop path diagram -->
+    <div style="background: var(--surface2); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 20px; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 2; text-align: center;">
+      <span style="color: var(--output);">MSE Loss</span>
+      <span style="color: var(--text-muted);"> → </span>
+      <span style="color: var(--process);">Decoder Conv 가중치</span>
+      <span style="color: var(--text-muted);"> → </span>
+      <span style="color: var(--film);">FiLM W_γ, W_β</span>
+      <span style="color: var(--text-muted);"> → </span>
+      <span style="color: var(--cond);">c (Design Encoder 출력)</span>
+      <br>
+      <span style="font-size: 10px; color: var(--text-muted);">→ Design Encoder 전체 파라미터까지 역전파됨 (end-to-end 학습)</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+      <div style="background: var(--film-dim); border: 1px solid var(--film-mid); border-radius: 12px; padding: 16px;">
+        <div style="font-size: 12px; font-weight: 600; color: var(--film); margin-bottom: 8px;">FiLM W_γ, W_β 레이어가 학습하는 것</div>
+        <div style="font-size: 12px; color: var(--text-dim); line-height: 1.7; font-weight: 300;">
+          "이 설계(c)에 대해, <strong style="color: var(--text);">어떤 채널을 얼마나 증폭/억제</strong>해야 올바른 elevation을 재구성할 수 있는가?" 를 학습합니다. 예를 들어 모서리 응력 feature를 담당하는 채널은 비대칭 설계에서 γ가 높아지도록 학습됩니다.
+        </div>
+      </div>
+      <div style="background: var(--cond-dim); border: 1px solid var(--cond-mid); border-radius: 12px; padding: 16px;">
+        <div style="font-size: 12px; font-weight: 600; color: var(--cond); margin-bottom: 8px;">각 블록이 독립적으로 학습하는 것</div>
+        <div style="font-size: 12px; color: var(--text-dim); line-height: 1.7; font-weight: 300;">
+          Block 1의 W_γ₁은 <strong style="color: var(--text);">저주파 구조</strong>(어느 사분면이 높은지)를 위해,
+          Block 4의 W_γ₄는 <strong style="color: var(--text);">고주파 텍스처</strong>(미세 표면 굴곡)를 위해 독립적으로 최적화됩니다. 같은 c로부터 스케일에 맞는 서로 다른 γ, β를 생성하도록 학습됩니다.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4B: Inference -->
+  <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 32px; margin-bottom: 28px; position: relative; overflow: hidden;">
+    <div style="position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--cond), var(--output));"></div>
+    <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--cond); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 16px;">B. 추론 단계 — FiLM이 "설계별 렌즈"로 작동하는 방식</div>
+
+    <div style="font-size: 13px; color: var(--text-dim); line-height: 1.8; font-weight: 300; margin-bottom: 20px;">
+      추론 시 모든 파라미터는 <strong style="color: var(--text);">고정(freeze)</strong>됩니다. 파라미터 업데이트는 일어나지 않습니다. 동일한 설계 이미지를 입력하면 항상 동일한 c → 동일한 γ, β가 생성됩니다. 다양성의 유일한 원천은 <strong style="color: var(--latent);">z₁의 랜덤 샘플링</strong>뿐입니다.
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+      <div style="background: var(--cond-dim); border: 1px solid var(--cond-mid); border-radius: 12px; padding: 16px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--cond); margin-bottom: 8px;">🔒 K번 샘플 동안 고정</div>
+        <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
+          • c (조건 벡터)<br>
+          • 모든 FiLM의 γ₁~γ₄, β₁~β₄<br>
+          • Conv, BatchNorm, Linear 가중치 전체
+        </div>
+      </div>
+      <div style="background: var(--latent-dim); border: 1px solid rgba(244,92,123,0.3); border-radius: 12px; padding: 16px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--latent); margin-bottom: 8px;">🎲 매번 변동</div>
+        <div style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
+          • z₁ ~ 𝒩(0, I) × τ (매번 새 샘플링)<br>
+          • z_fused = γ(c) ⊙ z₁ + β(c)<br>
+          • 모든 Decoder 내부 feature map<br>
+          • 최종 elevation 이미지
+        </div>
+      </div>
+    </div>
+
+    <div style="background: var(--surface2); border: 1px solid var(--border); border-left: 3px solid var(--film); border-radius: 10px; padding: 16px; font-size: 12px; color: var(--text-dim); line-height: 1.7;">
+      <strong style="color: var(--film);">직관:</strong> FiLM은 추론 시 설계별 "채널 믹서"로 작동합니다. 설계 A의 c는 Block 3에서 수직 엣지 feature 채널을 γ=2.1로 증폭하고, 설계 B의 c는 같은 채널을 γ=0.3으로 억제할 수 있습니다 — 동일한 Decoder Conv 가중치를 공유하면서도 완전히 다른 출력을 생성합니다.
+    </div>
+  </div>
+
+  <!-- 4C: FiLM vs Concat -->
+  <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 32px; margin-bottom: 56px; position: relative; overflow: hidden;">
+    <div style="position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--film), var(--xattn));"></div>
+    <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--film); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 20px;">C. FiLM vs 단순 Concatenation — Decoder에서의 차이</div>
+
+    <!-- Equation comparison -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+      <div style="background: var(--film-dim); border: 1px solid var(--film-mid); border-radius: 12px; padding: 18px;">
+        <div style="font-size: 13px; font-weight: 700; color: var(--film); margin-bottom: 12px;">✓ FiLM (현재 방식)</div>
+        <div style="background: var(--bg); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px 14px; font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 2; margin-bottom: 12px;">
+          γ, β = Linear(<span style="color: var(--cond);">c</span>)
+          <span style="color: var(--text-muted);">  # (B, C_out)</span><br>
+          h_out = <span style="color: var(--film);">γ</span> ⊙ h + <span style="color: var(--film);">β</span>
+          <span style="color: var(--text-muted);">  # channel-wise</span><br>
+          <span style="color: var(--text-muted);">추가 파라미터: 2 × Linear(64, C_out)</span>
+        </div>
+        <div style="font-size: 12px; color: var(--text-dim); line-height: 1.7; font-weight: 300;">
+          c가 feature map의 <strong style="color: var(--text);">해석 방식을 직접 제어</strong>합니다. 조건과 feature가 역할 분리: c는 "어떤 feature가 중요한가"를 결정하고, Conv는 "어떤 feature를 추출할 것인가"를 담당합니다.
+        </div>
+      </div>
+      <div style="background: rgba(251,146,60,0.06); border: 1px solid rgba(251,146,60,0.2); border-radius: 12px; padding: 18px;">
+        <div style="font-size: 13px; font-weight: 700; color: var(--xattn); margin-bottom: 12px;">△ 단순 Concatenation</div>
+        <div style="background: var(--bg); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px 14px; font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 2; margin-bottom: 12px;">
+          <span style="color: var(--cond);">c_tiled</span> = tile(<span style="color: var(--cond);">c</span>, H, W)
+          <span style="color: var(--text-muted);">  # (B,64,H,W)</span><br>
+          h_cat = cat(h, <span style="color: var(--cond);">c_tiled</span>)
+          <span style="color: var(--text-muted);">  # (B, C+64, H, W)</span><br>
+          h_out = Conv(<span style="color: var(--xattn);">h_cat</span>)
+          <span style="color: var(--text-muted);">  # 추가 채널 처리</span><br>
+          <span style="color: var(--text-muted);">추가 파라미터: Conv(C+64, C_out, 3×3)</span>
+        </div>
+        <div style="font-size: 12px; color: var(--text-dim); line-height: 1.7; font-weight: 300;">
+          Conv 커널이 feature 추출과 조건 혼합을 <strong style="color: var(--text);">동시에 처리</strong>해야 합니다. 두 역할이 경쟁하여 소규모 데이터셋에서 최적화가 어려워집니다.
+        </div>
+      </div>
+    </div>
+
+    <!-- 3 key differences -->
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+
+      <div style="display: flex; gap: 12px; padding: 14px 16px; background: var(--surface2); border-radius: 12px; border-left: 3px solid var(--film);">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--film); font-weight: 700; flex-shrink: 0; width: 24px;">①</div>
+        <div>
+          <div style="font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px;">구조화된 조건 반영 vs 암묵적 혼합</div>
+          <div style="font-size: 12px; color: var(--text-dim); line-height: 1.7; font-weight: 300;">
+            FiLM에서 γ는 <em>명시적으로</em> 채널을 증폭/억제합니다. Concatenation에서는 Conv가 c와 h를 스스로 혼합하는 방법을 알아서 학습해야 합니다 — 이 암묵적 혼합은 훈련 데이터가 적을 때 일관성이 없어집니다.
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 12px; padding: 14px 16px; background: var(--surface2); border-radius: 12px; border-left: 3px solid var(--film);">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--film); font-weight: 700; flex-shrink: 0; width: 24px;">②</div>
+        <div>
+          <div style="font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px;">파라미터 효율성</div>
+          <div style="font-size: 12px; color: var(--text-dim); line-height: 1.7; font-weight: 300;">
+            FiLM Block 2: <code style="background: var(--surface); padding: 1px 5px; border-radius: 3px; font-size: 11px;">2 × Linear(64, 64) = 8,320 params</code><br>
+            Concat Block 2: <code style="background: var(--surface); padding: 1px 5px; border-radius: 3px; font-size: 11px;">Conv(128, 64, 3×3) = 73,792 params</code><br>
+            FiLM이 약 <strong style="color: var(--film);">9배 파라미터 절약</strong> — 소규모 데이터에서 오버피팅 위험 감소.
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 12px; padding: 14px 16px; background: var(--surface2); border-radius: 12px; border-left: 3px solid var(--film);">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--film); font-weight: 700; flex-shrink: 0; width: 24px;">③</div>
+        <div>
+          <div style="font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px;">역전파 중 조건 신호의 명확성</div>
+          <div style="font-size: 12px; color: var(--text-dim); line-height: 1.7; font-weight: 300;">
+            FiLM에서 ∂Loss/∂W_γ는 "어떤 채널을 어떻게 조절해야 하는가"에 직접 대응되는 명확한 신호입니다. Concatenation에서는 c에서 오는 기울기가 Conv 커널 전체와 entangle되어, 설계 조건 신호가 공간적 feature 학습 신호와 뒤섞입니다.
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
   <!-- Footer note -->
   <div style="text-align: center; padding: 20px 0;">
     <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 24px; display: inline-block; max-width: 680px;">
