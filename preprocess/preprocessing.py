@@ -211,7 +211,7 @@ def flatten_tilt(data: np.ndarray, patch_size: int = 16) -> tuple:
 
     # Subtract plane and shift minimum to zero
     flattened = data.astype(np.float64) - plane
-    flattened -= flattened.min()
+    flattened -= np.nanmin(flattened)
 
     return flattened.astype(np.float32), plane_amplitude
 
