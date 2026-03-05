@@ -166,8 +166,11 @@ def flatten_tilt(data: np.ndarray, patch_size: int = 16) -> tuple:
     z = a*x + b*y + c through the four (centroid, mean_z) points, and subtracts
     it from the surface.  The result is shifted so that its minimum is zero.
 
+    NaN values in corner patches are ignored (nanmean), so this function can be
+    called before interpolation while the data still contains NaNs.
+
     Args:
-        data: Input 2D array (H, W), must be NaN-free (run after interpolation).
+        data: Input 2D array (H, W), may contain NaN.
         patch_size: Side length of the square patch at each corner used to
                     compute stable corner elevation estimates.
 
@@ -191,7 +194,11 @@ def flatten_tilt(data: np.ndarray, patch_size: int = 16) -> tuple:
     z = np.empty(4, dtype=np.float64)
     for i, (patch, r_center, c_center) in enumerate(corners):
         A[i] = [r_center, c_center, 1.0]
-        z[i] = float(np.mean(patch))
+        corner_mean = float(np.nanmean(patch))
+        if np.isnan(corner_mean):
+            logger.warning("Corner patch %d is entirely NaN — tilt estimate may be unreliable.", i)
+            corner_mean = 0.0
+        z[i] = corner_mean
 
     # Least-squares solve (exact for 4 points / 3 unknowns, overdetermined by 1)
     coeffs, _, _, _ = np.linalg.lstsq(A, z, rcond=None)  # [a, b, c]

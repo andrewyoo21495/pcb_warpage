@@ -53,6 +53,9 @@ def process_single_file(filepath: str, config: PreprocessorConfig) -> tuple:
         return None, 0, 0, 0.0
 
     data = downsample_median(data, factor=config.downsample_factor)
+    data, plane_amplitude = flatten_tilt(
+        data, patch_size=config.tilt_patch_size,
+    )
     data, n_outliers = detect_and_remove_outliers(
         data,
         grid_size=config.outlier_grid_size,
@@ -62,9 +65,6 @@ def process_single_file(filepath: str, config: PreprocessorConfig) -> tuple:
         data,
         poly_degree=config.interp_poly_degree,
         ridge_alpha=config.interp_ridge_alpha,
-    )
-    data, plane_amplitude = flatten_tilt(
-        data, patch_size=config.tilt_patch_size,
     )
     data = smooth_gaussian(
         data, sigma=config.gaussian_sigma, iterations=config.gaussian_iterations,

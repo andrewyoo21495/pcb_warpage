@@ -44,55 +44,36 @@ def visualize_pipeline(
     # --- Step 2: Downsample ---
     downsampled = downsample_median(raw_data, factor=downsample_factor)
 
-    # --- Step 3: Outlier detection ---
+    # --- Step 3: Tilt correction ---
+    tilt_corrected, plane_amplitude = flatten_tilt(downsampled, patch_size=tilt_patch_size)
+
+    # --- Step 4: Outlier detection ---
     outlier_result, n_outliers = detect_and_remove_outliers(
-        downsampled, grid_size=outlier_grid_size, z_threshold=outlier_z_threshold,
+        tilt_corrected, grid_size=outlier_grid_size, z_threshold=outlier_z_threshold,
     )
-    # Find outlier positions: NaN in result but not NaN in downsampled
-    outlier_mask = np.isnan(outlier_result) & ~np.isnan(downsampled)
+    # Find outlier positions: NaN in result but not NaN in tilt_corrected
+    outlier_mask = np.isnan(outlier_result) & ~np.isnan(tilt_corrected)
     outlier_rows, outlier_cols = np.where(outlier_mask)
 
-    # --- Step 4: Interpolation ---
+    # --- Step 5: Interpolation ---
     interpolated, n_interpolated = interpolate_surface(
         outlier_result, poly_degree=interp_poly_degree, ridge_alpha=interp_ridge_alpha,
     )
 
-    # --- Step 5: Smoothing ---
+    # --- Step 6: Smoothing ---
     smoothed = smooth_gaussian(
         interpolated, sigma=gaussian_sigma, iterations=gaussian_iterations,
     )
 
-    # --- Step 6: Tilt correction (plane subtraction only, before zero shift) ---
-    H, W = smoothed.shape
-    ps = min(tilt_patch_size, H // 4, W // 4)
-    corners = [
-        (smoothed[:ps, :ps],             ps / 2,       ps / 2),
-        (smoothed[:ps, W - ps:],         ps / 2,       W - ps / 2),
-        (smoothed[H - ps:, :ps],         H - ps / 2,   ps / 2),
-        (smoothed[H - ps:, W - ps:],     H - ps / 2,   W - ps / 2),
-    ]
-    A = np.empty((4, 3), dtype=np.float64)
-    z = np.empty(4, dtype=np.float64)
-    for i, (patch, r_center, c_center) in enumerate(corners):
-        A[i] = [r_center, c_center, 1.0]
-        z[i] = float(np.mean(patch))
-    coeffs, _, _, _ = np.linalg.lstsq(A, z, rcond=None)
-    rows, cols = np.indices((H, W), dtype=np.float64)
-    plane = coeffs[0] * rows + coeffs[1] * cols + coeffs[2]
-    plane_amplitude = float(plane.max() - plane.min())
+    # --- Compute shared color ranges ---
+    # Steps 1-2 share the raw elevation range; steps 3-5 share the tilt-corrected range
+    vmin_raw = float(np.nanmin(raw_data))
+    vmax_raw = float(np.nanmax(raw_data))
+    vmin_tilt = float(np.nanmin(tilt_corrected))
+    vmax_tilt = float(np.nanmax(tilt_corrected))
 
-    tilt_corrected = smoothed.astype(np.float64) - plane  # plane subtracted, not zero-shifted
-
-    # --- Step 7: Zero alignment (shift minimum to zero) ---
-    zero_aligned = (tilt_corrected - tilt_corrected.min()).astype(np.float32)
-
-    # --- Compute shared color range (for elevation colormapped plots) ---
-    all_values = [raw_data, downsampled, outlier_result, interpolated, smoothed]
-    vmin = min(float(np.nanmin(a)) for a in all_values)
-    vmax = max(float(np.nanmax(a)) for a in all_values)
-
-    # --- Plot (2 rows x 4 columns) ---
-    fig, axes = plt.subplots(2, 4, figsize=(22, 10))
+    # --- Plot (2 rows x 3 columns) ---
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
     fig.suptitle("Preprocessing Pipeline Steps", fontsize=14, fontweight="bold")
 
     cmap = plt.get_cmap(ELEVATION_CMAP).copy()
@@ -100,55 +81,43 @@ def visualize_pipeline(
 
     # (1) Original data
     ax = axes[0, 0]
-    im = ax.imshow(raw_data, cmap=cmap, vmin=vmin, vmax=vmax, aspect="auto")
+    im = ax.imshow(raw_data, cmap=cmap, vmin=vmin_raw, vmax=vmax_raw, aspect="auto")
     ax.set_title(f"1. Original ({raw_data.shape[0]}x{raw_data.shape[1]})")
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
     # (2) Downsampled
     ax = axes[0, 1]
-    im = ax.imshow(downsampled, cmap=cmap, vmin=vmin, vmax=vmax, aspect="auto")
+    im = ax.imshow(downsampled, cmap=cmap, vmin=vmin_raw, vmax=vmax_raw, aspect="auto")
     ax.set_title(f"2. Downsampled ({downsampled.shape[0]}x{downsampled.shape[1]})")
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
-    # (3) Outlier detection
+    # (3) Tilt corrected
     ax = axes[0, 2]
-    im = ax.imshow(downsampled, cmap=cmap, vmin=vmin, vmax=vmax, aspect="auto")
+    im = ax.imshow(tilt_corrected, cmap=cmap, vmin=vmin_tilt, vmax=vmax_tilt, aspect="auto")
+    ax.set_title(f"3. Tilt Corrected (amp={plane_amplitude:.2f})")
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+    # (4) Outlier detection
+    ax = axes[1, 0]
+    im = ax.imshow(tilt_corrected, cmap=cmap, vmin=vmin_tilt, vmax=vmax_tilt, aspect="auto")
     if len(outlier_rows) > 0:
         ax.scatter(
             outlier_cols, outlier_rows,
             s=30, facecolors="none", edgecolors="red", linewidths=1.2,
         )
-    ax.set_title(f"3. Outliers Detected ({n_outliers})")
+    ax.set_title(f"4. Outliers Detected ({n_outliers})")
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
-    # (4) Interpolated
-    ax = axes[0, 3]
-    im = ax.imshow(interpolated, cmap=cmap, vmin=vmin, vmax=vmax, aspect="auto")
-    ax.set_title(f"4. Interpolated ({n_interpolated} filled)")
-    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-
-    # (5) Smoothed
-    ax = axes[1, 0]
-    im = ax.imshow(smoothed, cmap=cmap, vmin=vmin, vmax=vmax, aspect="auto")
-    ax.set_title(f"5. Smoothed (\u03c3={gaussian_sigma}, iter={gaussian_iterations})")
-    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-
-    # (6) Grayscale
+    # (5) Interpolated
     ax = axes[1, 1]
-    im = ax.imshow(smoothed, cmap="gray", aspect="auto")
-    ax.set_title("6. Grayscale")
+    im = ax.imshow(interpolated, cmap=cmap, vmin=vmin_tilt, vmax=vmax_tilt, aspect="auto")
+    ax.set_title(f"5. Interpolated ({n_interpolated} filled)")
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
-    # (7) Tilt-corrected grayscale
+    # (6) Final output (smoothed, grayscale)
     ax = axes[1, 2]
-    im = ax.imshow(tilt_corrected, cmap="gray", aspect="auto")
-    ax.set_title(f"7. Tilt Corrected (amp={plane_amplitude:.2f})")
-    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-
-    # (8) Zero-aligned grayscale
-    ax = axes[1, 3]
-    im = ax.imshow(zero_aligned, cmap="gray", aspect="auto")
-    ax.set_title("8. Zero Aligned")
+    im = ax.imshow(smoothed, cmap="gray", aspect="auto")
+    ax.set_title(f"6. Final (\u03c3={gaussian_sigma}, iter={gaussian_iterations})")
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
     plt.tight_layout()
