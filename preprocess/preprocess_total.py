@@ -92,6 +92,11 @@ class PreprocessorConfig:
     # Parallel processing
     max_workers: int = 1
 
+    # Fixed scaling range for image generation
+    # (min=0 from tilt correction, max=3000 assumed upper bound for warpage)
+    scale_min: float = 0.0
+    scale_max: float = 3000.0
+
     # Output
     image_format: str = "png"
     colormap: str = "gray"
@@ -518,14 +523,18 @@ def run_single_file_mode(config: PreprocessorConfig) -> None:
 
     save_preprocessed_txt(data, txt_path)
 
-    global_min, global_max = float(np.min(data)), float(np.max(data))
-    generate_grayscale_image(data, global_min, global_max, img_path)
+    # Observed min/max (for reporting only)
+    observed_min, observed_max = float(np.min(data)), float(np.max(data))
+    # Use fixed scaling range for image generation
+    generate_grayscale_image(data, config.scale_min, config.scale_max, img_path)
 
     # Save scaling metadata alongside output
     metadata_path = os.path.join(parent_dir, "scaling_metadata.json")
     metadata = {
-        "global_min": global_min,
-        "global_max": global_max,
+        "observed_min": observed_min,
+        "observed_max": observed_max,
+        "scale_min": config.scale_min,
+        "scale_max": config.scale_max,
         "num_subfolders": 1,
         "num_images": 1,
     }
@@ -535,7 +544,8 @@ def run_single_file_mode(config: PreprocessorConfig) -> None:
     print(f"  Outliers removed:     {n_outliers}")
     print(f"  Points interpolated:  {n_interpolated}")
     print(f"  Tilt plane amplitude: {plane_amplitude:.4f}")
-    print(f"  Min: {global_min:.4f}  Max: {global_max:.4f}")
+    print(f"  Observed min: {observed_min:.4f}  Observed max: {observed_max:.4f}")
+    print(f"  Fixed scale:  [{config.scale_min:.1f}, {config.scale_max:.1f}]")
     print(f"  [DONE] Saved to: {txt_path}")
     print(f"         Image:    {img_path}")
     print(f"         Metadata: {metadata_path}")
@@ -668,8 +678,9 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
     for name, smin, smax, cnt, _ in subfolder_stats:
         print(f"      {name:30s}  min={smin:10.4f}  max={smax:10.4f}  ({cnt} files)")
 
-    print(f"\n    Global min: {global_min:.4f}")
-    print(f"    Global max: {global_max:.4f}")
+    print(f"\n    Observed global min: {global_min:.4f}")
+    print(f"    Observed global max: {global_max:.4f}")
+    print(f"    Fixed scaling range: [{config.scale_min:.1f}, {config.scale_max:.1f}]")
 
     # --- Elevation range distribution analysis ---
     print("\n    Elevation range distributions (per-file max - min):")
@@ -716,7 +727,7 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
 
     print(f"    -> Saved {len(subfolder_stats)} range distribution histograms to '{dist_dir}/'.")
 
-    # Generate images using global min/max
+    # Generate images using fixed scaling range
     images_generated = 0
     for subfolder in subfolders:
         interp_dir = os.path.join(subfolder, "interpolated")
@@ -734,7 +745,7 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
 
             img_name = entry.replace(".txt", ".png")
             img_path = os.path.join(images_dir, img_name)
-            generate_grayscale_image(data, global_min, global_max, img_path)
+            generate_grayscale_image(data, config.scale_min, config.scale_max, img_path)
             images_generated += 1
 
     print(f"    -> {images_generated} images generated.")
@@ -757,8 +768,10 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
         }
 
     metadata = {
-        "global_min": global_min,
-        "global_max": global_max,
+        "observed_global_min": global_min,
+        "observed_global_max": global_max,
+        "scale_min": config.scale_min,
+        "scale_max": config.scale_max,
         "num_subfolders": len(subfolder_stats),
         "num_images": images_generated,
         "subfolders": [

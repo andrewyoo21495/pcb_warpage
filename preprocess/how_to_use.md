@@ -8,7 +8,7 @@ It applies noise removal, interpolation, and smoothing to produce **preprocessed
 ```
 Raw .txt files  ->  Downsample  ->  Outlier Removal  ->  Polynomial Interpolation
     ->  Tilt Correction  ->  Gaussian Smoothing  ->  Save preprocessed .txt
-    ->  Global Min/Max Scaling  ->  Elevation Range Analysis  ->  Save grayscale .png
+    ->  Fixed-Range Scaling [0, 3000]  ->  Elevation Range Analysis  ->  Save grayscale .png
 ```
 
 ---
@@ -149,7 +149,7 @@ root_data_dir/
 ```
 
 - **`interpolated/`** — preprocessed numeric data (`.txt`).
-- **`images/`** — grayscale images scaled to a **global** min/max across all files (batch mode) or the file's own range (single-file mode).
+- **`images/`** — grayscale images scaled to a **fixed range** of [0, 3000] (both batch and single-file mode). This ensures consistent scaling regardless of the dataset.
 
 ### Terminal output
 
@@ -157,10 +157,10 @@ The pipeline displays:
 - Per-file progress counter
 - Total outliers removed and points interpolated
 - Average tilt plane amplitude (how much tilt was removed)
-- Per-subfolder min/max statistics
+- Per-subfolder min/max statistics (observed values)
 - Elevation range distribution table (per-subfolder and global): mean, std, min, P25, P50, P75, max of per-file (max - min) ranges
 - Per-subfolder range distribution histograms saved to `outputs/distribution/`
-- Global min/max values used for image scaling
+- Observed global min/max values (for reference) and fixed scaling range used for image generation
 
 ---
 
@@ -214,10 +214,10 @@ data = smooth_gaussian(data, sigma=2.0, iterations=3)
 | 4 | `interpolate_surface()` | Polynomial + Ridge regression to fill NaN (returns count) |
 | 5 | `flatten_tilt()` | Corner-patch plane subtraction to remove linear tilt (returns plane amplitude) |
 | 6 | `smooth_gaussian()` | Adaptive anisotropic Gaussian with min/max preservation |
-| 7 | Global min/max computation | Find min/max across all preprocessed files |
+| 7 | Global min/max computation | Find observed min/max across all preprocessed files (for reporting only) |
 | 7a | Elevation range analysis | Per-subfolder and global distribution of per-file (max - min) ranges |
 | 7b | Range distribution histograms | Save per-subfolder histograms to `outputs/distribution/` |
-| 8 | `generate_grayscale_image()` | Min-max scale to [0, 255] and save PNG |
+| 8 | `generate_grayscale_image()` | Scale to [0, 255] using fixed range [0, 3000] and save PNG |
 
 ---
 
@@ -282,6 +282,21 @@ This analysis is useful for:
 
 ---
 
+## Fixed Scaling Range (Step 8)
+
+Image generation uses a **fixed scaling range of [0, 3000]** instead of the observed global min/max:
+
+- **Minimum = 0**: Tilt correction already shifts every sample so that its minimum is zero.
+- **Maximum = 3000**: An assumed upper bound for warpage values (in the measurement unit). This can be adjusted via `config.scale_min` / `config.scale_max` if needed.
+
+The observed global min/max values are still computed and reported in the console output and `scaling_metadata.json` (as `observed_global_min` / `observed_global_max`), but they are **not** used for the actual image scaling.
+
+**Why fixed scaling?** Previously, images were scaled using the data-dependent global min/max, which meant that adding new data could change the scaling and require regenerating all images. With a fixed range, the pixel values are stable: a given elevation always maps to the same grayscale intensity, regardless of dataset composition.
+
+Values above 3000 are clipped to 255 (white). If your data consistently exceeds 3000, increase `scale_max` in the config.
+
+---
+
 ## Module Structure
 
 ```
@@ -306,5 +321,5 @@ preprocessing/
 | `ModuleNotFoundError: sklearn` | Run `pip install scikit-learn` |
 | `ModuleNotFoundError: matplotlib` | Run `pip install matplotlib` (needed for `visualize_steps.py`) |
 | No output files generated | Check that subfolders exist directly under `--root-dir` and contain `.txt` files |
-| All images look the same shade | If `global_min == global_max`, all pixels become 128 (mid-gray). Check input data. |
+| All images look very dark | With fixed scaling [0, 3000], low-warpage samples may appear mostly dark. This is expected — it reflects their actual magnitude relative to the full scale. |
 | Warnings about low valid-value ratio | Many NaN/null values in input. Interpolation quality may be poor — consider adjusting `--downsample-factor` or checking raw data. |

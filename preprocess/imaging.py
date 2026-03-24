@@ -1,4 +1,4 @@
-"""Global min/max computation, min-max scaling, and grayscale image generation."""
+"""Global min/max computation (reporting), fixed-range scaling, and grayscale image generation."""
 
 import logging
 import os

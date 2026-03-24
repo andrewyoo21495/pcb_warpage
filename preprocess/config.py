@@ -41,6 +41,11 @@ class PreprocessorConfig:
     # Parallel processing
     max_workers: int = 1
 
+    # Fixed scaling range for image generation
+    # (min=0 from tilt correction, max=3000 assumed upper bound for warpage)
+    scale_min: float = 0.0
+    scale_max: float = 3000.0
+
     # Output
     image_format: str = "png"
     colormap: str = "gray"
