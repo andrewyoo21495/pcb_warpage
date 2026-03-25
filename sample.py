@@ -283,9 +283,10 @@ def _find_metadata(config: dict, metadata_override: str = None) -> str | None:
 
 
 def load_scaling_metadata(config: dict, metadata_override: str = None) -> tuple[float, float] | None:
-    """Load global_min/max from scaling_metadata.json.
+    """Load scaling range from scaling_metadata.json.
 
-    Returns (global_min, global_max) or None if not found.
+    Returns (scale_min, scale_max) or None if not found.
+    Supports both new keys (scale_min/scale_max) and legacy keys (global_min/global_max).
     """
     path = _find_metadata(config, metadata_override)
     if path is None:
@@ -294,11 +295,12 @@ def load_scaling_metadata(config: dict, metadata_override: str = None) -> tuple[
     with open(path, 'r', encoding='utf-8') as f:
         meta = json.load(f)
 
-    global_min = float(meta['global_min'])
-    global_max = float(meta['global_max'])
+    # Prefer fixed scaling keys; fall back to legacy global_min/global_max
+    scale_min = float(meta.get('scale_min', meta.get('global_min')))
+    scale_max = float(meta.get('scale_max', meta.get('global_max')))
     print(f"Loaded scaling metadata from {path}  "
-          f"(global_min={global_min:.4f}, global_max={global_max:.4f})")
-    return global_min, global_max
+          f"(scale_min={scale_min:.4f}, scale_max={scale_max:.4f})")
+    return scale_min, scale_max
 
 
 # ------------------------------------------------------------------
