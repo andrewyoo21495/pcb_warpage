@@ -265,6 +265,21 @@ The training loop automatically adapts to the selected `model_type`.
 - Checkpoint includes both model weights and EMA weights
 - At inference, EMA weights are used (smoother, higher quality outputs)
 
+### Data Augmentation
+
+Physics-aware augmentations are applied to the **training split only** and are designed to stay within the manifold of plausible PCB warpage fields. All geometric transforms are applied identically to the design and its paired elevation, and handcrafted features are recomputed from the augmented design so the conditioning remains consistent.
+
+| Key | Default | Description |
+|---|---|---|
+| `use_design_aug` | `True` | Brightness/contrast jitter on the design input (post feature extraction) |
+| `use_elevation_aug` | `True` | Master switch for elevation-side augmentation |
+| `aug_d4` | `True` | **D4 symmetry group** — random `k*90°` rotation plus optional H/V flip, applied jointly to design and elevation. Yields up to 8× effective data at zero cost. Handcrafted features are recomputed on the rotated original-resolution design. |
+| `aug_small_rot_deg` | `5.0` | **Small-angle shared rotation** in degrees (±). A random angle in `[-deg, +deg]` is applied to both design and elevation after resize, using reflect-pad then center-crop to avoid zero-border artefacts. Set to `0` to disable. |
+| `aug_elev_noise_std` | `0.015` | **Smooth low-frequency elevation noise** — a Gaussian random field sampled on a coarse grid and bicubically upsampled to full resolution, added to the elevation (in `[0,1]` units) and clipped. Preserves warpage smoothness (no high-frequency injection). Set to `0` to disable. |
+| `aug_elev_noise_grid` | `8` | Coarse grid size used to generate the smooth noise field. Smaller = smoother. |
+
+Rationale and safety boundaries for each knob are documented in the project notes; in short, these three augmentations are the only ones guaranteed to remain inside the warpage distribution for a square-board dataset. More aggressive options (MixUp, elastic warping, cutout, per-pixel noise, elevation sign flip) were intentionally excluded.
+
 ### CVAE Fusion method comparison (from spec)
 
 | Step | Fusion | Purpose |
@@ -559,8 +574,12 @@ ddpm_dropout        0.15    # dropout in U-Net ResBlocks
 ema_decay           0.9999  # EMA decay for DDPM
 
 %   Augmentation
-use_design_aug      True
-use_elevation_aug   True
+use_design_aug      True        # brightness/contrast jitter on design input
+use_elevation_aug   True        # master switch for elevation-side augmentation
+aug_d4              True        # random D4 symmetry (k*90° + flips), shared design+elevation
+aug_small_rot_deg   5.0         # small-angle shared rotation in degrees (±); 0 = disabled
+aug_elev_noise_std  0.015       # smooth low-frequency noise std on elevation; 0 = disabled
+aug_elev_noise_grid 8           # coarse grid size for the smooth noise field
 
 %   Validation
 val_fold            0       # index of held-out design (0-indexed)

@@ -41,11 +41,34 @@ import random
 from pathlib import Path
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import Dataset
 import torchvision.transforms.functional as TF
 from PIL import Image
 
 from utils.handcrafted_features import extract_handcrafted_features
+
+
+def _str2bool(v, default=True):
+    if isinstance(v, bool):
+        return v
+    if v is None:
+        return default
+    return str(v).strip().lower() in ('1', 'true', 'yes', 'y', 't')
+
+
+def _smooth_elevation_noise(shape, sigma: float, grid: int = 8) -> torch.Tensor:
+    """Generate a smooth low-frequency noise field of the given (C,H,W) shape.
+
+    Samples Gaussian noise on a coarse grid×grid grid and bicubically upsamples
+    to (H, W). The result is normalised to unit std then scaled by sigma so the
+    pixel-wise std of the returned field is approximately sigma.
+    """
+    c, h, w = shape
+    coarse = torch.randn(1, c, grid, grid)
+    field = F.interpolate(coarse, size=(h, w), mode='bicubic', align_corners=False)[0]
+    std = field.std().clamp(min=1e-6)
+    return field * (sigma / std)
 
 # Default names used when 'design_names' is not set in config
 _DEFAULT_DESIGN_NAMES = [
@@ -81,11 +104,20 @@ class PCBWarpageDataset(Dataset):
         self.split      = split
         self.val_fold   = val_fold
 
-        use_design_aug    = config.get('use_design_aug', True)
-        use_elevation_aug = config.get('use_elevation_aug', True)
+        use_design_aug    = _str2bool(config.get('use_design_aug', True))
+        use_elevation_aug = _str2bool(config.get('use_elevation_aug', True))
         self.augment           = (split == 'train')
         self.use_design_aug    = use_design_aug and self.augment
         self.use_elevation_aug = use_elevation_aug and self.augment
+
+        # --- Physics-aware augmentation knobs (train split only) ---
+        # 1.1 D4 symmetry group: random k*90° rotation + optional flip
+        self.aug_d4             = _str2bool(config.get('aug_d4', True)) and self.augment
+        # 1.2 Small-angle shared rotation (degrees, 0 = disabled)
+        self.aug_small_rot_deg  = float(config.get('aug_small_rot_deg', 5.0)) if self.augment else 0.0
+        # 1.3 Smooth additive elevation noise (std in [0,1] units, 0 = disabled)
+        self.aug_elev_noise_std = float(config.get('aug_elev_noise_std', 0.015)) if self.augment else 0.0
+        self.aug_elev_noise_grid = int(config.get('aug_elev_noise_grid', 8))
 
         # --- Resolve design names ---
         self.design_names = _resolve_design_names(config)
@@ -152,9 +184,24 @@ class PCBWarpageDataset(Dataset):
         design_orig = Image.open(design_path).convert('L')
         elevation   = Image.open(elev_path).convert('L')
 
-        # Extract handcrafted features at original resolution — before any resize.
-        # Downsampling blurs thin design lines into grey, shifting the binary
-        # threshold used for density and edge-ratio calculations.
+        # --- Aug 1.1: D4 symmetry group (applied at original resolution so
+        # handcrafted features reflect the augmented design) ---
+        if self.aug_d4:
+            k = random.randint(0, 3)  # 0/90/180/270
+            if k:
+                design_orig = design_orig.rotate(90 * k, expand=True)
+                elevation   = elevation.rotate(90 * k, expand=True)
+            if random.random() < 0.5:
+                design_orig = TF.hflip(design_orig)
+                elevation   = TF.hflip(elevation)
+            if random.random() < 0.5:
+                design_orig = TF.vflip(design_orig)
+                elevation   = TF.vflip(elevation)
+
+        # Extract handcrafted features at (possibly D4-augmented) original
+        # resolution — before any resize. Downsampling blurs thin design lines
+        # into grey, shifting the binary threshold used for density and
+        # edge-ratio calculations.
         hand_features = extract_handcrafted_features(design_orig)
 
         # Resize to model input size
@@ -162,25 +209,39 @@ class PCBWarpageDataset(Dataset):
         design    = design_orig.resize(size, Image.LANCZOS)
         elevation = elevation.resize(size, Image.LANCZOS)
 
-        # --- Shared spatial augmentation (same transform applied to both) ---
-        if self.augment:
-            if random.random() > 0.5:
-                design    = TF.hflip(design)
-                elevation = TF.hflip(elevation)
-            if random.random() > 0.5:
-                design    = TF.vflip(design)
-                elevation = TF.vflip(elevation)
-
-        # --- Design-specific augmentation (brightness / contrast jitter) ---
-        if self.use_design_aug:
-            brightness_factor = random.uniform(0.7, 1.3)
-            contrast_factor   = random.uniform(0.7, 1.3)
-            design = TF.adjust_brightness(design, brightness_factor)
-            design = TF.adjust_contrast(design, contrast_factor)
-
         # Convert to float tensors in [0, 1]  →  shape (1, H, W)
         design_tensor    = TF.to_tensor(design)    # white=1.0, black=0.0
         elevation_tensor = TF.to_tensor(elevation) # smooth values in [0, 1]
+
+        # --- Aug 1.2: small-angle shared rotation (reflect-pad then center-crop
+        # to avoid zero-border artefacts). Applied on tensors post-resize. ---
+        if self.aug_small_rot_deg > 0.0:
+            angle = random.uniform(-self.aug_small_rot_deg, self.aug_small_rot_deg)
+            if abs(angle) > 1e-3:
+                pad = max(1, int(self.image_size * 0.10))
+                d = F.pad(design_tensor.unsqueeze(0),    (pad, pad, pad, pad), mode='reflect')
+                e = F.pad(elevation_tensor.unsqueeze(0), (pad, pad, pad, pad), mode='reflect')
+                d = TF.rotate(d, angle, interpolation=TF.InterpolationMode.NEAREST)
+                e = TF.rotate(e, angle, interpolation=TF.InterpolationMode.BILINEAR)
+                design_tensor    = TF.center_crop(d, [self.image_size, self.image_size])[0]
+                elevation_tensor = TF.center_crop(e, [self.image_size, self.image_size])[0]
+
+        # --- Design-specific augmentation (brightness / contrast jitter) ---
+        # Applied after feature extraction so handcrafted features stay true.
+        if self.use_design_aug:
+            brightness_factor = random.uniform(0.7, 1.3)
+            contrast_factor   = random.uniform(0.7, 1.3)
+            design_tensor = TF.adjust_brightness(design_tensor, brightness_factor)
+            design_tensor = TF.adjust_contrast(design_tensor,   contrast_factor)
+
+        # --- Aug 1.3: smooth additive low-frequency noise on elevation ---
+        if self.use_elevation_aug and self.aug_elev_noise_std > 0.0:
+            noise = _smooth_elevation_noise(
+                elevation_tensor.shape,
+                sigma=self.aug_elev_noise_std,
+                grid=self.aug_elev_noise_grid,
+            )
+            elevation_tensor = (elevation_tensor + noise).clamp_(0.0, 1.0)
 
         return design_tensor, elevation_tensor, hand_features
 

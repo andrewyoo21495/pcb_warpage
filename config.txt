@@ -55,8 +55,12 @@ ddpm_dropout        0.15    # dropout rate in U-Net
 ema_decay           0.9999  # EMA decay for DDPM
   
 %   Augmentation
-use_design_aug      True
-use_elevation_aug   True
+use_design_aug      True        # brightness/contrast jitter on design input
+use_elevation_aug   True        # master switch for elevation-side augmentation
+aug_d4              True        # random D4 symmetry (k*90° rotation + flips), shared design+elevation
+aug_small_rot_deg   5.0         # small-angle shared rotation in degrees (±); 0 = disabled
+aug_elev_noise_std  0.015       # smooth low-frequency noise std on elevation in [0,1] units; 0 = disabled
+aug_elev_noise_grid 8           # coarse-grid size for smooth noise (upsampled bicubically)
 
 %   Validation (leave-one-out, 0-indexed)
 val_fold    0       # which design to hold out: 0=A, 1=B, 2=C, 3=D
