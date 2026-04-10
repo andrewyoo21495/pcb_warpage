@@ -317,14 +317,19 @@ def interpolate_surface(
 
 
 def flatten_tilt(data: np.ndarray, patch_size: int = 16) -> tuple:
-    """Remove linear tilt by fitting and subtracting a plane through four corner patches.
+    """Remove linear tilt by fitting and subtracting a plane through corner patches.
 
-    Computes the mean elevation of each corner patch, fits a least-squares plane
-    z = a*x + b*y + c through the four (centroid, mean_z) points, and subtracts
-    it from the surface.  The result is shifted so that its minimum is zero.
+    Computes the mean elevation of each corner patch (using nanmean to handle
+    NaN values), fits a least-squares plane z = a*x + b*y + c through the
+    valid corner points, and subtracts it from the surface.  The result is
+    shifted so that its minimum is zero.
+
+    If a corner patch is entirely NaN, it is excluded.  A plane can still be
+    fitted with 3 valid corners (exact solution for 3 points / 3 unknowns).
+    With fewer than 3 valid corners the data is returned unchanged.
 
     Args:
-        data: Input 2D array (H, W), must be NaN-free (run after interpolation).
+        data: Input 2D array (H, W), may contain NaN values.
         patch_size: Side length of the square patch at each corner used to
                     compute stable corner elevation estimates.
 
@@ -343,14 +348,27 @@ def flatten_tilt(data: np.ndarray, patch_size: int = 16) -> tuple:
         (data[H - ps:, W - ps:],     H - ps / 2,   W - ps / 2),   # bottom-right
     ]
 
-    # Build 4×3 system: [row, col, 1] @ [a, b, c]^T = z
-    A = np.empty((4, 3), dtype=np.float64)
-    z = np.empty(4, dtype=np.float64)
-    for i, (patch, r_center, c_center) in enumerate(corners):
-        A[i] = [r_center, c_center, 1.0]
-        z[i] = float(np.mean(patch))
+    # Build system using only corners with valid (non-NaN) data
+    A_rows = []
+    z_vals = []
+    for patch, r_center, c_center in corners:
+        patch_mean = float(np.nanmean(patch))
+        if np.isnan(patch_mean):
+            # Entire patch is NaN — skip this corner
+            continue
+        A_rows.append([r_center, c_center, 1.0])
+        z_vals.append(patch_mean)
 
-    # Least-squares solve (exact for 4 points / 3 unknowns, overdetermined by 1)
+    n_valid = len(z_vals)
+    if n_valid < 3:
+        # Cannot fit a plane with fewer than 3 points — return data as-is
+        logger.warning("Only %d valid corner patches — skipping tilt correction.", n_valid)
+        return data.copy().astype(np.float32), 0.0
+
+    A = np.array(A_rows, dtype=np.float64)
+    z = np.array(z_vals, dtype=np.float64)
+
+    # Least-squares solve (exact for 3 points, overdetermined for 4)
     coeffs, _, _, _ = np.linalg.lstsq(A, z, rcond=None)  # [a, b, c]
 
     # Build the full plane surface
@@ -359,9 +377,9 @@ def flatten_tilt(data: np.ndarray, patch_size: int = 16) -> tuple:
 
     plane_amplitude = float(plane.max() - plane.min())
 
-    # Subtract plane and shift minimum to zero
+    # Subtract plane and shift minimum to zero (using nanmin to handle NaN)
     flattened = data.astype(np.float64) - plane
-    flattened -= flattened.min()
+    flattened -= np.nanmin(flattened)
 
     return flattened.astype(np.float32), plane_amplitude
 
@@ -473,6 +491,9 @@ def process_single_file(filepath: str, config: PreprocessorConfig) -> tuple:
         return None, 0, 0, 0.0
 
     data = downsample_median(data, factor=config.downsample_factor)
+    data, plane_amplitude = flatten_tilt(
+        data, patch_size=config.tilt_patch_size,
+    )
     data, n_outliers = detect_and_remove_outliers(
         data,
         grid_size=config.outlier_grid_size,
@@ -482,9 +503,6 @@ def process_single_file(filepath: str, config: PreprocessorConfig) -> tuple:
         data,
         poly_degree=config.interp_poly_degree,
         ridge_alpha=config.interp_ridge_alpha,
-    )
-    data, plane_amplitude = flatten_tilt(
-        data, patch_size=config.tilt_patch_size,
     )
     data = smooth_gaussian(
         data, sigma=config.gaussian_sigma, iterations=config.gaussian_iterations,
@@ -718,7 +736,7 @@ def run_batch_mode(config: PreprocessorConfig) -> None:
         ax.set_xlabel("Elevation Range (max − min)")
         ax.set_ylabel("Count")
         ax.axvline(r.mean(), color='red', linestyle='--', linewidth=1.2,
-                   label=f"Mean = {r.mean():.4f}")
+                   label=f"Mean = {r.mean():.4f}\nMin = {r.min():.4f}  |  Max = {r.max():.4f}")
         ax.legend()
         fig.tight_layout()
         fig_path = os.path.join(dist_dir, f"dist_{name}.png")
