@@ -1,0 +1,2062 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PCB Warpage Engineering: From Fundamentals to Simulation</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;500;700&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-primary: #0a0e17;
+  --bg-secondary: #111827;
+  --bg-card: #1a2236;
+  --bg-card-hover: #1f2a42;
+  --bg-code: #0d1321;
+  --text-primary: #e8ecf4;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --accent-blue: #3b82f6;
+  --accent-cyan: #06b6d4;
+  --accent-emerald: #10b981;
+  --accent-amber: #f59e0b;
+  --accent-rose: #f43f5e;
+  --accent-violet: #8b5cf6;
+  --accent-orange: #f97316;
+  --border-subtle: rgba(148,163,184,0.1);
+  --border-accent: rgba(59,130,246,0.3);
+  --gradient-hero: linear-gradient(135deg, #0a0e17 0%, #1a1a3e 50%, #0a0e17 100%);
+  --shadow-card: 0 4px 24px rgba(0,0,0,0.3);
+  --shadow-glow: 0 0 40px rgba(59,130,246,0.15);
+  --radius: 12px;
+  --font-body: 'Noto Sans KR', sans-serif;
+  --font-code: 'JetBrains Mono', monospace;
+  --font-display: 'Playfair Display', serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html {
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-blue) var(--bg-secondary);
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.85;
+  font-size: 16px;
+  font-weight: 300;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Sidebar Navigation ── */
+.sidebar {
+  position: fixed;
+  top: 0; left: 0;
+  width: 320px;
+  height: 100vh;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-subtle);
+  overflow-y: auto;
+  z-index: 100;
+  padding: 24px 0;
+  transition: transform 0.3s ease;
+}
+
+.sidebar-header {
+  padding: 0 24px 24px;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 16px;
+}
+
+.sidebar-header h2 {
+  font-family: var(--font-display);
+  font-size: 18px;
+  color: var(--accent-cyan);
+  letter-spacing: -0.02em;
+}
+
+.sidebar-header p {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.nav-module {
+  padding: 0 16px;
+  margin-bottom: 4px;
+}
+
+.nav-module-title {
+  display: block;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-body);
+}
+
+.nav-module-title:hover {
+  color: var(--text-primary);
+  background: var(--bg-card);
+}
+
+.nav-module-title.active {
+  color: var(--accent-cyan);
+  background: rgba(6,182,212,0.08);
+}
+
+.nav-sections {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.35s ease;
+}
+
+.nav-sections.open {
+  max-height: 600px;
+}
+
+.nav-section-link {
+  display: block;
+  padding: 6px 12px 6px 28px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-decoration: none;
+  border-radius: 6px;
+  transition: all 0.2s;
+  line-height: 1.6;
+}
+
+.nav-section-link:hover {
+  color: var(--accent-blue);
+  background: rgba(59,130,246,0.06);
+}
+
+/* ── Mobile Toggle ── */
+.sidebar-toggle {
+  display: none;
+  position: fixed;
+  top: 16px; left: 16px;
+  z-index: 200;
+  width: 44px; height: 44px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-size: 20px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Main Content ── */
+.main-content {
+  margin-left: 320px;
+  min-height: 100vh;
+}
+
+/* ── Hero ── */
+.hero {
+  background: var(--gradient-hero);
+  padding: 100px 60px 80px;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -50%; right: -20%;
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, rgba(6,182,212,0.08) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.hero::after {
+  content: '';
+  position: absolute;
+  bottom: -30%; left: -10%;
+  width: 500px; height: 500px;
+  background: radial-gradient(circle, rgba(139,92,246,0.06) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.hero-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--accent-cyan);
+  border: 1px solid rgba(6,182,212,0.3);
+  padding: 6px 16px;
+  border-radius: 20px;
+  margin-bottom: 24px;
+}
+
+.hero h1 {
+  font-family: var(--font-display);
+  font-size: clamp(36px, 5vw, 56px);
+  font-weight: 900;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  margin-bottom: 20px;
+  background: linear-gradient(135deg, #e8ecf4 0%, #06b6d4 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-sub {
+  font-size: 18px;
+  color: var(--text-secondary);
+  max-width: 680px;
+  line-height: 1.8;
+}
+
+/* ── Module Container ── */
+.module {
+  padding: 80px 60px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.module:last-child { border-bottom: none; }
+
+.module-header {
+  margin-bottom: 48px;
+}
+
+.module-number {
+  font-family: var(--font-code);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent-blue);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  margin-bottom: 12px;
+}
+
+.module-title {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 3.5vw, 40px);
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin-bottom: 16px;
+}
+
+.module-desc {
+  font-size: 16px;
+  color: var(--text-secondary);
+  max-width: 720px;
+  line-height: 1.9;
+}
+
+/* ── Section ── */
+.section {
+  margin-bottom: 56px;
+}
+
+.section-id {
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--accent-cyan);
+  letter-spacing: 0.1em;
+  margin-bottom: 8px;
+}
+
+.section h3 {
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 20px;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.section h4 {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 32px 0 14px;
+  color: var(--accent-blue);
+}
+
+.section p {
+  margin-bottom: 16px;
+  max-width: 780px;
+  color: var(--text-secondary);
+  font-weight: 300;
+}
+
+.section strong {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* ── Info Cards ── */
+.info-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 28px 32px;
+  margin: 24px 0;
+  max-width: 820px;
+  position: relative;
+  transition: border-color 0.3s;
+}
+
+.info-card:hover {
+  border-color: var(--border-accent);
+}
+
+.info-card.blue { border-left: 3px solid var(--accent-blue); }
+.info-card.cyan { border-left: 3px solid var(--accent-cyan); }
+.info-card.emerald { border-left: 3px solid var(--accent-emerald); }
+.info-card.amber { border-left: 3px solid var(--accent-amber); }
+.info-card.rose { border-left: 3px solid var(--accent-rose); }
+.info-card.violet { border-left: 3px solid var(--accent-violet); }
+.info-card.orange { border-left: 3px solid var(--accent-orange); }
+
+.info-card .card-label {
+  font-family: var(--font-code);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 12px;
+}
+
+.info-card.blue .card-label { color: var(--accent-blue); }
+.info-card.cyan .card-label { color: var(--accent-cyan); }
+.info-card.emerald .card-label { color: var(--accent-emerald); }
+.info-card.amber .card-label { color: var(--accent-amber); }
+.info-card.rose .card-label { color: var(--accent-rose); }
+.info-card.violet .card-label { color: var(--accent-violet); }
+.info-card.orange .card-label { color: var(--accent-orange); }
+
+.info-card p {
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+
+.info-card p:last-child { margin-bottom: 0; }
+
+/* ── Code Block ── */
+.code-block {
+  background: var(--bg-code);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 24px 28px;
+  margin: 20px 0;
+  max-width: 820px;
+  overflow-x: auto;
+  font-family: var(--font-code);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--accent-cyan);
+}
+
+/* ── Comparison Table ── */
+.comp-table {
+  width: 100%;
+  max-width: 820px;
+  border-collapse: collapse;
+  margin: 24px 0;
+  font-size: 14px;
+}
+
+.comp-table th {
+  background: var(--bg-card);
+  color: var(--accent-cyan);
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 14px 18px;
+  text-align: left;
+  border-bottom: 2px solid var(--border-accent);
+}
+
+.comp-table td {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  vertical-align: top;
+}
+
+.comp-table tr:hover td {
+  background: rgba(59,130,246,0.04);
+}
+
+/* ── Diagram / Figure ── */
+.figure-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 32px;
+  margin: 28px 0;
+  max-width: 820px;
+  text-align: center;
+}
+
+.figure-box svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.figure-caption {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 16px;
+  font-style: italic;
+}
+
+/* ── Bullet List (styled) ── */
+.styled-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+  max-width: 780px;
+}
+
+.styled-list li {
+  position: relative;
+  padding: 8px 0 8px 24px;
+  color: var(--text-secondary);
+  font-weight: 300;
+}
+
+.styled-list li::before {
+  content: '▸';
+  position: absolute;
+  left: 0;
+  color: var(--accent-cyan);
+  font-weight: 700;
+}
+
+/* ── Equation Block ── */
+.equation {
+  background: var(--bg-card);
+  border-left: 3px solid var(--accent-violet);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: 20px 28px;
+  margin: 20px 0;
+  max-width: 820px;
+  font-family: var(--font-code);
+  font-size: 14px;
+  color: var(--accent-violet);
+  overflow-x: auto;
+}
+
+/* ── Key Takeaway ── */
+.takeaway {
+  background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(6,182,212,0.06));
+  border: 1px solid rgba(16,185,129,0.2);
+  border-radius: var(--radius);
+  padding: 24px 28px;
+  margin: 32px 0;
+  max-width: 820px;
+}
+
+.takeaway .takeaway-title {
+  font-family: var(--font-code);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent-emerald);
+  margin-bottom: 10px;
+}
+
+/* ── Progress Indicator ── */
+.progress-bar {
+  position: fixed;
+  top: 0; left: 320px; right: 0;
+  height: 3px;
+  background: var(--bg-secondary);
+  z-index: 99;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+  transition: width 0.15s ease;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1024px) {
+  .sidebar { transform: translateX(-100%); }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar-toggle { display: flex; }
+  .main-content { margin-left: 0; }
+  .progress-bar { left: 0; }
+  .module { padding: 48px 24px; }
+  .hero { padding: 80px 24px 60px; }
+}
+
+@media (max-width: 640px) {
+  .hero h1 { font-size: 28px; }
+  .module-title { font-size: 24px; }
+  .info-card { padding: 20px; }
+}
+
+/* ── Smooth section transitions ── */
+.section {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+.section.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Back to top ── */
+.back-to-top {
+  position: fixed;
+  bottom: 32px; right: 32px;
+  width: 44px; height: 44px;
+  background: var(--accent-blue);
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.3s;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.back-to-top.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- Progress Bar -->
+<div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+
+<!-- Mobile Toggle -->
+<button class="sidebar-toggle" id="sidebarToggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">☰</button>
+
+<!-- Sidebar -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <h2>Warpage Engineering</h2>
+    <p>Fundamentals to Simulation</p>
+  </div>
+  <div id="navContainer"></div>
+</nav>
+
+<!-- Main Content -->
+<div class="main-content">
+
+<!-- Hero -->
+<header class="hero" id="top">
+  <div class="hero-tag">Comprehensive Study Guide</div>
+  <h1>PCB Warpage Engineering</h1>
+  <p class="hero-sub">기초 물리에서 FEA 시뮬레이션까지 — PCB 및 패키지 warpage의 발생 원리, 형태 분류, 신뢰성 영향, 시뮬레이션 기법, 측정 검증, 설계 최적화, 그리고 최신 트렌드를 체계적으로 학습합니다.</p>
+</header>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- MODULE 1 -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="module" id="module1">
+  <div class="module-header">
+    <div class="module-number">Module 01</div>
+    <h2 class="module-title">Warpage의 기초 및 물리적 정의</h2>
+    <p class="module-desc">Warpage를 정량적으로 이해하기 위한 기본 개념과 역학적 원리, 그리고 다층 적층판 이론의 토대를 학습합니다.</p>
+  </div>
+
+  <!-- 1.1 -->
+  <div class="section" id="s1-1">
+    <div class="section-id">Section 1.1</div>
+    <h3>Warpage란 무엇인가?</h3>
+    <p>Warpage란 <strong>기판이나 패키지가 이상적인 평면(flat plane)에서 벗어나 휘어지는 현상</strong>을 총칭합니다. 제조 공정 중 발생하는 열적·기계적 응력이 해소되지 않고 잔류하면서, 구조체가 평탄한 상태를 유지하지 못하고 변형되는 것입니다.</p>
+
+    <h4>평탄도(Flatness)</h4>
+    <p>기판의 전체 표면이 기준 평면으로부터 얼마나 벗어나 있는지를 나타내는 지표입니다. 일반적으로 기판을 자유 상태(free-standing)로 놓았을 때, 표면의 최고점과 최저점 간의 차이(peak-to-valley distance)로 측정합니다. 단위는 μm 또는 mil을 사용합니다.</p>
+
+    <h4>Coplanarity</h4>
+    <p>Coplanarity는 주로 <strong>BGA 패키지의 솔더볼</strong>이나 <strong>QFP의 리드</strong>가 하나의 평면 위에 얼마나 잘 놓이는지를 나타냅니다. SMT 공정에서 솔더 조인트의 접촉 신뢰성에 직결되는 핵심 지표입니다.</p>
+
+    <div class="info-card cyan">
+      <div class="card-label">핵심 정의</div>
+      <p><strong>Warpage = 구조체의 실제 형상과 이상적 평면 간의 편차.</strong> 이는 단순히 "얼마나 휘었는가"를 넘어, "어떤 방향으로, 어떤 곡률로" 휘었는가까지 포함하는 개념입니다.</p>
+    </div>
+
+    <p>실무에서 warpage는 흔히 <strong>대각선 길이 대비 최대 변위의 비율(%)</strong>로 표현합니다. 예를 들어, 대각선 50mm인 패키지에서 최대 변위가 100μm이면 warpage는 0.2%가 됩니다. 그러나 이 단순 수치만으로는 휨의 형태(smile, cry, saddle 등)를 구분할 수 없어, 보다 정밀한 수학적 표현이 필요합니다.</p>
+  </div>
+
+  <!-- 1.2 -->
+  <div class="section" id="s1-2">
+    <div class="section-id">Section 1.2</div>
+    <h3>Warpage의 수학적 표현</h3>
+    <p>시뮬레이션 결과를 정량적으로 분석하고, 측정 데이터와 비교하려면 warpage를 수학적으로 기술할 수 있어야 합니다.</p>
+
+    <h4>곡률 (Curvature, κ)</h4>
+    <p>곡률은 곡선이나 곡면이 평면에서 벗어나는 정도를 나타내는 기본적인 수학적 도구입니다. 2차원에서 곡률 반경 R인 원호의 곡률은 κ = 1/R 입니다.</p>
+    <div class="equation">κ = 1/R = d²w/dx²</div>
+    <p>여기서 w는 기판의 면 밖(out-of-plane) 변위, x는 면 내 좌표입니다.</p>
+
+    <h4>주곡률 (Principal Curvatures, κ₁, κ₂)</h4>
+    <p>3차원 곡면에서는 각 점에서 무수히 많은 방향으로 곡률을 정의할 수 있는데, 그중 <strong>최대 곡률과 최소 곡률</strong>이 주곡률입니다. 이 두 값과 그 방향이 곡면의 형상을 완전히 결정합니다.</p>
+
+    <h4>Gaussian Curvature (K)</h4>
+    <div class="equation">K = κ₁ × κ₂</div>
+    <p>가우시안 곡률은 warpage의 <strong>형태 분류</strong>에 핵심적인 역할을 합니다.</p>
+    <ul class="styled-list">
+      <li><strong>K > 0</strong> (두 주곡률이 같은 부호): Bowl/Dome 형태. Smile이나 Cry에 해당합니다.</li>
+      <li><strong>K = 0</strong> (한 주곡률이 0): Cylindrical 형태. 한 방향으로만 휘어진 상태입니다.</li>
+      <li><strong>K < 0</strong> (두 주곡률이 반대 부호): Saddle 형태. 말안장처럼 한 방향은 위로, 다른 방향은 아래로 휘어집니다.</li>
+    </ul>
+
+    <div class="takeaway">
+      <div class="takeaway-title">왜 단순 "최대 변위"만으로는 부족한가?</div>
+      <p>동일한 최대 변위를 가지더라도 cylindrical warpage와 saddle warpage는 솔더 접합 불량의 패턴이 완전히 다릅니다. 곡률 기반 분석을 해야 어디서 어떤 유형의 불량이 발생할지를 예측할 수 있습니다.</p>
+    </div>
+  </div>
+
+  <!-- 1.3 -->
+  <div class="section" id="s1-3">
+    <div class="section-id">Section 1.3</div>
+    <h3>역학적 발생 원리</h3>
+
+    <h4>잔류 응력 (Residual Stress)</h4>
+    <p>잔류 응력은 <strong>외부 하중이 제거된 후에도 구조체 내부에 남아 있는 응력</strong>입니다. PCB/패키지에서 잔류 응력의 주된 원인은 다음과 같습니다.</p>
+    <ul class="styled-list">
+      <li><strong>열응력(Thermal Stress):</strong> 서로 다른 CTE를 가진 재료가 결합된 상태에서 온도가 변할 때 발생합니다.</li>
+      <li><strong>경화 수축(Cure Shrinkage):</strong> 에폭시 수지가 경화(cross-linking) 과정에서 부피가 줄어들며 발생합니다.</li>
+      <li><strong>수분 흡습:</strong> 수지가 수분을 흡수하면 팽창하고, 건조하면 수축합니다.</li>
+    </ul>
+
+    <h4>탄성(Elastic) 변형 vs. 소성(Plastic) 변형</h4>
+    <p><strong>탄성 변형</strong>은 하중 제거 시 원래 형상으로 되돌아가는 가역적 변형입니다. <strong>소성 변형</strong>은 항복점을 넘어선 후 영구적으로 남는 비가역적 변형입니다.</p>
+    <p>PCB에서 주요 재료별 거동을 살펴보면, 구리(copper)는 상온에서 탄소성(elasto-plastic) 거동을, 솔더(solder)는 고온에서 크리프(creep) 거동을, 수지(resin)는 Tg 이상에서 점탄성(viscoelastic) 거동을 보입니다. 시뮬레이션에서 어떤 재료 모델을 선택하느냐가 결과의 정확도를 결정짓습니다.</p>
+
+    <h4>열응력(Thermal Stress)과 변형의 관계</h4>
+    <p>간단한 1D 모델에서, 길이 L인 봉(bar)이 온도 ΔT만큼 변할 때 자유 열팽창 변형률(thermal strain)은 다음과 같습니다.</p>
+    <div class="equation">ε_thermal = α × ΔT</div>
+    <p>그러나 이 봉이 다른 재료에 구속되어 있다면, 자유 팽창이 저해되어 열응력이 발생합니다. 이것이 다층 구조에서 warpage가 발생하는 가장 근본적인 메커니즘입니다.</p>
+  </div>
+
+  <!-- 1.4 -->
+  <div class="section" id="s1-4">
+    <div class="section-id">Section 1.4</div>
+    <h3>열팽창 계수(CTE) 불일치</h3>
+    <p>CTE(Coefficient of Thermal Expansion)는 온도 변화에 따른 재료의 길이 변화율을 나타냅니다. PCB/패키지 구조에서 warpage의 가장 주된 원인이 바로 <strong>각 층(layer) 간 CTE의 차이</strong>입니다.</p>
+
+    <table class="comp-table">
+      <thead>
+        <tr><th>재료</th><th>CTE (ppm/°C)</th><th>특징</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>구리 (Cu)</td><td>~17</td><td>등방성, 높은 강성</td></tr>
+        <tr><td>FR-4 (면내, x-y)</td><td>14~18</td><td>유리섬유 방향 의존</td></tr>
+        <tr><td>FR-4 (면외, z)</td><td>40~70 (Tg 이하)<br>250~300 (Tg 이상)</td><td>Tg 전후 급변</td></tr>
+        <tr><td>실리콘 다이 (Si)</td><td>~2.6</td><td>매우 낮음</td></tr>
+        <tr><td>EMC</td><td>8~15 (Tg 이하)<br>30~50 (Tg 이상)</td><td>필러 함량에 따라 조절</td></tr>
+        <tr><td>SAC305 솔더</td><td>~23</td><td>고온에서 크리프 현저</td></tr>
+      </tbody>
+    </table>
+
+    <h4>Bi-metal Strip 모델을 통한 직관적 이해</h4>
+    <p>가장 단순화된 warpage 발생 모델은 <strong>바이메탈 스트립(bi-metal strip)</strong>입니다. CTE가 서로 다른 두 재료를 접합한 후 온도가 변하면, CTE가 큰 쪽이 더 많이 팽창/수축하려 하지만 접합면에서 구속되므로 전체 구조가 휘어집니다.</p>
+    <div class="equation">κ = 6(α₂ - α₁)(T - T₀)(1 + m)² / [h(3(1+m)² + (1+m·n)(m² + 1/(m·n)))]</div>
+    <p>여기서 m = h₁/h₂ (두께 비), n = E₁/E₂ (탄성계수 비)입니다. 이 <strong>Timoshenko 바이메탈 공식</strong>은 다층 적층판 warpage를 직관적으로 이해하는 출발점이 됩니다. CTE 차이(α₂ - α₁)가 클수록, 온도 변화(T - T₀)가 클수록 곡률이 증가함을 알 수 있습니다.</p>
+  </div>
+
+  <!-- 1.5 -->
+  <div class="section" id="s1-5">
+    <div class="section-id">Section 1.5</div>
+    <h3>고전 적층판 이론 (Classical Laminate Theory, CLT)</h3>
+    <p>PCB는 본질적으로 <strong>여러 층(core, prepreg, copper)이 적층된 복합재료(composite laminate)</strong>입니다. CLT는 이러한 적층판의 역학적 거동을 분석하는 이론적 프레임워크입니다.</p>
+
+    <h4>ABD 매트릭스 개념</h4>
+    <p>CLT에서 적층판의 응력-변형 관계는 ABD 매트릭스로 표현됩니다.</p>
+    <div class="equation">{N}   [A  B] {ε⁰}
+{M} = [B  D] {κ}</div>
+    <p>각 부분 행렬의 의미는 다음과 같습니다.</p>
+    <ul class="styled-list">
+      <li><strong>[A] (Extensional Stiffness):</strong> 면내 힘(N)과 면내 변형(ε⁰)의 관계. 인장/압축 강성.</li>
+      <li><strong>[B] (Coupling Stiffness):</strong> 면내 힘과 곡률, 또는 모멘트와 면내 변형의 커플링. <strong>B ≠ 0이면 면내 하중에 의해 휨이 유발됩니다.</strong> 비대칭 적층의 핵심.</li>
+      <li><strong>[D] (Bending Stiffness):</strong> 모멘트(M)와 곡률(κ)의 관계. 휨 강성.</li>
+    </ul>
+
+    <div class="info-card amber">
+      <div class="card-label">Warpage와 B 매트릭스의 관계</div>
+      <p>대칭 적층판(symmetric laminate)에서는 <strong>B = 0</strong>이 됩니다. 즉, 온도 변화에 의한 면내 열력(thermal force)이 곡률을 유발하지 않아 이론적으로 warpage가 발생하지 않습니다.</p>
+      <p>반대로 <strong>비대칭 적층</strong>(상/하 copper 밀도가 다른 경우)에서는 B ≠ 0이 되어, 열하중만으로도 자연스럽게 휨이 발생합니다. 이것이 "Copper Balance"가 중요한 이유입니다.</p>
+    </div>
+
+    <h4>CLT의 한계와 FEA가 필요한 이유</h4>
+    <p>CLT는 강력한 이론적 도구이지만, 실제 PCB warpage 해석에서는 다음과 같은 한계가 있습니다.</p>
+    <ul class="styled-list">
+      <li><strong>온도 의존성:</strong> CLT는 기본적으로 상수 물성을 가정하나, PCB 재료는 온도에 따라 물성이 크게 변합니다(특히 Tg 전후).</li>
+      <li><strong>점탄성 효과:</strong> 수지의 시간 의존적 거동(응력 완화, creep)을 반영하기 어렵습니다.</li>
+      <li><strong>국부적 불균일:</strong> 실제 copper 패턴은 균일하지 않으며, via 분포도 불규칙합니다.</li>
+      <li><strong>대변형:</strong> 얇은 기판에서는 기하학적 비선형(large deflection) 효과가 중요합니다.</li>
+      <li><strong>경화 수축:</strong> 화학적 수축 과정은 CLT의 기본 가정에 포함되지 않습니다.</li>
+    </ul>
+    <p>이러한 이유로, CLT로 경향성을 파악하고 <strong>FEA(유한요소해석)로 정밀한 예측</strong>을 수행하는 것이 현대적인 접근법입니다.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- MODULE 2 -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="module" id="module2">
+  <div class="module-header">
+    <div class="module-number">Module 02</div>
+    <h2 class="module-title">Warpage 발생 메커니즘과 주요 원인</h2>
+    <p class="module-desc">재료, 설계, 공정 각 측면에서 warpage를 유발하는 요인들을 체계적으로 분석합니다.</p>
+  </div>
+
+  <!-- 2.1 -->
+  <div class="section" id="s2-1">
+    <div class="section-id">Section 2.1</div>
+    <h3>재료적 요인</h3>
+
+    <h4>점탄성 (Viscoelasticity)</h4>
+    <p>FR-4를 비롯한 PCB 적층판의 수지 매트릭스는 <strong>점탄성 재료</strong>입니다. 점탄성이란 탄성(스프링)과 점성(댐퍼)의 특성을 동시에 갖는 것으로, 하중 속도와 온도에 따라 거동이 달라집니다.</p>
+    <p>점탄성의 핵심 현상으로 <strong>응력 완화(Stress Relaxation)</strong>가 있습니다. 고온에서 오래 유지하면 수지 내부의 잔류 응력이 점차 감소합니다. 이것이 reflow 프로파일의 soak zone에서 일어나는 일이며, 냉각 후 잔류하는 응력의 크기와 분포에 직접적인 영향을 미칩니다.</p>
+    <p>또한 <strong>크리프(Creep)</strong>도 중요한데, 일정 하중 하에서 시간이 지남에 따라 변형이 증가하는 현상입니다. 솔더 조인트의 장기 신뢰성과 밀접합니다.</p>
+
+    <h4>Glass Transition Temperature (Tg)</h4>
+    <p>Tg는 수지가 <strong>유리질(glassy) 상태에서 고무질(rubbery) 상태로 전이</strong>하는 온도입니다. Tg 전후로 재료 물성이 급격히 변합니다.</p>
+
+    <table class="comp-table">
+      <thead><tr><th>물성</th><th>Tg 이하</th><th>Tg 이상</th></tr></thead>
+      <tbody>
+        <tr><td>탄성계수 (E)</td><td>높음 (GPa 수준)</td><td>크게 감소 (1~2 자릿수 ↓)</td></tr>
+        <tr><td>CTE (면외, z방향)</td><td>상대적으로 낮음</td><td>2~5배 증가</td></tr>
+        <tr><td>응력 완화 속도</td><td>느림</td><td>빠름</td></tr>
+      </tbody>
+    </table>
+
+    <div class="info-card rose">
+      <div class="card-label">시뮬레이션 관점</div>
+      <p>Tg 전후의 물성 변화를 반영하지 않고 <strong>상온 물성만으로 시뮬레이션</strong>하면 결과가 크게 달라질 수 있습니다. 특히 reflow 온도(~250°C)를 다루는 해석에서는 반드시 온도 의존성 물성 데이터가 필요합니다.</p>
+    </div>
+
+    <h4>경화 수축 (Chemical / Cure Shrinkage)</h4>
+    <p>에폭시 수지가 가교반응(cross-linking)을 통해 경화될 때, 분자 간 거리가 줄어들면서 <strong>부피 수축(1~5%)</strong>이 발생합니다. 이 수축은 열팽창과는 별도의 메커니즘으로, 적층판의 잔류 응력에 상당한 기여를 합니다.</p>
+    <p>경화 수축이 warpage에 미치는 영향은 수지의 겔화점(gel point) 이후에 본격적으로 나타납니다. 겔화 전에는 수지가 유동 가능하여 응력이 발생하지 않지만, 겔화 이후에는 수축이 곧바로 응력으로 전환됩니다.</p>
+
+    <h4>Prepreg 및 Core 재료별 특성 비교</h4>
+    <p>PCB 설계에서 재료 선택은 warpage에 큰 영향을 미칩니다. 고Tg 재료(예: IS410, IT180A)는 Tg가 높아 reflow 시 물성 변화가 상대적으로 적지만, 일반적으로 비용이 높습니다. 저CTE 재료는 z축 팽창을 억제하여 via 신뢰성에 유리합니다. 할로겐프리(halogen-free) 재료는 환경 규제에 대응하지만, 수지 시스템이 달라 warpage 특성도 다를 수 있습니다.</p>
+  </div>
+
+  <!-- 2.2 -->
+  <div class="section" id="s2-2">
+    <div class="section-id">Section 2.2</div>
+    <h3>설계적 요인</h3>
+
+    <h4>Copper Balance</h4>
+    <p>Copper Balance는 PCB warpage에서 <strong>가장 직관적이고 영향이 큰 설계 인자</strong> 중 하나입니다. 기판의 상/하 면 및 내층에 있는 동박의 면적 비율(copper density)이 대칭이 아니면, 열하중 시 한쪽이 더 많이 수축/팽창하여 휨이 발생합니다.</p>
+    <p>Copper의 CTE(~17 ppm/°C)는 수지 매트릭스의 면내 CTE(14~18 ppm/°C)와 비슷하지만, <strong>탄성계수가 수지보다 훨씬 높기 때문에</strong> (Cu: ~120 GPa vs. 수지: ~3 GPa) 동박 밀도가 높은 쪽이 전체 구조의 변형을 지배합니다.</p>
+
+    <h4>Stack-up 설계 (Symmetry vs. Asymmetry)</h4>
+    <p>CLT에서 배운 것처럼, <strong>대칭 적층(symmetric stack-up)</strong>은 B 매트릭스를 0으로 만들어 열변형에 의한 휨을 원천적으로 방지합니다. 실무에서의 대칭 원칙은 다음과 같습니다.</p>
+    <ul class="styled-list">
+      <li>중심면을 기준으로 재료 종류와 두께가 대칭이어야 합니다.</li>
+      <li>각 대칭 쌍 층의 copper density가 유사해야 합니다.</li>
+      <li>Prepreg과 core의 배치도 대칭이어야 합니다.</li>
+    </ul>
+
+    <h4>기판 두께 및 종횡비(Aspect Ratio)의 영향</h4>
+    <p>기판이 얇을수록 휨 강성(bending stiffness)이 낮아져 warpage에 취약합니다. 휨 강성은 두께의 세제곱에 비례하므로(∝ h³), 두께가 절반이 되면 강성은 1/8로 줄어듭니다. 최근 초박형 기판(0.2mm 이하) 트렌드에서 warpage가 더욱 심각한 이슈가 되는 이유입니다.</p>
+
+    <h4>Via 분포와 밀도의 영향</h4>
+    <p>Via는 기판의 면내 유효 강성과 면외 CTE에 영향을 줍니다. Via가 밀집된 영역은 copper 함량이 높아 유효 CTE와 강성이 변하며, 이러한 국부적 물성 변화가 local warpage의 원인이 될 수 있습니다.</p>
+  </div>
+
+  <!-- 2.3 -->
+  <div class="section" id="s2-3">
+    <div class="section-id">Section 2.3</div>
+    <h3>공정적 요인 — 기판 제조</h3>
+
+    <h4>Press / Lamination 공정</h4>
+    <p>PCB 적층 공정은 prepreg의 수지를 경화시키며 각 층을 접합하는 과정입니다. 이 공정의 온도, 압력, 냉각 속도가 warpage에 직접적인 영향을 줍니다.</p>
+    <ul class="styled-list">
+      <li><strong>경화 온도 프로파일:</strong> 승온 속도, 유지 온도, 유지 시간이 수지의 경화도(degree of cure)와 잔류 응력을 결정합니다.</li>
+      <li><strong>냉각 속도:</strong> 급냉(fast cooling)은 잔류 응력을 크게 남기고, 서냉(slow cooling)은 응력 완화를 허용하여 잔류 응력을 줄입니다.</li>
+      <li><strong>프레스 압력:</strong> 너무 높으면 수지 유출(resin starvation)로 두께 불균일이 발생하고, 너무 낮으면 보이드(void)가 남습니다.</li>
+    </ul>
+
+    <h4>솔더마스크(Solder Mask) 및 표면처리(Surface Finish)</h4>
+    <p>솔더마스크는 기판의 양면에 도포되는데, 그 두께와 물성이 상하 비대칭이면 추가적인 warpage 원인이 됩니다. 솔더마스크의 경화 수축도 무시할 수 없으며, 특히 얇은 기판에서는 그 영향이 두드러집니다.</p>
+    <p>표면처리(ENIG, OSP, HASL 등)도 마찬가지로 양면의 비대칭을 유발할 수 있습니다.</p>
+
+    <h4>Drill / Routing 후 응력 해방</h4>
+    <p>기판에 드릴 가공이나 외곽 라우팅을 하면, 그동안 구속되어 있던 잔류 응력이 부분적으로 해방되면서 변형이 나타날 수 있습니다. 이는 패널(panel) 상태에서는 평탄했던 기판이 개별 유닛(unit)으로 분리되면 갑자기 warpage가 증가하는 현상의 원인입니다.</p>
+  </div>
+
+  <!-- 2.4 -->
+  <div class="section" id="s2-4">
+    <div class="section-id">Section 2.4</div>
+    <h3>공정적 요인 — SMT 조립</h3>
+
+    <h4>Reflow Profile에 따른 열 이력(Thermal History)</h4>
+    <p>Reflow 솔더링은 PCB 조립에서 가장 극심한 열 사이클을 경험하는 공정입니다. 전형적인 reflow 프로파일은 preheat → soak → reflow peak → cooling 단계로 구성됩니다.</p>
+    <p>각 단계에서의 warpage 거동을 살펴보면, <strong>승온 과정</strong>에서 CTE 불일치로 warpage가 증가하다가, <strong>Tg 부근</strong>에서 수지의 탄성계수가 급락하며 warpage 모드가 전환(예: smile → cry)될 수 있습니다. <strong>Peak 온도(~250°C)</strong> 근처에서 솔더가 용융하면 패키지-PCB 간 구속이 사라지고, <strong>냉각 과정</strong>에서 솔더가 재응고되며 그 시점의 warpage 상태가 "고정"됩니다.</p>
+
+    <div class="info-card blue">
+      <div class="card-label">Critical Point</div>
+      <p>솔더가 응고되는 순간(~217°C for SAC305)에서 패키지와 PCB 사이의 <strong>warpage 차이(gap)</strong>가 조립 불량의 직접적 원인입니다. 이 온도에서의 상대적 warpage를 최소화하는 것이 DfW의 핵심 목표입니다.</p>
+    </div>
+
+    <h4>습도 흡수 (Moisture Absorption)</h4>
+    <p>PCB 적층판의 수지는 대기 중의 수분을 흡수합니다. 수분 흡수는 팽창(swelling)을 유발하며, 이는 CTE 불일치와 유사한 메커니즘으로 warpage에 기여합니다. Reflow 중에는 흡수된 수분이 급격히 기화하면서 "팝콘(popcorn)" 현상이나 박리(delamination)를 일으킬 수도 있습니다.</p>
+    <p>습도의 영향은 JEDEC moisture sensitivity level (MSL) 관리와 직결되며, 베이킹(baking)을 통한 수분 제거가 실무적 대응입니다.</p>
+
+    <h4>Underfill / EMC 경화 수축</h4>
+    <p>Flip-chip underfill이나 EMC(Epoxy Mold Compound)가 경화될 때 추가적인 수축 응력이 발생합니다. 특히 EMC는 전체 패키지를 감싸므로 그 영향이 크며, 경화 수축과 CTE 불일치가 복합적으로 작용합니다.</p>
+  </div>
+
+  <!-- 2.5 -->
+  <div class="section" id="s2-5">
+    <div class="section-id">Section 2.5</div>
+    <h3>패키지-PCB 상호작용</h3>
+    <p>실제 SMT 조립에서 warpage 문제는 패키지와 PCB 각각의 warpage가 <strong>독립적이 아니라 상호작용</strong>한다는 데서 복잡해집니다.</p>
+
+    <h4>패키지 레벨 Warpage</h4>
+    <p>BGA 패키지는 substrate, die(silicon), die attach adhesive, EMC 등 서로 다른 CTE를 가진 재료로 구성됩니다. 실리콘 다이의 CTE(~2.6 ppm/°C)는 substrate(~16 ppm/°C)보다 훨씬 낮아, 패키지 자체의 warpage가 불가피합니다.</p>
+    <p>패키지의 warpage 방향(smile/cry)은 온도에 따라 전환됩니다. 상온에서 cry(가장자리가 위로 올라감)인 패키지가 고온에서는 smile(중앙이 위로 올라감)로 바뀌는 것이 일반적입니다.</p>
+
+    <h4>상호작용 메커니즘</h4>
+    <p>Reflow 중 솔더가 용융된 상태에서는 패키지와 PCB가 독립적으로 변형합니다. 이때 <strong>양자의 warpage 방향이 반대</strong>(예: 패키지는 smile, PCB는 cry)이면 중앙부에서 gap이 발생하여 Non-Wet Open이, <strong>같은 방향</strong>이면 가장자리에서 과도한 압축으로 Bridging이 발생할 수 있습니다.</p>
+
+    <div class="takeaway">
+      <div class="takeaway-title">핵심 요점</div>
+      <p>Warpage 문제를 해결하려면 패키지와 PCB를 <strong>각각 독립적으로 분석한 후, 조립 상태에서의 상호작용</strong>까지 고려해야 합니다. 시뮬레이션에서는 이를 위해 단계별 해석(sequential analysis)이나 전체 조립체(full assembly) 해석을 수행합니다.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- MODULE 3 -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="module" id="module3">
+  <div class="module-header">
+    <div class="module-number">Module 03</div>
+    <h2 class="module-title">Warpage의 형태(Mode)와 분류</h2>
+    <p class="module-desc">Warpage는 단순히 "많다/적다"가 아니라 "어떤 형태로" 발생하는지가 중요합니다. 형태에 따라 불량 유형과 대응 전략이 달라집니다.</p>
+  </div>
+
+  <!-- 3.1 -->
+  <div class="section" id="s3-1">
+    <div class="section-id">Section 3.1</div>
+    <h3>전역적 휨 (Global Warpage)</h3>
+    <p>전역적 휨은 기판 또는 패키지 <strong>전체에 걸쳐 나타나는 매크로 스케일의 변형</strong>입니다.</p>
+
+    <h4>Cylindrical (Smile / Cry)</h4>
+    <p><strong>Smile:</strong> 기판의 중앙이 위로 볼록한 형태(convex upward). 주곡률 중 하나만 유의미하고 다른 하나는 거의 0에 가까운 원통형(cylindrical) 변형입니다.</p>
+    <p><strong>Cry:</strong> 기판의 중앙이 아래로 오목한 형태(concave upward). Smile의 반대입니다.</p>
+    <p>이 모드는 stack-up의 비대칭이 한 방향으로 우세할 때 나타나며, 가장 흔한 warpage 형태입니다.</p>
+
+    <h4>Twist</h4>
+    <p>Twist는 기판의 <strong>대각선 방향으로 뒤틀리는 형태</strong>입니다. 네 모서리 중 두 대각 모서리가 위로, 나머지 두 대각 모서리가 아래로 변형됩니다. 직물(woven fabric) 강화재의 직교 방향 물성 차이나, copper 패턴의 대각선 비대칭이 원인이 될 수 있습니다.</p>
+
+    <h4>Saddle Shape</h4>
+    <p>말안장(saddle) 형태는 <strong>한 축 방향으로는 위로 볼록, 직교 축 방향으로는 아래로 오목</strong>한 복합 곡률 형태입니다. Gaussian curvature K < 0입니다. 직교 이방성(orthotropic) 재료 특성과 copper 패턴의 방향성이 결합하여 발생합니다.</p>
+
+    <h4>Bowl Shape</h4>
+    <p>Bowl(볼록/오목) 형태는 <strong>모든 방향으로 비슷한 곡률</strong>을 가지는 형태입니다. K > 0입니다. 이상적으로 등방성 구조에서 균일한 CTE 불일치가 있을 때 나타납니다.</p>
+  </div>
+
+  <!-- 3.2 -->
+  <div class="section" id="s3-2">
+    <div class="section-id">Section 3.2</div>
+    <h3>지역적 휨 (Local Warpage)</h3>
+    <p>Local warpage는 기판이나 패키지의 <strong>특정 영역에서만 나타나는 국부적 변형</strong>입니다.</p>
+    <p><strong>BGA/CSP 실장 영역:</strong> 패키지 아래의 PCB 영역이 패키지의 강성에 의해 구속되므로, 솔더 접합 후 해당 영역과 주변 자유 영역 사이에 local warpage가 발생합니다.</p>
+    <p><strong>Corner / Edge warpage:</strong> 기판의 모서리나 코너 영역은 구속이 적어 더 자유롭게 변형됩니다. 이 영역의 local warpage는 edge 근처의 솔더 접합 신뢰성에 영향을 줍니다.</p>
+    <p>Local warpage는 global warpage를 측정할 때는 드러나지 않을 수 있어, <strong>별도의 국부 측정이나 세밀한 시뮬레이션 모델</strong>이 필요합니다.</p>
+  </div>
+
+  <!-- 3.3 -->
+  <div class="section" id="s3-3">
+    <div class="section-id">Section 3.3</div>
+    <h3>동적 휨 (Dynamic Warpage)</h3>
+    <p>Dynamic warpage는 <strong>온도 변화에 따라 실시간으로 변하는 휨 거동</strong>을 말합니다. Reflow 공정 중 기판/패키지의 warpage는 고정된 값이 아니라, 온도에 따라 크기와 방향이 계속 변합니다.</p>
+
+    <h4>Smile ↔ Cry 전환 현상</h4>
+    <p>많은 BGA 패키지에서 관찰되는 대표적 현상입니다. 상온에서 cry 모드이던 패키지가 온도 상승에 따라 cry 정도가 줄어들다가, 특정 온도에서 평탄해진 후 그 이상에서는 smile 모드로 전환됩니다. 이 전환점은 EMC와 substrate의 CTE/강성 비율에 따라 결정됩니다.</p>
+
+    <div class="info-card emerald">
+      <div class="card-label">실무 포인트</div>
+      <p>Dynamic warpage의 측정은 Shadow Moiré를 reflow 오븐 안에서 실시간으로 수행(in-situ measurement)하여 얻습니다. 시뮬레이션에서는 전체 reflow 프로파일에 대한 transient 해석을 통해 dynamic warpage를 예측합니다.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- MODULE 4 -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="module" id="module4">
+  <div class="module-header">
+    <div class="module-number">Module 04</div>
+    <h2 class="module-title">Warpage로 인한 신뢰성 문제</h2>
+    <p class="module-desc">Warpage가 실제 제품에서 어떤 불량과 신뢰성 문제를 일으키는지, 그리고 관련 산업 표준을 학습합니다.</p>
+  </div>
+
+  <!-- 4.1 -->
+  <div class="section" id="s4-1">
+    <div class="section-id">Section 4.1</div>
+    <h3>SMT 조립 불량 (Assembly Defects)</h3>
+
+    <h4>Non-Wet Open</h4>
+    <p>패키지와 PCB 사이의 warpage 차이로 인해 솔더볼과 패드 사이에 <strong>gap이 발생</strong>하여, 용융된 솔더가 패드에 접촉하지 못하고 그대로 응고되는 현상입니다. 주로 패키지 중앙부(패키지가 cry, PCB가 smile일 때)나 가장자리에서 발생합니다.</p>
+
+    <h4>Head-on-Pillow (HoP)</h4>
+    <p>HoP는 Non-Wet Open보다 미묘한 불량입니다. 솔더볼과 솔더 페이스트가 <strong>접촉은 하지만 산화막이나 플럭스 잔여물로 인해 실제 금속학적 접합이 이루어지지 않는</strong> 현상입니다. 외관상으로는 접합된 것처럼 보이지만, 전기적 접촉이 불안정합니다.</p>
+    <p>발생 메커니즘을 단계적으로 보면, 먼저 고온에서 솔더가 용융될 때 warpage로 인해 볼과 페이스트가 분리되고, 분리된 상태에서 각각의 표면에 산화막이 형성되며, 냉각 과정에서 다시 접촉하지만 이미 형성된 산화막이 융착을 방해하는 것입니다.</p>
+
+    <h4>Bridging (Short)</h4>
+    <p>과도한 warpage로 인해 솔더볼이 지나치게 <strong>눌려서(compress) 옆으로 퍼지면서 인접 단자와 전기적으로 연결</strong>되는 현상입니다. Fine-pitch BGA에서 특히 위험합니다.</p>
+
+    <h4>미세 피치(Fine-pitch)에서의 민감도 증가</h4>
+    <p>BGA 피치가 줄어들수록 솔더볼이 작아지고, 작은 볼은 warpage-induced gap을 보상할 수 있는 여유가 적습니다. 0.4mm 피치 이하의 BGA에서는 수십 μm의 warpage 차이도 불량으로 이어질 수 있어, warpage 관리가 더욱 엄격해집니다.</p>
+  </div>
+
+  <!-- 4.2 -->
+  <div class="section" id="s4-2">
+    <div class="section-id">Section 4.2</div>
+    <h3>장기 현장 신뢰성</h3>
+
+    <h4>솔더 조인트의 열피로 (Thermal Fatigue)</h4>
+    <p>제품이 사용되면서 반복적인 온도 사이클(on/off, 환경 온도 변화)을 겪게 됩니다. 패키지와 PCB의 CTE 차이로 인해 솔더 조인트에 <strong>반복적인 전단 변형(cyclic shear strain)</strong>이 가해지고, 이것이 누적되면 피로 크랙이 발생합니다.</p>
+
+    <h4>Coffin-Manson 피로 수명 모델</h4>
+    <div class="equation">N_f = C × (Δγ)^(-n)</div>
+    <p>여기서 N_f는 파괴까지의 사이클 수, Δγ는 사이클당 전단 변형 범위, C와 n은 재료 상수입니다. Warpage가 크면 초기 잔류 변형이 추가되어 Δγ가 증가하고, 이는 수명 감소로 직결됩니다.</p>
+
+    <h4>계면 박리 (Delamination) 및 크랙 진전</h4>
+    <p>Warpage에 의한 면외 응력(peel stress)은 적층판 내부의 층간 계면이나 솔더마스크-copper 계면에서 박리를 유발할 수 있습니다. 초기 미세 박리는 열 사이클에 의해 점진적으로 성장하여 전기적 단선이나 기계적 파괴로 이어질 수 있습니다.</p>
+  </div>
+
+  <!-- 4.3 -->
+  <div class="section" id="s4-3">
+    <div class="section-id">Section 4.3</div>
+    <h3>산업 표준 및 허용 기준</h3>
+    <p>Warpage의 측정 방법과 허용 기준은 여러 산업 표준에서 규정하고 있습니다.</p>
+
+    <table class="comp-table">
+      <thead><tr><th>표준</th><th>대상</th><th>주요 내용</th></tr></thead>
+      <tbody>
+        <tr><td>IPC-TM-650 2.4.22</td><td>PCB</td><td>PCB bow & twist 측정 방법 규정</td></tr>
+        <tr><td>JESD22-B112</td><td>패키지</td><td>패키지의 warpage 측정 표준 (Shadow Moiré 기반)</td></tr>
+        <tr><td>IPC-A-610</td><td>전자 조립체</td><td>완성 조립체의 허용 기준</td></tr>
+        <tr><td>IPC-7095</td><td>BGA</td><td>BGA 설계 및 조립 가이드라인</td></tr>
+        <tr><td>J-STD-020</td><td>패키지</td><td>MSL(Moisture Sensitivity Level) 분류</td></tr>
+      </tbody>
+    </table>
+
+    <p>일반적인 허용 기준으로, PCB의 경우 IPC 기준 bow/twist 0.75% 이하(SMT용), BGA 패키지의 경우 coplanarity 허용치가 피치에 따라 다르나 통상 솔더볼 직경의 일정 비율 이내를 요구합니다. 다만, 이는 상온 기준이며 동적 warpage(reflow 중)에 대한 표준은 아직 업계에서 논의 중인 부분이 많습니다.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- MODULE 5 -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="module" id="module5">
+  <div class="module-header">
+    <div class="module-number">Module 05</div>
+    <h2 class="module-title">Mechanical Simulation (FEA) 상세 가이드</h2>
+    <p class="module-desc">전문가 수준의 warpage 시뮬레이션을 수행하기 위한 결정적 요소들을 단계별로 학습합니다.</p>
+  </div>
+
+  <!-- 5.1 -->
+  <div class="section" id="s5-1">
+    <div class="section-id">Section 5.1</div>
+    <h3>시뮬레이션 전략 및 워크플로우</h3>
+
+    <h4>해석 목적 정의</h4>
+    <p>시뮬레이션을 시작하기 전에 <strong>목적을 명확히 정의</strong>하는 것이 중요합니다.</p>
+    <ul class="styled-list">
+      <li><strong>스크리닝(Screening):</strong> 여러 설계 안의 상대적 비교. 단순화된 모델과 선형 해석으로 충분합니다.</li>
+      <li><strong>정밀 예측(Quantitative Prediction):</strong> 측정값과의 정합성을 목표로 하는 해석. 상세 모델과 비선형/점탄성 해석이 필요합니다.</li>
+      <li><strong>Root Cause 분석:</strong> 실제 불량의 원인을 규명하기 위한 해석. 민감도 분석과 파라메트릭 스터디를 병행합니다.</li>
+    </ul>
+
+    <h4>상용 도구 개요 및 비교</h4>
+    <table class="comp-table">
+      <thead><tr><th>도구</th><th>특징</th><th>적합한 용도</th></tr></thead>
+      <tbody>
+        <tr><td>ANSYS Mechanical</td><td>범용 FEA, 강력한 비선형/점탄성 해석</td><td>정밀 예측, 연구</td></tr>
+        <tr><td>Abaqus</td><td>고급 재료 모델, 사용자 서브루틴(UMAT)</td><td>경화 수축 연성 해석, 연구</td></tr>
+        <tr><td>Siemens Simcenter</td><td>통합 시뮬레이션 플랫폼</td><td>전자 패키지 전반</td></tr>
+        <tr><td>Ansys Sherlock</td><td>PCB/패키지 전용, 자동 물성/모델 생성</td><td>빠른 스크리닝, 산업 현장</td></tr>
+        <tr><td>MSC Marc</td><td>강력한 비선형 해석</td><td>접촉, 대변형</td></tr>
+      </tbody>
+    </table>
+
+    <h4>전형적인 Warpage 해석 워크플로우</h4>
+    <p>일반적인 워크플로우는 다음과 같습니다. <strong>EDA 데이터 임포트</strong>(Gerber/ODB++ 등에서 copper 패턴 추출) → <strong>Geometry 생성</strong>(layer 구조, 단순화 수준 결정) → <strong>Material 할당</strong>(온도 의존성 물성 데이터) → <strong>Meshing</strong>(요소 유형 및 크기 결정) → <strong>BC/Loading 설정</strong>(열하중, 중력, 구속 조건) → <strong>Solver 실행</strong> → <strong>Post-processing</strong>(변위, 응력, 곡률 분석) → <strong>Validation</strong>(측정 데이터와 비교).</p>
+  </div>
+
+  <!-- 5.2 -->
+  <div class="section" id="s5-2">
+    <div class="section-id">Section 5.2</div>
+    <h3>기하학적 모델링 (Geometry)</h3>
+
+    <h4>Trace Mapping 기술</h4>
+    <p>실제 PCB의 copper 패턴은 매우 복잡하여 그대로 모델링하면 메시 수가 폭발적으로 증가합니다. 이를 처리하는 두 가지 주요 접근법이 있습니다.</p>
+
+    <div class="info-card blue">
+      <div class="card-label">Approach 1: Equivalent Homogenized Property</div>
+      <p>각 layer의 copper 밀도(coverage ratio)를 기반으로 <strong>등가 물성(effective property)</strong>을 계산합니다. 혼합 법칙(rule of mixtures)을 사용하여 copper와 resin의 물성을 copper density에 따라 가중평균합니다.</p>
+      <p>장점: 모델이 단순하고 계산이 빠름. 단점: 국부적 copper 패턴의 영향을 반영하지 못함.</p>
+    </div>
+
+    <div class="info-card cyan">
+      <div class="card-label">Approach 2: Mapped/Detailed Copper Pattern</div>
+      <p>실제 copper 패턴을 <strong>일정 크기의 격자(grid)로 분할</strong>하고, 각 격자의 copper density를 개별적으로 반영합니다. Sherlock 등의 도구가 이 방식을 자동화하여 지원합니다.</p>
+      <p>장점: 국부적 효과를 반영할 수 있음. 단점: 모델 크기 증가, 격자 해상도에 따른 정확도 차이.</p>
+    </div>
+
+    <h4>Layer 단순화 전략</h4>
+    <p>모든 prepreg과 core를 개별 layer로 모델링할 수도 있지만, copper 밀도가 비슷한 인접 층은 하나의 등가 층으로 합칠 수 있습니다. 핵심은 <strong>구조의 비대칭성을 유지</strong>하면서 효율적으로 단순화하는 것입니다.</p>
+
+    <h4>Solder Ball / Bump 모델링</h4>
+    <p>개별 솔더볼을 상세하게(full 3D) 모델링하면 가장 정확하지만, 수백~수천 개의 볼을 모두 모델링하는 것은 비현실적입니다. 대안으로 <strong>등가 빔(equivalent beam)</strong>이나 <strong>등가 스프링(equivalent spring)</strong> 요소를 사용하거나, <strong>등가 연속체 층(effective layer)</strong>으로 치환합니다. Sub-modeling으로 관심 영역만 상세화하는 것도 효과적입니다.</p>
+  </div>
+
+  <!-- 5.3 -->
+  <div class="section" id="s5-3">
+    <div class="section-id">Section 5.3</div>
+    <h3>메시 전략 (Meshing)</h3>
+
+    <h4>Shell vs. Solid Element 선택 기준</h4>
+    <p><strong>Shell element:</strong> 두께가 면내 치수보다 충분히 작은 구조에 적합합니다. PCB나 substrate를 효율적으로 모델링할 수 있으며, 노드 수가 적어 계산이 빠릅니다. 다만, 두께 방향 응력 분포가 필요하거나, 두께 변화가 큰 영역에서는 한계가 있습니다.</p>
+    <p><strong>Solid element:</strong> 3차원 응력 상태를 완전히 포착할 수 있습니다. 솔더볼, EMC, Die 등 두께가 상대적으로 큰 구성요소나, 층간 응력(interlaminar stress) 분석에 필요합니다.</p>
+
+    <h4>Shell-Solid Coupling (Mixed-dimensional Modeling)</h4>
+    <p>실무에서 가장 효율적인 접근법은 <strong>PCB/substrate는 shell, 패키지 내부(die, EMC, solder)는 solid</strong>로 모델링하는 혼합 차원 모델링입니다. 이때 shell-solid 경계에서의 연결(tie constraint, coupling constraint)이 중요합니다.</p>
+
+    <h4>Mesh Convergence Study</h4>
+    <p>메시 크기를 점진적으로 줄여가면서 결과(변위, 응력)의 수렴을 확인하는 것은 <strong>모든 FEA에서 필수적인 절차</strong>입니다. 결과가 메시 크기에 따라 크게 변하면 그 결과를 신뢰할 수 없습니다.</p>
+
+    <div class="info-card amber">
+      <div class="card-label">실무 팁</div>
+      <p>Warpage 해석에서 전역적 변위(warpage magnitude)는 비교적 빨리 수렴하지만, 국부 응력(예: 솔더볼 접합부의 von Mises 응력)은 훨씬 미세한 메시를 요구합니다. 목적에 따라 수렴 기준을 다르게 설정해야 합니다.</p>
+    </div>
+
+    <h4>Sub-modeling 기법 (Global-Local Approach)</h4>
+    <p>전체 모델(global model)을 적절한 메시로 해석한 후, 관심 영역(예: 특정 BGA corner의 솔더볼)을 미세 메시의 국부 모델(sub-model)로 별도 해석하는 기법입니다. Global model의 변위 결과를 sub-model의 경계 조건으로 부여하여, 전체 해석의 정확도를 유지하면서 국부적 상세 해석이 가능합니다.</p>
+  </div>
+
+  <!-- 5.4 -->
+  <div class="section" id="s5-4">
+    <div class="section-id">Section 5.4</div>
+    <h3>재료 물성 데이터 (Material Characterization)</h3>
+
+    <h4>온도 의존성 물성</h4>
+    <p>PCB/패키지 warpage 시뮬레이션에서 <strong>재료 물성의 온도 의존성은 결과의 정확도를 좌우하는 가장 중요한 인자</strong> 중 하나입니다. 최소한 다음 물성의 온도 의존성 데이터가 필요합니다.</p>
+    <ul class="styled-list">
+      <li><strong>탄성계수 E(T):</strong> 특히 수지 계열은 Tg 전후로 1~2 자릿수 변화.</li>
+      <li><strong>열팽창계수 CTE(T):</strong> Tg 전후의 급변, 이를 α₁ (Tg 이하), α₂ (Tg 이상)로 구분.</li>
+      <li><strong>포아송비 ν(T):</strong> Tg 이상에서 0.5에 근접 (비압축성).</li>
+    </ul>
+
+    <h4>직교 이방성 (Orthotropic Properties)</h4>
+    <p>FR-4 등 유리섬유 강화 적층판은 <strong>섬유(warp) 방향, 직교(fill) 방향, 두께(z) 방향</strong>의 물성이 모두 다른 직교 이방성 재료입니다. 등방성으로 가정하면 특히 twist warpage를 과소 또는 과대 예측할 수 있습니다.</p>
+    <p>완전한 직교 이방성 물성 세트에는 E₁, E₂, E₃, ν₁₂, ν₁₃, ν₂₃, G₁₂, G₁₃, G₂₃, α₁, α₂, α₃가 필요합니다.</p>
+
+    <h4>점탄성 모델링: Prony Series</h4>
+    <p>수지의 점탄성 거동은 <strong>일반화된 Maxwell 모델(Generalized Maxwell Model)</strong>로 표현되며, Prony series로 매개변수화됩니다.</p>
+    <div class="equation">E(t) = E∞ + Σᵢ Eᵢ × exp(-t/τᵢ)</div>
+    <p>여기서 E∞는 장시간 평형 탄성계수, Eᵢ는 i번째 Maxwell 요소의 탄성계수, τᵢ는 완화 시간(relaxation time)입니다.</p>
+    <p><strong>TTS(Time-Temperature Superposition)</strong> 원리를 적용하면, 다양한 온도에서의 점탄성 데이터를 하나의 마스터 커브(master curve)로 통합할 수 있습니다. WLF(Williams-Landel-Ferry) 방정식이나 Arrhenius 방정식으로 shift factor를 결정합니다.</p>
+
+    <h4>경화 수축 모델링</h4>
+    <p>경화 수축을 시뮬레이션에 반영하려면 <strong>cure kinetics 모델</strong>과의 연성이 필요합니다. 경화도(degree of cure, α)의 시간-온도 의존적 변화를 DSC(Differential Scanning Calorimetry) 데이터로부터 결정하고, 경화도에 따른 수축 변형을 부가합니다.</p>
+
+    <h4>물성 측정 방법과 데이터 해석</h4>
+    <table class="comp-table">
+      <thead><tr><th>측정 장비</th><th>측정 물성</th><th>비고</th></tr></thead>
+      <tbody>
+        <tr><td>DMA (Dynamic Mechanical Analyzer)</td><td>E(T), E(t), tan δ, Tg</td><td>점탄성 파라미터 결정의 핵심 장비</td></tr>
+        <tr><td>TMA (Thermomechanical Analyzer)</td><td>CTE(T), Tg</td><td>면내 및 면외 CTE 측정</td></tr>
+        <tr><td>DSC (Differential Scanning Calorimetry)</td><td>Tg, 경화도, 경화 반응열</td><td>Cure kinetics 결정</td></tr>
+        <tr><td>Rheometer</td><td>겔화점, 점도 변화</td><td>경화 과정 모니터링</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 5.5 -->
+  <div class="section" id="s5-5">
+    <div class="section-id">Section 5.5</div>
+    <h3>경계 조건 및 하중 조건 (BC & Loading)</h3>
+
+    <h4>Gravity(중력) 효과</h4>
+    <p>얇고 큰 기판에서는 자중(self-weight)에 의한 처짐이 warpage 측정값에 포함될 수 있습니다. 측정과의 비교 시 시뮬레이션에도 중력을 포함할지 여부를 결정해야 합니다. 일반적으로 작은 패키지에서는 무시할 수 있으나, 대형 PCB(예: 300mm × 400mm 이상)에서는 유의미합니다.</p>
+
+    <h4>Reflow Jig / Support / Carrier 조건</h4>
+    <p>Reflow 공정에서 기판이 어떻게 지지되는지(자유 상태, edge support, 전면 carrier 등)는 warpage 거동에 큰 영향을 줍니다. 시뮬레이션에서 이를 정확히 반영해야 합니다.</p>
+
+    <h4>강체 운동 구속 (Rigid Body Motion Constraint)</h4>
+    <p>자유 상태의 구조물을 해석할 때, 6개의 강체 운동 자유도(3개 병진 + 3개 회전)를 구속하지 않으면 솔버가 수렴하지 않습니다. 일반적으로 기판 중심점을 고정하되, <strong>warpage 변형을 구속하지 않는 최소한의 BC</strong>만 부여합니다.</p>
+
+    <div class="info-card violet">
+      <div class="card-label">전형적인 3-2-1 구속법</div>
+      <p>중심점에 3개 병진 자유도 구속(3점), 한 모서리에 2개 자유도 구속(2점), 다른 모서리에 1개 자유도 구속(1점). 이렇게 하면 강체 운동을 완전히 구속하면서 warpage 변형은 방해하지 않습니다.</p>
+    </div>
+
+    <h4>열하중 프로파일 적용</h4>
+    <p>Warpage 해석의 열하중은 보통 <strong>균일 온도 하중(uniform temperature)</strong>으로 적용합니다. 이는 PCB/패키지 내부의 온도 구배가 작다는 가정에 기반합니다. 그러나 대형 기판이나 특정 공정에서는 열전달 해석을 먼저 수행하고 그 결과(온도 분포)를 구조 해석에 매핑하는 <strong>sequential thermal-structural analysis</strong>가 필요할 수 있습니다.</p>
+  </div>
+
+  <!-- 5.6 -->
+  <div class="section" id="s5-6">
+    <div class="section-id">Section 5.6</div>
+    <h3>해석 단계 및 솔버 설정 (Step & Solver)</h3>
+
+    <h4>Stress-free Temperature</h4>
+    <p>Stress-free temperature(SFT)는 <strong>재료 내에 열응력이 0인 온도</strong>입니다. 이 값의 설정이 warpage 예측의 정확도에 결정적입니다.</p>
+    <p>일반적인 가이드라인으로, 적층판(laminate)의 SFT는 lamination press의 경화 온도(~180°C)에 가깝고, EMC의 SFT는 post-mold cure 온도에 가깝습니다. 그러나 점탄성 효과로 인해 실제 SFT는 명목 경화 온도보다 낮을 수 있으며, 이를 "effective stress-free temperature"라 합니다.</p>
+
+    <h4>다단계 열이력 시뮬레이션</h4>
+    <p>가장 정밀한 접근법은 <strong>전체 제조 이력을 순서대로 시뮬레이션</strong>하는 것입니다.</p>
+    <ul class="styled-list">
+      <li><strong>Step 1 — Lamination Cure:</strong> 경화 온도에서 출발, 상온으로 냉각 → 적층판 자체의 잔류 응력/warpage.</li>
+      <li><strong>Step 2 — SMT Reflow:</strong> 상온에서 reflow peak까지 승온, 다시 냉각 → 조립 후 warpage.</li>
+      <li><strong>Step 3 — (선택) 2nd Reflow:</strong> 양면 실장 시 두 번째 reflow 사이클.</li>
+    </ul>
+    <p>각 단계의 잔류 응력이 다음 단계의 초기 조건이 되므로, 전체 이력을 연속적으로 해석하는 것이 이상적입니다.</p>
+
+    <h4>Time-step 설정 (점탄성 해석)</h4>
+    <p>점탄성 해석에서 time-step은 <strong>가장 짧은 완화 시간(shortest relaxation time) τ_min</strong>보다 충분히 작아야 합니다. 일반적으로 τ_min/10 이하를 권장합니다. 온도가 빠르게 변하는 구간(냉각 시작, Tg 통과)에서는 더 작은 time-step이 필요합니다.</p>
+
+    <h4>비선형 해석 설정</h4>
+    <p><strong>대변형(Large Deflection):</strong> 얇은 기판에서는 기하학적 비선형 효과가 중요합니다. 변위가 기판 두께를 초과하면 대변형 해석(NLGEOM ON)을 활성화해야 합니다.</p>
+    <p><strong>접촉(Contact):</strong> Jig support, carrier와의 접촉을 모델링해야 할 경우 접촉 해석이 필요합니다.</p>
+
+    <h4>솔버 수렴 문제 트러블슈팅</h4>
+    <ul class="styled-list">
+      <li><strong>수렴 실패 시:</strong> BC 확인(강체 운동 구속 누락?), 재료 물성 확인(음의 탄성계수?), time-step 축소, 비선형 설정 확인.</li>
+      <li><strong>비물리적 결과:</strong> 메시 품질 확인(왜곡된 요소?), 단위계 일관성 확인, stress-free temperature 설정 재검토.</li>
+    </ul>
+  </div>
+
+  <!-- 5.7 -->
+  <div class="section" id="s5-7">
+    <div class="section-id">Section 5.7</div>
+    <h3>Multi-physics 및 Multi-scale 해석</h3>
+
+    <h4>열-구조 연성 해석 (Thermo-mechanical Coupling)</h4>
+    <p>대부분의 warpage 해석은 <strong>약 연성(weak/one-way coupling)</strong>으로 수행됩니다. 열해석에서 온도 분포를 구한 후, 이를 구조 해석의 하중으로 부여하는 방식입니다. 강 연성(strong/two-way coupling)은 구조 변형이 열전달에 영향을 미치는 경우에 필요하나, warpage 해석에서는 대부분 불필요합니다.</p>
+
+    <h4>화학-열-구조 연성 (Cure Kinetics Coupling)</h4>
+    <p>수지의 경화 과정을 엄밀히 시뮬레이션하려면, <strong>경화 반응의 발열(exothermic heat) → 온도 변화 → 물성 변화(경화도 의존) → 경화 수축 → 응력</strong>의 전 과정을 연성 해석해야 합니다. 이는 Abaqus의 UMAT/UMATHT 서브루틴이나 전용 도구를 통해 구현할 수 있습니다.</p>
+
+    <h4>Multi-scale 접근</h4>
+    <p>PCB 재료의 물성을 보다 정확히 결정하기 위해 <strong>다중 스케일 접근법</strong>을 활용할 수 있습니다.</p>
+    <ul class="styled-list">
+      <li><strong>Micro-scale:</strong> 유리섬유와 수지 매트릭스의 단위 셀(unit cell)을 모델링하여 유효 물성을 결정합니다.</li>
+      <li><strong>Meso-scale:</strong> 직물(woven fabric)의 구조를 반영한 레이어 수준의 물성을 결정합니다.</li>
+      <li><strong>Macro-scale:</strong> Meso-scale에서 결정된 물성을 사용하여 전체 기판/패키지를 해석합니다.</li>
+    </ul>
+    <p>이 접근법은 새로운 재료를 평가하거나, 재료 데이터시트의 정보가 불충분할 때 유용합니다.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- MODULE 6 -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="module" id="module6">
+  <div class="module-header">
+    <div class="module-number">Module 06</div>
+    <h2 class="module-title">측정 및 검증 (Metrology & Validation)</h2>
+    <p class="module-desc">시뮬레이션의 신뢰성은 측정 데이터와의 비교를 통해서만 확보됩니다. 측정 기법과 검증 방법론을 학습합니다.</p>
+  </div>
+
+  <!-- 6.1 -->
+  <div class="section" id="s6-1">
+    <div class="section-id">Section 6.1</div>
+    <h3>측정 기술</h3>
+
+    <h4>Shadow Moiré</h4>
+    <p>Shadow Moiré는 <strong>PCB/패키지 warpage 측정의 업계 표준</strong>입니다. 격자(grating)를 시편 위에 놓고, 빛을 비추면 격자와 시편 사이의 거리 변화에 따라 간섭 무늬(fringe pattern)가 형성됩니다. 이 무늬를 분석하여 전면적(full-field)의 높이 맵(height map)을 얻습니다.</p>
+    <p>대표적인 상용 시스템으로 <strong>Akrometrix TherMoiré</strong>가 있습니다. 이 시스템은 reflow 프로파일을 재현하면서 실시간으로 dynamic warpage를 측정할 수 있어, JEDEC 표준 측정에 널리 사용됩니다.</p>
+
+    <h4>Digital Image Correlation (DIC)</h4>
+    <p>DIC는 시편 표면에 랜덤 패턴(speckle pattern)을 부여하고, 변형 전후의 이미지를 비교하여 <strong>full-field 변위 및 변형률(strain)</strong>을 계산하는 기법입니다. Shadow Moiré가 면외 변위에 특화된 반면, DIC는 면내 변형도 동시에 측정할 수 있습니다. 국부적 변형 분석에 강점이 있으나, 면외 변위 분해능은 Shadow Moiré보다 낮을 수 있습니다.</p>
+
+    <h4>3D 프로파일러 / 레이저 변위 센서</h4>
+    <p>레이저 기반 3D 프로파일러는 비접촉으로 표면 형상을 측정합니다. 인라인(in-line) 검사에 적합하며, 생산 라인에서의 실시간 모니터링에 사용됩니다. 다만, Shadow Moiré처럼 고온에서의 실시간 측정은 어려울 수 있습니다.</p>
+
+    <table class="comp-table">
+      <thead><tr><th>측정법</th><th>분해능</th><th>측정 영역</th><th>고온 측정</th><th>주 용도</th></tr></thead>
+      <tbody>
+        <tr><td>Shadow Moiré</td><td>~1μm (면외)</td><td>Full-field</td><td>가능</td><td>Dynamic warpage 표준 측정</td></tr>
+        <tr><td>DIC</td><td>~0.01 strain%</td><td>Full-field</td><td>가능(스테레오)</td><td>국부 변형률 분석</td></tr>
+        <tr><td>레이저 프로파일러</td><td>~0.1μm</td><td>스캔 방식</td><td>제한적</td><td>인라인 검사</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 6.2 -->
+  <div class="section" id="s6-2">
+    <div class="section-id">Section 6.2</div>
+    <h3>측정 실무 고려사항</h3>
+
+    <h4>시편 준비 및 마킹</h4>
+    <p>DIC 측정 시에는 적절한 speckle pattern이 필요합니다. 패턴의 크기와 밀도는 원하는 공간 분해능에 맞춰야 합니다. Shadow Moiré에서는 시편 표면이 반사적(specular)이면 문제가 될 수 있어, 필요 시 매트(matte) 코팅을 합니다.</p>
+
+    <h4>온도 프로파일 설정</h4>
+    <p>Dynamic warpage 측정 시, 장비의 가열 프로파일이 실제 reflow 프로파일을 얼마나 정확히 재현하는지가 중요합니다. 시편의 실제 온도를 열전대(thermocouple)로 모니터링하여 설정 온도와의 차이를 파악해야 합니다.</p>
+
+    <h4>Fixture의 영향</h4>
+    <p>시편을 어떻게 지지하느냐에 따라 측정 결과가 달라질 수 있습니다. 자유 상태(free-standing)와 edge-supported 상태에서의 warpage는 중력 효과로 인해 차이가 납니다. 시뮬레이션과의 비교 시 동일한 지지 조건을 적용해야 합니다.</p>
+
+    <h4>데이터 후처리</h4>
+    <ul class="styled-list">
+      <li><strong>Plane fitting:</strong> 측정된 높이 맵에서 기준 평면(reference plane)을 최소자승법(least squares)으로 결정하고, 이로부터의 편차를 warpage로 정의합니다.</li>
+      <li><strong>Filtering:</strong> 측정 노이즈를 제거하기 위한 공간 필터링(spatial filtering). 필터 강도에 따라 결과가 달라질 수 있으므로 주의가 필요합니다.</li>
+      <li><strong>Decomposition:</strong> 전체 warpage를 기본 모드(cylindrical, twist, saddle 등)로 분해하여 각 모드의 기여도를 분석합니다.</li>
+    </ul>
+  </div>
+
+  <!-- 6.3 -->
+  <div class="section" id="s6-3">
+    <div class="section-id">Section 6.3</div>
+    <h3>시뮬레이션-측정 정합성 (Correlation)</h3>
+
+    <h4>비교 방법론</h4>
+    <p>시뮬레이션 결과와 측정 데이터의 비교는 여러 수준에서 이루어집니다. 최대 warpage 값의 비교(가장 기본), warpage profile의 형태 비교(contour map 오버레이), 특정 경로(line profile)를 따른 비교, 그리고 온도에 따른 dynamic warpage 곡선의 비교 등이 있습니다.</p>
+
+    <h4>오차 원인 분석</h4>
+    <p>시뮬레이션과 측정이 차이를 보일 때, 가능한 원인을 체계적으로 분석해야 합니다.</p>
+    <ul class="styled-list">
+      <li><strong>물성 불확실성:</strong> 재료 물성 데이터의 정확도. 특히 Tg 근처의 물성 변화와 점탄성 파라미터.</li>
+      <li><strong>공정 변동:</strong> 실제 copper 두께/밀도, prepreg 두께, 경화도의 lot-to-lot 변동.</li>
+      <li><strong>모델 단순화:</strong> Trace mapping 해상도, layer 합치기, 솔더볼 등가 모델의 한계.</li>
+      <li><strong>측정 불확실성:</strong> 측정 정밀도, fixture 영향, 후처리 방법의 차이.</li>
+    </ul>
+
+    <h4>Model Calibration / Tuning</h4>
+    <p>오차가 허용 범위를 초과하면 model tuning을 수행합니다. 물성 파라미터(SFT, CTE, E 등)를 조정하되, <strong>물리적으로 합리적인 범위 내</strong>에서 해야 합니다. 과적합(overfitting)을 피하기 위해, 하나의 조건에서 tuning한 모델이 다른 조건에서도 잘 맞는지 검증(cross-validation)해야 합니다.</p>
+
+    <h4>민감도 분석 (Sensitivity Analysis)</h4>
+    <p>각 입력 파라미터가 warpage 결과에 미치는 영향의 크기를 정량화합니다. 이를 통해 어떤 파라미터의 정확한 결정이 가장 중요한지, 그리고 어떤 파라미터의 변동이 결과 불확실성에 가장 많이 기여하는지를 파악합니다.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- MODULE 7 -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="module" id="module7">
+  <div class="module-header">
+    <div class="module-number">Module 07</div>
+    <h2 class="module-title">설계 최적화 및 실무 가이드</h2>
+    <p class="module-desc">Warpage를 최소화하기 위한 설계 원칙과 공정 파라미터 최적화, 그리고 실무 트러블슈팅 방법론을 학습합니다.</p>
+  </div>
+
+  <!-- 7.1 -->
+  <div class="section" id="s7-1">
+    <div class="section-id">Section 7.1</div>
+    <h3>DfW (Design for Warpage) 가이드라인</h3>
+
+    <h4>Stack-up 최적화 원칙</h4>
+    <ul class="styled-list">
+      <li><strong>대칭 적층(Symmetric Stack-up):</strong> 중심면을 기준으로 재료, 두께, copper 밀도가 대칭이 되도록 설계합니다. 이것이 warpage 최소화의 가장 기본이자 효과적인 원칙입니다.</li>
+      <li><strong>Core와 Prepreg의 배치:</strong> 가능하면 동일한 재료를 대칭으로 배치합니다. 서로 다른 수지 시스템이 혼재하면 CTE 불일치가 추가됩니다.</li>
+      <li><strong>두께 확보:</strong> 필요한 두께 마진이 확보되면, 약간 더 두꺼운 설계가 warpage에 유리합니다(휨 강성 ∝ h³).</li>
+    </ul>
+
+    <h4>Copper Balancing 실무 기법</h4>
+    <p>각 대칭 쌍 층의 copper density를 맞추는 것이 이상적이지만, 실제 회로 설계에서는 기능적 제약으로 완벽한 균형이 어려울 수 있습니다. 이 경우 더미 copper(thieving pattern)를 추가하여 밀도를 조절합니다.</p>
+    <p>실무에서의 기준으로, 대칭 쌍 층 간 copper density 차이를 <strong>10% 이내</strong>로 관리하는 것을 권장하며, 특히 외층(top/bottom)의 밸런스가 warpage에 가장 큰 영향을 줍니다.</p>
+
+    <h4>재료 선정 기준 및 Trade-off</h4>
+    <table class="comp-table">
+      <thead><tr><th>고려 사항</th><th>Warpage에 유리한 방향</th><th>Trade-off</th></tr></thead>
+      <tbody>
+        <tr><td>Tg</td><td>높을수록 유리</td><td>비용 증가, 가공성 저하</td></tr>
+        <tr><td>CTE(z)</td><td>낮을수록 유리</td><td>특수 필러 필요, 비용</td></tr>
+        <tr><td>탄성계수</td><td>높으면 변형 억제</td><td>취성 증가</td></tr>
+        <tr><td>수지 함량</td><td>낮으면 CTE 감소</td><td>절연 신뢰성 주의</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 7.2 -->
+  <div class="section" id="s7-2">
+    <div class="section-id">Section 7.2</div>
+    <h3>파라미터 최적화</h3>
+
+    <h4>DOE (Design of Experiments)</h4>
+    <p>Warpage에 영향을 미치는 인자가 다수이므로, 모든 조합을 시험하는 것은 비현실적입니다. DOE를 활용하면 <strong>최소한의 실험/시뮬레이션 횟수로 각 인자의 주효과와 교호작용</strong>을 파악할 수 있습니다.</p>
+    <p>일반적인 절차는 다음과 같습니다. 인자와 수준 선정 → DOE 테이블 생성(Full factorial, Fractional factorial, Plackett-Burman 등) → 실험/시뮬레이션 수행 → ANOVA(분산분석) → 최적 조건 도출.</p>
+
+    <h4>Taguchi 방법</h4>
+    <p>다구찌 방법은 <strong>SN비(Signal-to-Noise Ratio)</strong> 개념을 도입하여 로버스트(robust) 설계를 추구합니다. Warpage를 "smaller is better" 특성으로 놓고, 제어 가능한 인자(stack-up, 재료 등)를 최적화하면서 제어 불가능한 잡음 인자(공정 변동, 환경)에 둔감한 설계를 찾습니다.</p>
+
+    <h4>공정 파라미터 최적화</h4>
+    <ul class="styled-list">
+      <li><strong>Reflow profile:</strong> Peak 온도, 시간, 냉각 속도의 최적화. 급냉은 warpage를 키우지만 생산성에 유리하므로 balance가 필요합니다.</li>
+      <li><strong>Press 조건:</strong> 승온 속도, 경화 온도/시간, 냉각 속도의 최적화.</li>
+      <li><strong>Baking 조건:</strong> 수분 제거를 위한 온도/시간 최적화.</li>
+    </ul>
+  </div>
+
+  <!-- 7.3 -->
+  <div class="section" id="s7-3">
+    <div class="section-id">Section 7.3</div>
+    <h3>실무 트러블슈팅</h3>
+
+    <h4>대표적 Warpage 불량 사례와 접근법</h4>
+    <div class="info-card orange">
+      <div class="card-label">Case Study: BGA Corner Non-Wet Open</div>
+      <p><strong>증상:</strong> 대형 BGA의 코너 솔더볼에서 반복적 Non-Wet Open 발생.</p>
+      <p><strong>분석:</strong> Shadow Moiré로 패키지와 PCB의 dynamic warpage 측정 → 솔더 용융 직후 코너 gap 확인 → 시뮬레이션으로 copper balance 영향 분석.</p>
+      <p><strong>대응:</strong> PCB 외층의 copper balance 개선(thieving 추가), reflow peak 온도/시간 조정, 필요 시 stiffener 부착.</p>
+    </div>
+
+    <h4>Root Cause Analysis 프로세스</h4>
+    <p>체계적인 RCA를 위한 단계별 접근법입니다.</p>
+    <ul class="styled-list">
+      <li><strong>Step 1 — 현상 확인:</strong> 불량의 위치, 패턴, 빈도를 정리합니다.</li>
+      <li><strong>Step 2 — 측정:</strong> Shadow Moiré/DIC로 warpage를 정량화합니다. Dynamic 측정이 중요합니다.</li>
+      <li><strong>Step 3 — 시뮬레이션:</strong> 현재 설계/공정을 기준으로 baseline 해석을 수행합니다.</li>
+      <li><strong>Step 4 — Correlation:</strong> 측정과 시뮬레이션을 비교하여 모델의 신뢰성을 확인합니다.</li>
+      <li><strong>Step 5 — 민감도 분석:</strong> 잠재적 원인 인자들의 영향도를 파악합니다.</li>
+      <li><strong>Step 6 — 개선안 도출 및 검증:</strong> 시뮬레이션으로 개선 효과를 예측한 후, 실제 시제로 검증합니다.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- MODULE 8 -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="module" id="module8">
+  <div class="module-header">
+    <div class="module-number">Module 08</div>
+    <h2 class="module-title">최신 트렌드 및 고급 주제</h2>
+    <p class="module-desc">AI/ML 기반 접근법, 차세대 패키징 기술의 warpage 도전, 그리고 디지털 트윈 등 미래 방향을 탐색합니다.</p>
+  </div>
+
+  <!-- 8.1 -->
+  <div class="section" id="s8-1">
+    <div class="section-id">Section 8.1</div>
+    <h3>AI 및 데이터 기반 접근</h3>
+
+    <h4>Surrogate Model 구축</h4>
+    <p>FEA 시뮬레이션은 정확하지만 계산 비용이 높습니다. 다수의 설계 변수를 탐색하거나 실시간 예측이 필요할 때, <strong>시뮬레이션 데이터로 학습한 대리 모델(surrogate model)</strong>이 유용합니다.</p>
+    <p>대표적인 접근법으로는 Gaussian Process Regression(Kriging)을 통한 설계 공간 보간, Neural Network 기반 입출력 매핑(설계 파라미터 → warpage), Random Forest / XGBoost를 통한 비선형 관계 학습이 있습니다.</p>
+    <p>Surrogate model의 핵심은 <strong>학습 데이터의 품질과 범위</strong>입니다. 시뮬레이션 DOE를 체계적으로 설계하여, 설계 공간을 충분히 커버하는 학습 데이터를 생성해야 합니다.</p>
+
+    <h4>CVAE 등을 이용한 합성 데이터 생성</h4>
+    <p>학습 데이터가 부족할 때, <strong>Conditional Variational AutoEncoder(CVAE)</strong> 등의 생성 모델로 합성 데이터를 증강할 수 있습니다. 예를 들어, 소수의 시뮬레이션 결과로부터 다양한 공정 조건에서의 warpage profile을 생성하여 학습 데이터를 보강합니다.</p>
+
+    <h4>ML 기반 실시간 예측 및 공정 최적화</h4>
+    <p>학습된 모델을 활용하면, 설계 변경이나 공정 조건 변경의 영향을 <strong>수 초 내에 예측</strong>할 수 있습니다. 이는 설계 초기 단계의 빠른 의사결정이나, 생산 라인에서의 실시간 공정 조정에 활용될 수 있습니다.</p>
+    <p>또한, 강화학습(Reinforcement Learning)이나 베이지안 최적화(Bayesian Optimization)를 통해, 시뮬레이션/측정 데이터를 기반으로 최적 설계/공정 조건을 자동 탐색하는 연구도 진행 중입니다.</p>
+  </div>
+
+  <!-- 8.2 -->
+  <div class="section" id="s8-2">
+    <div class="section-id">Section 8.2</div>
+    <h3>차세대 패키징과 Warpage 도전</h3>
+
+    <h4>이종 집적 (Heterogeneous Integration, Chiplet)</h4>
+    <p>서로 다른 공정/기능의 다이(chiplet)를 하나의 패키지에 통합하는 이종 집적에서는, <strong>다양한 CTE/크기의 다이들이 공존</strong>하면서 warpage의 복잡도가 크게 증가합니다. 각 다이의 크기와 위치에 따른 국부적 응력 집중이 새로운 설계 도전입니다.</p>
+
+    <h4>Fan-out WLP, 2.5D/3D 패키징</h4>
+    <p><strong>Fan-out Wafer/Panel Level Packaging:</strong> 초박형 EMC와 RDL(Redistribution Layer) 구조에서 warpage 제어가 핵심 과제입니다. Wafer/Panel 수준의 대면적 warpage 관리가 수율에 직결됩니다.</p>
+    <p><strong>2.5D (Si Interposer):</strong> 실리콘 인터포저의 CTE(~2.6)와 패키지 substrate의 CTE(~16) 사이의 극심한 불일치가 도전입니다.</p>
+    <p><strong>3D Stacking:</strong> 다이를 수직으로 적층하면, 각 다이의 열응력이 축적되어 전체 warpage가 증가합니다. TSV(Through-Si Via)의 응력 영향도 고려해야 합니다.</p>
+
+    <h4>Glass Substrate / Core</h4>
+    <p>유리(glass)를 패키지 substrate나 core로 사용하는 기술이 주목받고 있습니다. 유리의 장점은 낮고 조절 가능한 CTE(~3~8 ppm/°C), 뛰어난 표면 평탄도, 높은 치수 안정성입니다. 그러나 취성(brittle)이 높아 가공과 핸들링에 도전이 있으며, 유리와 주변 재료 간의 CTE 매칭 설계가 새로운 과제입니다.</p>
+
+    <h4>HDI (High-Density Interconnect) 및 Any-layer 구조</h4>
+    <p>HDI 기판은 미세 비아와 미세 라인/스페이스를 사용하여 배선 밀도를 높입니다. Any-layer 구조(모든 층이 비아로 연결 가능)에서는 전통적인 core-based 구조와 다른 stack-up이 필요하며, warpage 특성도 달라질 수 있습니다.</p>
+  </div>
+
+  <!-- 8.3 -->
+  <div class="section" id="s8-3">
+    <div class="section-id">Section 8.3</div>
+    <h3>디지털 트윈 및 스마트 제조</h3>
+
+    <h4>공정 라인 연동 실시간 모니터링</h4>
+    <p>생산 라인에 인라인 warpage 측정 장비를 설치하고, 측정 데이터를 실시간으로 수집·분석하여 공정 이상을 조기에 감지합니다. SPC(Statistical Process Control)와 결합하면 공정 능력(Cpk)을 모니터링하고 drift를 감지할 수 있습니다.</p>
+
+    <h4>Digital Twin 기반 예측 및 보정</h4>
+    <p>디지털 트윈은 <strong>실제 제품/공정의 가상 복제본</strong>으로, 시뮬레이션 모델과 실시간 센서 데이터를 결합합니다. Warpage 맥락에서의 비전은 다음과 같습니다.</p>
+    <ul class="styled-list">
+      <li><strong>예측:</strong> 입고 재료의 물성 데이터 + 공정 모니터링 데이터를 기반으로, 생산 전에 warpage를 예측합니다.</li>
+      <li><strong>보정:</strong> 예측된 warpage가 허용 범위를 초과하면, 공정 파라미터(reflow 프로파일, 냉각 속도 등)를 자동 조정합니다.</li>
+      <li><strong>학습:</strong> 예측과 실측의 차이를 지속적으로 피드백하여 모델을 개선합니다.</li>
+    </ul>
+
+    <div class="takeaway">
+      <div class="takeaway-title">미래 전망</div>
+      <p>Warpage 엔지니어링은 단일 시뮬레이션 중심에서, <strong>측정-시뮬레이션-AI-생산라인이 통합된 지능형 시스템</strong>으로 진화하고 있습니다. 물리 기반 모델(FEA)의 정확성과 데이터 기반 모델(ML)의 속도를 결합한 하이브리드 접근법이 앞으로의 주류가 될 것입니다.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- APPENDIX DIVIDER -->
+<!-- ═══════════════════════════════════════════ -->
+<div style="padding:60px; background:linear-gradient(135deg, rgba(59,130,246,0.06), rgba(6,182,212,0.04)); border-top:2px solid var(--accent-blue); border-bottom:2px solid var(--accent-blue);" id="appendix-top">
+  <div style="text-align:center;">
+    <div style="font-family:var(--font-code); font-size:11px; color:var(--accent-cyan); text-transform:uppercase; letter-spacing:0.2em; margin-bottom:12px;">Appendices</div>
+    <h2 style="font-family:var(--font-display); font-size:clamp(28px,4vw,44px); font-weight:900; background:linear-gradient(135deg, var(--accent-blue), var(--accent-cyan)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-bottom:16px;">PCB/PBA Warpage 실무 별첨</h2>
+    <p style="color:var(--text-secondary); max-width:640px; margin:0 auto; font-size:15px; line-height:1.8;">PCB(Printed Circuit Board) 단품과 PBA(Printed Board Assembly) 조립체에 특화된 실무 정보, 체크리스트, 물성 데이터, 그리고 공정별 상세 분석 자료를 수록합니다.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- APPENDIX A -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="module" id="appendixA">
+  <div class="module-header">
+    <div class="module-number">Appendix A</div>
+    <h2 class="module-title">PCB Bare Board Warpage 상세 가이드</h2>
+    <p class="module-desc">부품 실장 전, PCB 단품(bare board) 상태에서의 warpage 발생 원인, 핵심 제어 인자, 그리고 실무 체크리스트를 정리합니다.</p>
+  </div>
+
+  <div class="section" id="sA-1">
+    <div class="section-id">Appendix A.1</div>
+    <h3>PCB Bare Board Warpage의 특수성</h3>
+    <p>PCB bare board warpage는 부품이 실장되기 전 상태의 기판 자체 변형을 의미합니다. 이 단계의 warpage가 중요한 이유는 <strong>SMT 공정의 출발점</strong>이 되기 때문입니다. Bare board의 초기 warpage가 크면, reflow 후의 최종 warpage도 커질 가능성이 높고, 자동 실장기(mounter)에서의 흡착 불량이나 이송 에러의 원인이 됩니다.</p>
+
+    <div class="info-card cyan">
+      <div class="card-label">PCB vs. 패키지 Substrate 비교</div>
+      <p><strong>PCB:</strong> 상대적으로 두껍고(0.4~2.4mm), 면적이 크며(수십~수백 mm), 여러 종류의 부품이 실장됩니다. Warpage 허용치가 패키지보다 완화된 편이나, 대면적으로 인해 절대 변형량은 클 수 있습니다.</p>
+      <p><strong>패키지 Substrate:</strong> 매우 얇고(0.1~0.5mm), 면적이 작으며, 하나의 die가 실장됩니다. 미세 피치 때문에 극도로 엄격한 warpage 관리가 필요합니다.</p>
+    </div>
+
+    <h4>Bare Board Warpage의 주요 발생 단계</h4>
+    <p>PCB 제조 과정에서 warpage가 발생하거나 변화하는 핵심 단계를 순서대로 살펴보면:</p>
+    <ul class="styled-list">
+      <li><strong>① Lamination Press (적층 경화):</strong> 가장 큰 잔류 응력이 발생하는 단계. 경화 온도(~180°C)에서 상온까지 냉각 시 CTE 불일치와 경화 수축에 의한 응력이 동결됩니다.</li>
+      <li><strong>② Drilling / Via Formation:</strong> 드릴링에 의한 국부적 응력 해방. 특히 비대칭 패턴의 기판에서 두드러집니다.</li>
+      <li><strong>③ Pattern Plating (동도금):</strong> 동도금 두께와 분포가 copper balance에 영향. 전해 도금 시 내부 응력이 추가됩니다.</li>
+      <li><strong>④ Solder Mask Application:</strong> 솔더마스크의 경화 수축. 양면의 두께/면적 비대칭이 warpage에 기여합니다.</li>
+      <li><strong>⑤ Surface Finish:</strong> ENIG(무전해 니켈/금), OSP, HASL 등 표면처리의 비대칭 응력 기여. 일반적으로 작지만 얇은 기판에서는 유의미합니다.</li>
+      <li><strong>⑥ Routing / Singulation:</strong> 패널에서 단위 기판으로 분리 시 구속이 해제되면서 warpage가 변합니다. 패널 상태에서 평탄하던 기판이 routing 후 갑자기 휘는 경우가 빈번합니다.</li>
+    </ul>
+  </div>
+
+  <div class="section" id="sA-2">
+    <div class="section-id">Appendix A.2</div>
+    <h3>PCB Stack-up별 Warpage 특성 분석</h3>
+
+    <h4>Layer 수에 따른 특성</h4>
+    <table class="comp-table">
+      <thead><tr><th>Layer 수</th><th>전형적 두께</th><th>Warpage 특성</th><th>주요 관리 포인트</th></tr></thead>
+      <tbody>
+        <tr><td>2L (양면)</td><td>0.4~1.6mm</td><td>상/하 copper density 차이에 직접적으로 좌우됨. 단순 smile/cry 형태가 대부분</td><td>외층 copper balance</td></tr>
+        <tr><td>4L</td><td>0.6~1.6mm</td><td>내층 GND/VCC plane의 copper 밀도가 균일하여 안정적인 편. 외층 불균형이 지배적</td><td>외층 balance, core 두께 대칭</td></tr>
+        <tr><td>6~8L</td><td>0.8~2.0mm</td><td>Stack-up 설계 자유도 증가. 비대칭 설계 시 복합 모드(saddle, twist) 발생 가능</td><td>전 층의 copper density 대칭, prepreg/core 대칭 배치</td></tr>
+        <tr><td>10L+</td><td>1.2~2.4mm</td><td>두꺼워서 강성은 높지만, 내부 층간 잔류 응력 축적. 복잡한 pattern 분포</td><td>전체 stack-up 대칭, 내층별 density 관리</td></tr>
+        <tr><td>HDI (Any-layer)</td><td>0.4~1.2mm</td><td>Core-less 또는 thin core 구조로 강성 부족. Build-up 층의 비대칭에 민감</td><td>Build-up 층 대칭, carrier/stiffener 활용</td></tr>
+      </tbody>
+    </table>
+
+    <h4>Core-based vs. Core-less 구조</h4>
+    <p><strong>Core-based 구조:</strong> 두꺼운 core(0.2~0.8mm)가 중심에 위치하여 구조적 강성을 제공합니다. Core의 rigidity가 warpage를 억제하는 역할을 하며, 전통적인 다층 PCB의 기본 구조입니다.</p>
+    <p><strong>Core-less (Build-up only) 구조:</strong> 두꺼운 core 없이 build-up 층만으로 구성됩니다. 전체 두께가 얇아 강성이 낮고 warpage에 매우 취약합니다. 제조 시 임시 carrier를 사용하여 공정 중 변형을 억제하는 것이 일반적이며, carrier 분리 후 warpage가 급격히 발현될 수 있습니다.</p>
+
+    <h4>Rigid-Flex PCB의 특수 고려사항</h4>
+    <p>Rigid-Flex PCB는 rigid 영역과 flexible 영역이 공존하는 구조입니다. 두 영역의 경계에서 <strong>강성 불연속(stiffness discontinuity)</strong>이 발생하며, 이 경계 부근에서 응력 집중과 국부 warpage가 나타날 수 있습니다. 시뮬레이션에서는 이 경계 영역의 메시를 충분히 세밀하게 해야 합니다.</p>
+  </div>
+
+  <div class="section" id="sA-3">
+    <div class="section-id">Appendix A.3</div>
+    <h3>Copper Balance 상세 분석 방법</h3>
+
+    <h4>Copper Density 계산</h4>
+    <p>각 layer의 copper density는 해당 layer의 <strong>전체 면적 대비 copper이 남아 있는 면적의 비율</strong>로 정의합니다.</p>
+    <div class="equation">Copper Density (%) = (Copper 잔존 면적 / 전체 Layer 면적) × 100</div>
+    <p>EDA 도구(Allegro, Altium, KiCad 등)에서 각 layer의 copper percentage를 추출할 수 있습니다. 일부 도구는 영역별(zone별) copper density 맵을 생성하는 기능도 제공합니다.</p>
+
+    <h4>대칭 쌍(Symmetric Pair) 분석</h4>
+    <p>Stack-up의 중심면을 기준으로 대칭 위치에 있는 layer 쌍의 copper density를 비교합니다.</p>
+    <div class="info-card amber">
+      <div class="card-label">예시: 8-Layer Stack-up</div>
+      <p>Layer 1 ↔ Layer 8 (외층 쌍)<br>
+      Layer 2 ↔ Layer 7 (내층 쌍 1)<br>
+      Layer 3 ↔ Layer 6 (내층 쌍 2)<br>
+      Layer 4 ↔ Layer 5 (내층 쌍 3, 중심에 가장 가까움)</p>
+      <p>각 쌍의 density 차이를 계산합니다. <strong>외층 쌍(L1↔L8)의 차이가 warpage에 가장 큰 영향</strong>을 미칩니다. 이는 외층이 중립축(neutral axis)에서 가장 멀리 떨어져 있어, 동일한 응력 차이라도 더 큰 모멘트를 유발하기 때문입니다.</p>
+    </div>
+
+    <h4>영역별(Zone-based) Copper Balance</h4>
+    <p>기판 전체의 평균 copper density가 대칭이라 하더라도, <strong>국부적으로 큰 불균형</strong>이 있으면 local warpage가 발생합니다. 기판을 일정 크기의 격자(예: 10mm × 10mm)로 나누어 각 격자에서의 대칭 쌍 copper density를 분석하면, 어느 영역이 warpage에 취약한지를 사전에 파악할 수 있습니다.</p>
+
+    <h4>Dummy Copper (Thieving) 설계 가이드</h4>
+    <ul class="styled-list">
+      <li><strong>배치 위치:</strong> Copper density가 낮은 영역에 dummy copper를 추가하여 대칭 쌍 layer의 밀도를 맞춥니다.</li>
+      <li><strong>패턴 형태:</strong> 전면 솔리드(solid fill)보다는 해칭(hatching) 패턴이나 dot 패턴이 임피던스 영향을 줄이면서 밀도를 조절할 수 있습니다. 전형적으로 50~80% fill의 hatching을 사용합니다.</li>
+      <li><strong>GND 연결:</strong> 기능 회로에 영향을 주지 않도록 dummy copper는 GND에 연결하거나, 필요 시 floating으로 둡니다. 단, floating copper는 EMI 안테나 역할을 할 수 있어 주의가 필요합니다.</li>
+      <li><strong>Clearance:</strong> 기능 패턴과의 적절한 clearance를 유지하여 의도치 않은 coupling을 방지합니다.</li>
+    </ul>
+  </div>
+
+  <div class="section" id="sA-4">
+    <div class="section-id">Appendix A.4</div>
+    <h3>PCB 재료별 Warpage 물성 데이터 레퍼런스</h3>
+    <p>시뮬레이션 입력 및 재료 선정의 참고용으로, 대표적인 PCB 적층 재료의 warpage 관련 핵심 물성을 정리합니다. 실제 해석에서는 반드시 해당 재료의 공식 데이터시트 또는 실측 데이터를 사용해야 합니다.</p>
+
+    <table class="comp-table">
+      <thead><tr><th>재료</th><th>Tg (°C)</th><th>CTE x-y (ppm/°C)</th><th>CTE z &lt;Tg (ppm/°C)</th><th>CTE z &gt;Tg (ppm/°C)</th><th>E (GPa) @25°C</th></tr></thead>
+      <tbody>
+        <tr><td>Standard FR-4 (Mid-Tg)</td><td>130~140</td><td>14~17</td><td>40~50</td><td>250~300</td><td>20~25 (warp) / 18~22 (fill)</td></tr>
+        <tr><td>High-Tg FR-4</td><td>170~180</td><td>12~16</td><td>35~45</td><td>200~260</td><td>22~28</td></tr>
+        <tr><td>Low-CTE / High-Tg (IS415 류)</td><td>200+</td><td>10~14</td><td>25~35</td><td>180~220</td><td>25~32</td></tr>
+        <tr><td>BT (Bismaleimide Triazine)</td><td>180~210</td><td>12~15</td><td>40~55</td><td>150~200</td><td>23~30</td></tr>
+        <tr><td>Polyimide (PI)</td><td>250+</td><td>12~16</td><td>50~60</td><td>—</td><td>15~22</td></tr>
+        <tr><td>Low-Dk/Df (고주파용)</td><td>180~200</td><td>10~15</td><td>30~50</td><td>180~250</td><td>20~28</td></tr>
+        <tr><td>Halogen-Free FR-4</td><td>150~175</td><td>13~17</td><td>38~48</td><td>220~280</td><td>20~26</td></tr>
+      </tbody>
+    </table>
+
+    <div class="info-card rose">
+      <div class="card-label">주의사항</div>
+      <p>위 값은 <strong>일반적인 범위</strong>이며, 같은 등급 내에서도 제조사, 수지 함량, 유리 천(glass cloth) 스타일에 따라 상당한 차이가 있습니다. 정밀 시뮬레이션에서는 해당 재료의 <strong>실측 DMA/TMA 데이터</strong>를 사용하는 것이 필수적입니다.</p>
+    </div>
+
+    <h4>Glass Cloth Style의 영향</h4>
+    <p>유리섬유 직물의 스타일(예: 1080, 2116, 7628)은 warp/fill 방향의 섬유 밀도 비율을 결정하며, 이는 직교 이방성 물성에 직접 영향을 줍니다.</p>
+    <table class="comp-table">
+      <thead><tr><th>Glass Style</th><th>두께 (μm)</th><th>Warp:Fill 비율</th><th>특성</th></tr></thead>
+      <tbody>
+        <tr><td>106</td><td>~38</td><td>거의 균형</td><td>매우 얇은 prepreg, 높은 수지 함량</td></tr>
+        <tr><td>1080</td><td>~53</td><td>약간 불균형</td><td>얇은 build-up 층에 사용</td></tr>
+        <tr><td>2116</td><td>~94</td><td>비교적 균형</td><td>범용, 중간 두께</td></tr>
+        <tr><td>7628</td><td>~173</td><td>비교적 균형</td><td>두꺼운 core용, 높은 강성</td></tr>
+      </tbody>
+    </table>
+    <p>Warp/fill 비율의 불균형이 클수록 x-y 방향의 CTE 및 탄성계수 차이가 커지며, 이는 twist warpage의 원인이 될 수 있습니다.</p>
+  </div>
+
+  <div class="section" id="sA-5">
+    <div class="section-id">Appendix A.5</div>
+    <h3>PCB Bare Board Warpage 실무 체크리스트</h3>
+
+    <div class="info-card emerald">
+      <div class="card-label">설계 단계 체크리스트</div>
+      <p>□ Stack-up이 중심면 기준 대칭인가? (재료 종류, 두께, prepreg/core 배치)<br>
+      □ 대칭 쌍 layer의 copper density 차이가 10% 이내인가?<br>
+      □ 특히 외층(Top/Bottom)의 copper balance가 확보되었는가?<br>
+      □ 국부적 copper density 불균형이 없는가? (영역별 분석 실시)<br>
+      □ Dummy copper(thieving) 패턴이 적절히 배치되었는가?<br>
+      □ 기판 두께 대비 면적 종횡비가 과도하지 않은가?<br>
+      □ Via 밀도의 국부적 편중이 없는가?<br>
+      □ 솔더마스크 open area가 양면에서 비대칭이 크지 않은가?</p>
+    </div>
+
+    <div class="info-card blue">
+      <div class="card-label">재료 선정 체크리스트</div>
+      <p>□ Tg가 reflow peak 온도 대비 충분한 마진을 갖는가?<br>
+      □ CTE(z)가 허용 범위 내인가? (특히 lead-free reflow 기준)<br>
+      □ 선정 재료의 온도 의존성 물성 데이터가 확보되었는가?<br>
+      □ Prepreg과 core의 수지 시스템이 동일한가? (이종 수지 혼합 시 추가 CTE 불일치 주의)<br>
+      □ 유리 천 스타일에 따른 이방성이 검토되었는가?</p>
+    </div>
+
+    <div class="info-card violet">
+      <div class="card-label">제조 공정 체크리스트</div>
+      <p>□ Lamination press 프로파일(승온 속도, 경화 온도/시간, 냉각 속도)이 최적화되었는가?<br>
+      □ Press 쿠션재 및 플레이트 평탄도가 관리되는가?<br>
+      □ 솔더마스크 양면 도포 두께가 균일한가?<br>
+      □ Routing 방법(V-cut, tab routing 등)에 따른 응력 해방 패턴이 고려되었는가?<br>
+      □ 패널 배열(panelization) 시 응력 분포가 고려되었는가?<br>
+      □ 완성 후 baking 조건(수분 제거)이 적절한가?</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- APPENDIX B -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="module" id="appendixB">
+  <div class="module-header">
+    <div class="module-number">Appendix B</div>
+    <h2 class="module-title">PBA (Printed Board Assembly) Warpage 상세 가이드</h2>
+    <p class="module-desc">부품이 실장된 후의 조립체(PBA) 상태에서의 warpage 특성, SMT 공정 단계별 분석, 그리고 부품별 상호작용을 다룹니다.</p>
+  </div>
+
+  <div class="section" id="sB-1">
+    <div class="section-id">Appendix B.1</div>
+    <h3>PBA Warpage의 특수성 — PCB와의 차이</h3>
+    <p>PBA(Printed Board Assembly) warpage는 bare PCB에 부품이 실장된 후의 조립체 warpage를 의미합니다. Bare board warpage와 근본적으로 다른 점은 <strong>실장된 부품이 구조체의 강성과 CTE 분포를 변화시킨다</strong>는 것입니다.</p>
+
+    <h4>부품 실장에 의한 변화</h4>
+    <table class="comp-table">
+      <thead><tr><th>항목</th><th>Bare PCB</th><th>PBA (조립 후)</th></tr></thead>
+      <tbody>
+        <tr><td>강성 분포</td><td>상대적으로 균일</td><td>부품(특히 대형 BGA, 히트싱크) 위치에서 국부적 강성 증가</td></tr>
+        <tr><td>CTE 분포</td><td>Stack-up에 의해 결정</td><td>부품의 CTE가 추가 (Si die: ~2.6, 수동부품: 다양)</td></tr>
+        <tr><td>질량 분포</td><td>상대적으로 균일</td><td>중량 부품 위치에서 중력 효과 증가</td></tr>
+        <tr><td>Warpage 모드</td><td>주로 global mode</td><td>Global + Local 복합 모드</td></tr>
+        <tr><td>Stress-free 상태</td><td>Lamination 경화 온도</td><td>솔더 응고 온도 (~217°C for SAC305)</td></tr>
+      </tbody>
+    </table>
+
+    <div class="info-card rose">
+      <div class="card-label">핵심 포인트</div>
+      <p>PBA의 warpage는 <strong>"bare board warpage + 부품 실장 효과"</strong>의 단순 합이 아닙니다. Reflow 과정에서 솔더가 용융된 상태(=부품이 구속되지 않은 상태)에서의 PCB warpage와, 솔더가 응고되면서 부품이 PCB를 구속하는 효과가 결합되어 최종 PBA warpage가 결정됩니다.</p>
+    </div>
+  </div>
+
+  <div class="section" id="sB-2">
+    <div class="section-id">Appendix B.2</div>
+    <h3>SMT Reflow 공정 단계별 Warpage 거동 상세 분석</h3>
+
+    <h4>Phase 1: 승온 (Ramp-up, 25°C → ~150°C)</h4>
+    <p>PCB가 가열되면서 CTE 불일치에 의한 열변형이 시작됩니다. 이 단계에서는 아직 Tg 이하이므로 수지의 탄성계수가 높고, 변형은 주로 탄성적입니다. 솔더 페이스트는 아직 고체 상태이며, 기존 솔더볼(2nd reflow의 경우)도 고체 상태를 유지합니다.</p>
+
+    <h4>Phase 2: Soak / Preheat (~150°C → ~200°C)</h4>
+    <p>Flux가 활성화되면서 산화물을 제거합니다. PCB 내부 온도가 균일해지는 단계입니다. <strong>일부 고Tg 재료를 제외하면 Tg에 근접하거나 통과</strong>하기 시작하여, 수지의 탄성계수가 감소하기 시작합니다. 이때부터 warpage가 비선형적으로 증가할 수 있습니다.</p>
+
+    <h4>Phase 3: Reflow Peak (~200°C → ~250°C → ~200°C)</h4>
+    <p>이 단계가 <strong>warpage 관점에서 가장 critical</strong>합니다.</p>
+    <ul class="styled-list">
+      <li><strong>솔더 용융 (Liquidus: ~217°C for SAC305):</strong> 솔더가 녹으면서 부품과 PCB 사이의 기계적 구속이 사라집니다. 패키지와 PCB가 각각 독립적으로 변형합니다.</li>
+      <li><strong>Peak 온도 (~245~250°C):</strong> 수지의 탄성계수가 최저점. PCB의 warpage가 최대가 될 수 있습니다. Tg를 크게 초과한 상태에서 점탄성 효과(응력 완화)가 활발합니다.</li>
+      <li><strong>냉각 시작 → 솔더 응고 (~217°C):</strong> 솔더가 응고되면서 패키지와 PCB가 <strong>그 순간의 상대적 위치/형상으로 기계적으로 결합</strong>됩니다. 이 순간의 패키지-PCB 간 warpage 차이(gap 또는 overlap)가 조립 불량의 직접적 원인입니다.</li>
+    </ul>
+
+    <div class="info-card orange">
+      <div class="card-label">Critical Temperature Window</div>
+      <p><strong>솔더 응고 온도(~217°C) 부근에서의 패키지와 PCB의 상대적 warpage가 조립 품질을 결정합니다.</strong></p>
+      <p>이 온도에서 패키지가 smile이고 PCB가 flat이면 → 중앙부는 양호하나 코너에서 gap 발생 가능<br>
+      이 온도에서 패키지가 cry이고 PCB가 smile이면 → 중앙부에서 Non-Wet Open 위험<br>
+      이 온도에서 둘 다 같은 방향이면 → 한쪽에서 과도한 압축으로 bridging 위험</p>
+    </div>
+
+    <h4>Phase 4: 냉각 (Cooling, ~217°C → 25°C)</h4>
+    <p>솔더가 응고된 후, 온도가 상온까지 내려가면서 추가적인 열수축이 발생합니다. 이 과정에서 패키지와 PCB의 CTE 차이에 의해 <strong>솔더 조인트에 전단 변형(shear strain)</strong>이 축적됩니다. 냉각 속도가 빠를수록 잔류 응력이 크게 남습니다.</p>
+
+    <h4>양면 실장 시 2nd Reflow의 영향</h4>
+    <p>양면 실장 기판에서 2차 reflow는 추가적인 열 사이클을 의미합니다. 1차 reflow에서 형성된 솔더 조인트가 2차 reflow에서 다시 용융(또는 용융점 근처까지 가열)되면서, 1차 면의 부품이 재위치(re-registration)할 수 있습니다. 이 과정에서 발생하는 warpage 변화와 솔더 조인트 재형성이 추가적인 변수가 됩니다.</p>
+  </div>
+
+  <div class="section" id="sB-3">
+    <div class="section-id">Appendix B.3</div>
+    <h3>부품 유형별 Warpage 상호작용 분석</h3>
+
+    <h4>대형 BGA / LGA</h4>
+    <p>대형 BGA(body size > 25mm)는 PBA warpage에 가장 큰 영향을 미치는 부품입니다.</p>
+    <ul class="styled-list">
+      <li><strong>패키지 자체 warpage:</strong> 큰 body size와 얇은 substrate로 인해 패키지 자체의 dynamic warpage가 큽니다. 다이 크기 대비 패키지 크기의 비율(die-to-package ratio)이 warpage 모드에 큰 영향을 줍니다.</li>
+      <li><strong>PCB 구속 효과:</strong> 솔더 접합 후, 대형 BGA는 PCB의 해당 영역을 강하게 구속합니다. 이로 인해 BGA 아래와 외부의 PCB warpage가 다르게 나타나며, BGA 가장자리에서 warpage 불연속이 발생합니다.</li>
+      <li><strong>Corner solder ball 취약성:</strong> BGA의 코너 솔더볼은 중심에서 가장 멀어 warpage-induced gap이 최대인 위치입니다. 동시에 열피로 시 전단 변형도 최대인 위치여서, 조립과 신뢰성 양 측면에서 가장 취약합니다.</li>
+    </ul>
+
+    <h4>QFP / QFN</h4>
+    <p><strong>QFP (Quad Flat Package):</strong> 리드(lead)가 유연하여 어느 정도의 warpage를 흡수할 수 있습니다. 다만, fine-pitch QFP에서는 warpage에 의한 리드-패드 간 gap이나 bridging이 여전히 문제가 됩니다.</p>
+    <p><strong>QFN (Quad Flat No-lead):</strong> 리드가 없고 패드가 직접 PCB에 솔더링되므로, <strong>BGA와 유사하게 warpage에 민감</strong>합니다. 특히 large pad QFN에서는 voiding과 warpage가 동시에 문제가 됩니다.</p>
+
+    <h4>수동 부품 (Chip R, C, L)</h4>
+    <p>개별 수동 부품은 작아서 warpage에 큰 영향을 미치지 않지만, <strong>고밀도 실장 시 다수의 수동 부품이 PCB 한 면에 집중</strong>되면 질량과 강성의 비대칭을 유발할 수 있습니다. 특히 0402, 0201급 초소형 부품은 tombstone(직립) 현상이 warpage와 결합하면 불량률이 증가합니다.</p>
+
+    <h4>커넥터 / 대형 Through-hole 부품</h4>
+    <p>커넥터 등 대형 through-hole 부품은 wave soldering이나 selective soldering으로 실장됩니다. 이 과정에서 PCB 일부만 국부적으로 가열되면서 <strong>비균일 열하중에 의한 일시적 warpage</strong>가 발생합니다. 커넥터의 하우징 재료(PA, LCP 등)의 CTE와 강성이 PCB와 크게 다를 수 있으며, 이것이 영구적인 local warpage의 원인이 되기도 합니다.</p>
+
+    <h4>히트싱크 / 쉴드캔</h4>
+    <p>금속 히트싱크(알루미늄, 구리)나 쉴드캔(tin-plated steel, mu-metal)은 CTE가 PCB와 다르고, 강성이 높습니다. <strong>열전도 접착제나 솔더로 부착 시</strong> 경화 수축/열수축에 의해 PCB를 당기면서 warpage를 유발합니다. 특히 큰 면적의 히트싱크는 그 영향이 상당합니다.</p>
+  </div>
+
+  <div class="section" id="sB-4">
+    <div class="section-id">Appendix B.4</div>
+    <h3>PBA Warpage 시뮬레이션의 특수 고려사항</h3>
+
+    <h4>모델 범위(Scope) 결정</h4>
+    <p>PBA warpage 시뮬레이션에서 가장 먼저 결정해야 할 것은 <strong>어떤 범위까지 모델링할 것인가</strong>입니다.</p>
+    <table class="comp-table">
+      <thead><tr><th>모델 범위</th><th>설명</th><th>적합한 용도</th><th>계산 비용</th></tr></thead>
+      <tbody>
+        <tr><td>PCB Only</td><td>Bare board만 모델링</td><td>기판 자체 warpage 예측, 설계 스크리닝</td><td>낮음</td></tr>
+        <tr><td>PCB + 주요 부품</td><td>대형 BGA 등 핵심 부품만 포함</td><td>특정 BGA의 조립성 평가</td><td>중간</td></tr>
+        <tr><td>Full Assembly</td><td>모든 부품을 포함한 전체 PBA</td><td>최종 PBA warpage 정밀 예측</td><td>높음</td></tr>
+      </tbody>
+    </table>
+
+    <h4>부품의 등가 모델링</h4>
+    <p>모든 부품을 상세하게 모델링하는 것은 비현실적이므로, 부품을 등가 블록(equivalent block)으로 단순화합니다.</p>
+
+    <div class="info-card blue">
+      <div class="card-label">부품 등가 모델 생성 방법</div>
+      <p><strong>BGA 패키지:</strong> 패키지의 상세 구조(substrate, die, EMC)를 알고 있으면 별도의 상세 모델로 해석 후 등가 물성을 추출합니다. 정보가 부족하면, 패키지 데이터시트의 기본 물성과 크기로 단순 블록을 생성합니다.</p>
+      <p><strong>수동 부품:</strong> 세라믹(알루미나) 등가 블록으로 모델링. CTE ~7 ppm/°C, E ~300 GPa.</p>
+      <p><strong>커넥터:</strong> 하우징 재료(PA, LCP 등)의 물성으로 등가 블록 생성. Through-hole pin의 구속 효과 반영 필요.</p>
+    </div>
+
+    <h4>솔더 조인트 모델링 전략</h4>
+    <ul class="styled-list">
+      <li><strong>Global warpage 예측 목적:</strong> 솔더 조인트를 등가 연속체 층(effective layer)으로 치환. SAC305 솔더의 등가 물성 사용.</li>
+      <li><strong>솔더 접합 신뢰성 평가 목적:</strong> 관심 부품의 솔더볼을 개별적으로 상세 모델링. Creep 모델(Garofalo hyperbolic sine 등) 적용.</li>
+      <li><strong>부품 탈착(활성/비활성) 모델링:</strong> Reflow 중 솔더가 용융되면 부품-PCB 간 구속이 사라지는 것을 반영. 솔더 용융/응고 시점에서 접촉 조건을 on/off 하는 기법 사용.</li>
+    </ul>
+
+    <h4>Reflow 열 이력의 다단계 적용</h4>
+    <div class="info-card amber">
+      <div class="card-label">PBA 해석의 전형적 Step Sequence</div>
+      <p><strong>Step 1:</strong> PCB 제조 — SFT(~180°C) → 상온 냉각. Bare board 잔류 응력/warpage 형성.<br>
+      <strong>Step 2:</strong> 승온 — 상온 → Reflow peak. PCB thermal warpage 증가.<br>
+      <strong>Step 3:</strong> 솔더 용융 — 부품-PCB 구속 해제 (접촉 조건 비활성화).<br>
+      <strong>Step 4:</strong> 냉각 시작 → 솔더 응고(~217°C) — 부품-PCB 구속 재활성화. 이 순간이 새로운 SFT가 됨.<br>
+      <strong>Step 5:</strong> 상온까지 계속 냉각 — 최종 PBA warpage 형성.<br>
+      <strong>(양면 실장 시) Step 6~10:</strong> 반대면에 대해 Step 2~5 반복.</p>
+    </div>
+
+    <h4>중력(Gravity) 효과의 중요성</h4>
+    <p>PBA는 bare PCB보다 무거우므로 <strong>중력에 의한 처짐(sag)이 더 크게</strong> 나타납니다. 특히 대형 PBA(모바일 제외)에서는 중력 효과가 무시할 수 없으며, 수직/수평 배치에 따라 warpage 측정값이 달라집니다. 시뮬레이션에서 중력을 포함할지 여부는 측정 조건과 일치시켜야 합니다.</p>
+  </div>
+
+  <div class="section" id="sB-5">
+    <div class="section-id">Appendix B.5</div>
+    <h3>PBA Warpage 허용 기준 및 관리 전략</h3>
+
+    <h4>공정별 허용 기준 가이드</h4>
+    <table class="comp-table">
+      <thead><tr><th>공정 / 상황</th><th>Warpage 허용 기준</th><th>비고</th></tr></thead>
+      <tbody>
+        <tr><td>SMT Mounter 흡착</td><td>기판 대각선의 0.5% 이하 권장</td><td>Mounter 사양에 따라 다름. 초과 시 흡착 실패, 인식 에러</td></tr>
+        <tr><td>Reflow 투입</td><td>레일 폭 대비 최대 변위 확인</td><td>과도한 warpage → 레일 이탈, 걸림</td></tr>
+        <tr><td>BGA 솔더링 (상온)</td><td>Coplanarity &lt; 솔더볼 직경의 ~50%</td><td>피치별 상세 기준은 IPC-7095 참조</td></tr>
+        <tr><td>BGA 솔더링 (동적)</td><td>솔더 응고점에서 PCB-PKG gap &lt; 솔더볼 높이의 ~40%</td><td>Dynamic 기준은 아직 표준화 진행 중</td></tr>
+        <tr><td>ICT/FCT 테스트</td><td>Test fixture probe 접촉 신뢰성 확보</td><td>과도한 warpage → 프로브 미접촉, 테스트 실패</td></tr>
+        <tr><td>최종 제품 조립</td><td>인클로저/하우징에 간섭 없이 장착</td><td>PBA warpage → 나사 체결 시 응력 추가</td></tr>
+      </tbody>
+    </table>
+
+    <h4>PBA Warpage 관리의 계층적 접근</h4>
+    <div class="takeaway">
+      <div class="takeaway-title">3단계 관리 전략</div>
+      <p><strong>Level 1 — 설계에서 예방:</strong> PCB stack-up 최적화, copper balance, 재료 선정, 부품 배치 최적화(대형 부품의 균형 배치). 이 단계가 가장 비용-효과적입니다.</p>
+      <p><strong>Level 2 — 공정에서 제어:</strong> Reflow 프로파일 최적화, 지그/캐리어 사용, baking 관리, 양면 실장 순서 최적화.</p>
+      <p><strong>Level 3 — 조립 후 보정:</strong> Post-reflow press(교정 프레스), 특수 fixture를 이용한 형상 교정. 최후의 수단이며 추가 비용 발생.</p>
+    </div>
+  </div>
+
+  <div class="section" id="sB-6">
+    <div class="section-id">Appendix B.6</div>
+    <h3>PBA Warpage 실무 체크리스트</h3>
+
+    <div class="info-card emerald">
+      <div class="card-label">부품 배치 & 설계 체크리스트</div>
+      <p>□ 대형 BGA가 기판의 한쪽 면에 편중되어 있지 않은가? (양면 균형 배치 검토)<br>
+      □ 대형 BGA의 corner에 다른 fine-pitch 부품이 인접해 있지 않은가?<br>
+      □ 히트싱크/쉴드캔의 부착 면적과 위치에 의한 warpage 영향이 검토되었는가?<br>
+      □ Through-hole 커넥터의 위치가 기판 warpage를 악화시키지 않는가?<br>
+      □ 양면 실장 시, 1차/2차 reflow 면의 부품 중량 균형이 고려되었는가?<br>
+      □ 기판의 짧은 쪽 방향의 부품 분포가 균일한가?</p>
+    </div>
+
+    <div class="info-card cyan">
+      <div class="card-label">SMT 공정 체크리스트</div>
+      <p>□ Reflow 프로파일의 peak 온도가 재료 Tg 대비 적절한가?<br>
+      □ 냉각 속도(cooling rate)가 규격 내인가? (일반적으로 2~4°C/sec)<br>
+      □ 대형/박형 기판에 carrier/pallet 사용이 필요하지 않은가?<br>
+      □ Carrier 사용 시, carrier 자체의 CTE와 warpage가 검토되었는가?<br>
+      □ 양면 실장 순서가 warpage 관점에서 최적화되었는가? (무거운 부품 면을 먼저?)<br>
+      □ Pre-reflow baking이 필요한 부품/기판이 식별되었는가?<br>
+      □ Solder paste 인쇄 후, paste 높이가 warpage로 인한 gap을 보상할 수 있는가?</p>
+    </div>
+
+    <div class="info-card violet">
+      <div class="card-label">검사 & 신뢰성 체크리스트</div>
+      <p>□ BGA 솔더 접합부의 X-ray 검사가 계획되어 있는가?<br>
+      □ Dynamic warpage 측정(Moiré 등) 계획이 있는가? (신규 설계 시 필수 권장)<br>
+      □ 온도 사이클 신뢰성 시험 조건이 적절한가?<br>
+      □ Warpage에 의한 잔류 응력이 낙하 시험/진동 시험 결과에 미치는 영향이 고려되었는가?<br>
+      □ 제품 하우징에 PBA를 조립할 때 나사 체결로 인한 추가 warpage/응력이 평가되었는가?</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- APPENDIX C -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="module" id="appendixC">
+  <div class="module-header">
+    <div class="module-number">Appendix C</div>
+    <h2 class="module-title">Warpage 관련 공식, 용어 사전 및 참고 자료</h2>
+    <p class="module-desc">교재 전체에서 사용된 핵심 공식의 정리, 주요 전문 용어 사전, 그리고 추가 학습을 위한 참고 자료를 수록합니다.</p>
+  </div>
+
+  <div class="section" id="sC-1">
+    <div class="section-id">Appendix C.1</div>
+    <h3>핵심 공식 모음</h3>
+
+    <h4>1. 열변형률 (Thermal Strain)</h4>
+    <div class="equation">ε_th = α × ΔT = α × (T - T_ref)</div>
+    <p>α: 열팽창계수 (ppm/°C), ΔT: 온도 변화 (°C), T_ref: 기준 온도 (Stress-free temperature)</p>
+
+    <h4>2. Timoshenko Bi-metal Curvature</h4>
+    <div class="equation">κ = 6(α₂ - α₁)(T - T₀)(1+m)² / [h × (3(1+m)² + (1+mn)(m² + 1/(mn)))]</div>
+    <p>m = h₁/h₂ (두께 비), n = E₁/E₂ (탄성계수 비), h = h₁ + h₂ (전체 두께)</p>
+
+    <h4>3. 혼합 법칙 (Rule of Mixtures) — Copper-Resin 등가 물성</h4>
+    <div class="equation">E_eff = V_Cu × E_Cu + (1 - V_Cu) × E_Resin    (Voigt, 면내 방향)
+1/E_eff = V_Cu/E_Cu + (1-V_Cu)/E_Resin    (Reuss, 면외 방향)
+α_eff = (V_Cu × E_Cu × α_Cu + (1-V_Cu) × E_Resin × α_Resin) / E_eff</div>
+    <p>V_Cu: Copper 체적 분율 (≈ copper density for thin layers)</p>
+
+    <h4>4. 점탄성 완화 탄성계수 (Prony Series)</h4>
+    <div class="equation">E(t) = E∞ + Σᵢ₌₁ⁿ Eᵢ × exp(-t/τᵢ)</div>
+    <p>E∞: 장기간 평형 탄성계수, Eᵢ: i번째 Maxwell 요소의 탄성계수, τᵢ: i번째 완화 시간</p>
+
+    <h4>5. WLF Shift Factor (Time-Temperature Superposition)</h4>
+    <div class="equation">log(a_T) = -C₁(T - T_ref) / (C₂ + T - T_ref)</div>
+    <p>a_T: Shift factor, C₁, C₂: WLF 상수, T_ref: 기준 온도</p>
+
+    <h4>6. Coffin-Manson 피로 수명</h4>
+    <div class="equation">N_f = C × (Δγ)^(-n)</div>
+    <p>N_f: 파괴까지의 사이클 수, Δγ: 사이클당 비탄성 전단 변형 범위, C, n: 재료 상수</p>
+
+    <h4>7. Gaussian Curvature</h4>
+    <div class="equation">K = κ₁ × κ₂</div>
+    <p>K > 0: Bowl/Dome, K = 0: Cylindrical, K &lt; 0: Saddle</p>
+
+    <h4>8. 판의 휨 강성 (Plate Bending Stiffness)</h4>
+    <div class="equation">D = E × h³ / [12 × (1 - ν²)]</div>
+    <p>두께 h가 2배가 되면 휨 강성은 8배. 이것이 얇은 기판이 warpage에 취약한 근본적 이유.</p>
+  </div>
+
+  <div class="section" id="sC-2">
+    <div class="section-id">Appendix C.2</div>
+    <h3>주요 전문 용어 사전</h3>
+
+    <table class="comp-table">
+      <thead><tr><th>용어</th><th>정의</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Bow</strong></td><td>기판의 원통형(cylindrical) 또는 구면(spherical) 변형. 기판의 중심부가 가장자리 대비 위 또는 아래로 변위된 상태.</td></tr>
+        <tr><td><strong>Twist</strong></td><td>기판의 대각선 방향 뒤틀림. 네 코너 중 두 대각 코너가 반대 방향으로 변위된 상태.</td></tr>
+        <tr><td><strong>Coplanarity</strong></td><td>BGA 솔더볼이나 QFP 리드의 단자 끝점들이 하나의 평면에 놓이는 정도.</td></tr>
+        <tr><td><strong>Stress-free Temperature (SFT)</strong></td><td>재료 내에 열응력이 0인 온도. 시뮬레이션에서 열하중의 기준점.</td></tr>
+        <tr><td><strong>Tg (Glass Transition Temperature)</strong></td><td>수지가 유리질 상태에서 고무질 상태로 전이하는 온도.</td></tr>
+        <tr><td><strong>CTE (Coefficient of Thermal Expansion)</strong></td><td>온도 변화에 따른 재료의 길이 변화율 (ppm/°C).</td></tr>
+        <tr><td><strong>Prony Series</strong></td><td>점탄성 재료의 완화 거동을 지수 함수의 합으로 표현하는 수학적 모델.</td></tr>
+        <tr><td><strong>TTS (Time-Temperature Superposition)</strong></td><td>온도와 시간의 등가성 원리. 고온 단시간 거동과 저온 장시간 거동의 관계.</td></tr>
+        <tr><td><strong>Cure Shrinkage</strong></td><td>수지의 경화(가교반응) 과정에서 발생하는 부피 수축.</td></tr>
+        <tr><td><strong>Copper Balance</strong></td><td>PCB 대칭 쌍 층 간의 copper density 균형 정도.</td></tr>
+        <tr><td><strong>Shadow Moiré</strong></td><td>간섭 무늬를 이용한 전면적 면외 변위 측정 기법.</td></tr>
+        <tr><td><strong>DIC (Digital Image Correlation)</strong></td><td>이미지 추적을 이용한 전면적 변위/변형률 측정 기법.</td></tr>
+        <tr><td><strong>HoP (Head-on-Pillow)</strong></td><td>솔더볼과 솔더 페이스트가 접촉하나 금속학적 접합이 불완전한 불량.</td></tr>
+        <tr><td><strong>NWO (Non-Wet Open)</strong></td><td>솔더가 패드에 접촉하지 못하여 접합이 형성되지 않는 불량.</td></tr>
+        <tr><td><strong>Liquidus Temperature</strong></td><td>솔더 합금이 완전히 용융되는 온도. SAC305의 경우 ~217°C.</td></tr>
+        <tr><td><strong>Surrogate Model</strong></td><td>고비용 시뮬레이션을 대체하기 위해 학습된 저비용 예측 모델.</td></tr>
+        <tr><td><strong>DfW (Design for Warpage)</strong></td><td>설계 단계에서 warpage를 최소화하기 위한 설계 방법론.</td></tr>
+        <tr><td><strong>ABD Matrix</strong></td><td>CLT에서 적층판의 면내 강성(A), 커플링 강성(B), 휨 강성(D) 행렬.</td></tr>
+        <tr><td><strong>Thieving / Dummy Copper</strong></td><td>Copper balance를 맞추기 위해 기능 회로 외에 추가하는 copper 패턴.</td></tr>
+        <tr><td><strong>MSL (Moisture Sensitivity Level)</strong></td><td>패키지의 흡습 민감도 등급 (JEDEC J-STD-020).</td></tr>
+        <tr><td><strong>Popcorn Effect</strong></td><td>흡습된 수분이 reflow 중 급격히 기화하면서 패키지 내부에서 박리/크랙을 유발하는 현상.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section" id="sC-3">
+    <div class="section-id">Appendix C.3</div>
+    <h3>추가 학습 참고 자료</h3>
+
+    <h4>산업 표준 문서</h4>
+    <ul class="styled-list">
+      <li><strong>IPC-TM-650 2.4.22:</strong> PCB Bow and Twist 측정 방법</li>
+      <li><strong>IPC-6012:</strong> Rigid PCB 자격 및 성능 규격 (warpage 허용치 포함)</li>
+      <li><strong>IPC-A-610:</strong> 전자 조립체의 허용 기준</li>
+      <li><strong>IPC-7095:</strong> BGA 설계 및 조립 가이드라인</li>
+      <li><strong>JESD22-B112:</strong> 패키지 warpage 측정 표준 (Shadow Moiré)</li>
+      <li><strong>J-STD-020:</strong> 비밀봉 고체 표면 실장 소자의 습도/리플로우 민감도 분류</li>
+    </ul>
+
+    <h4>핵심 학술 주제 키워드</h4>
+    <ul class="styled-list">
+      <li>Thermomechanical simulation of PCB warpage</li>
+      <li>Viscoelastic modeling of epoxy-based laminates</li>
+      <li>Cure-dependent stress analysis in PCB manufacturing</li>
+      <li>Dynamic warpage measurement using Shadow Moiré</li>
+      <li>BGA solder joint reliability and warpage interaction</li>
+      <li>Copper trace mapping for FEA simulation</li>
+      <li>Machine learning surrogate model for warpage prediction</li>
+      <li>Glass substrate warpage in advanced packaging</li>
+    </ul>
+
+    <h4>대표적인 학술 컨퍼런스</h4>
+    <ul class="styled-list">
+      <li><strong>IEEE ECTC</strong> (Electronic Components and Technology Conference): 전자 패키징 분야 최고 권위 학회. Warpage 관련 논문 다수 발표.</li>
+      <li><strong>IPC APEX EXPO:</strong> PCB 제조 및 전자 조립 분야 산업 중심 컨퍼런스.</li>
+      <li><strong>IMAPS:</strong> 마이크로전자 패키징 학회.</li>
+      <li><strong>ASME InterPACK:</strong> 전자 패키징의 열/기계적 해석 중심.</li>
+      <li><strong>EuroSimE:</strong> 유럽 기반 전자 패키징 시뮬레이션 워크샵.</li>
+    </ul>
+
+    <h4>유용한 소프트웨어 도구</h4>
+    <table class="comp-table">
+      <thead><tr><th>도구</th><th>용도</th><th>특징</th></tr></thead>
+      <tbody>
+        <tr><td>Ansys Sherlock</td><td>PCB/패키지 warpage 해석</td><td>EDA 데이터 자동 임포트, trace mapping 자동화</td></tr>
+        <tr><td>Ansys Mechanical / Workbench</td><td>범용 FEA</td><td>강력한 비선형/점탄성 해석</td></tr>
+        <tr><td>Abaqus (Dassault)</td><td>고급 FEA</td><td>UMAT 서브루틴으로 사용자 정의 재료 모델</td></tr>
+        <tr><td>Siemens Simcenter</td><td>통합 시뮬레이션</td><td>EDA-CAE 연동 워크플로우</td></tr>
+        <tr><td>Akrometrix TherMoiré</td><td>Warpage 측정</td><td>Shadow Moiré 기반 dynamic warpage 측정</td></tr>
+        <tr><td>ANSA / META (BETA CAE)</td><td>Pre/Post Processing</td><td>복잡한 전자 패키징 모델의 메싱/후처리</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Footer -->
+<footer style="padding:48px 60px; border-top:1px solid var(--border-subtle); text-align:center; color:var(--text-muted); font-size:13px;">
+  PCB Warpage Engineering: From Fundamentals to Simulation<br>
+  <span style="font-size:11px; margin-top:8px; display:inline-block;">Comprehensive Study Guide with PCB/PBA Appendices — 2026</span>
+</footer>
+
+</div><!-- end main-content -->
+
+<!-- Back to Top -->
+<button class="back-to-top" id="backToTop" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
+
+<script>
+// ── Navigation Data ──
+const modules = [
+  { id:'module1', title:'Module 1. Warpage의 기초 및 물리적 정의', sections:[
+    {id:'s1-1',t:'1.1 Warpage란 무엇인가?'},
+    {id:'s1-2',t:'1.2 수학적 표현'},
+    {id:'s1-3',t:'1.3 역학적 발생 원리'},
+    {id:'s1-4',t:'1.4 열팽창 계수(CTE) 불일치'},
+    {id:'s1-5',t:'1.5 고전 적층판 이론 (CLT)'}
+  ]},
+  { id:'module2', title:'Module 2. 발생 메커니즘과 주요 원인', sections:[
+    {id:'s2-1',t:'2.1 재료적 요인'},
+    {id:'s2-2',t:'2.2 설계적 요인'},
+    {id:'s2-3',t:'2.3 공정적 요인 — 기판 제조'},
+    {id:'s2-4',t:'2.4 공정적 요인 — SMT 조립'},
+    {id:'s2-5',t:'2.5 패키지-PCB 상호작용'}
+  ]},
+  { id:'module3', title:'Module 3. Warpage의 형태와 분류', sections:[
+    {id:'s3-1',t:'3.1 전역적 휨 (Global Warpage)'},
+    {id:'s3-2',t:'3.2 지역적 휨 (Local Warpage)'},
+    {id:'s3-3',t:'3.3 동적 휨 (Dynamic Warpage)'}
+  ]},
+  { id:'module4', title:'Module 4. Warpage로 인한 신뢰성 문제', sections:[
+    {id:'s4-1',t:'4.1 SMT 조립 불량'},
+    {id:'s4-2',t:'4.2 장기 현장 신뢰성'},
+    {id:'s4-3',t:'4.3 산업 표준 및 허용 기준'}
+  ]},
+  { id:'module5', title:'Module 5. FEA 시뮬레이션 상세 가이드', sections:[
+    {id:'s5-1',t:'5.1 전략 및 워크플로우'},
+    {id:'s5-2',t:'5.2 기하학적 모델링'},
+    {id:'s5-3',t:'5.3 메시 전략'},
+    {id:'s5-4',t:'5.4 재료 물성 데이터'},
+    {id:'s5-5',t:'5.5 경계/하중 조건'},
+    {id:'s5-6',t:'5.6 해석 단계 및 솔버 설정'},
+    {id:'s5-7',t:'5.7 Multi-physics / Multi-scale'}
+  ]},
+  { id:'module6', title:'Module 6. 측정 및 검증', sections:[
+    {id:'s6-1',t:'6.1 측정 기술'},
+    {id:'s6-2',t:'6.2 측정 실무 고려사항'},
+    {id:'s6-3',t:'6.3 시뮬레이션-측정 정합성'}
+  ]},
+  { id:'module7', title:'Module 7. 설계 최적화 및 실무 가이드', sections:[
+    {id:'s7-1',t:'7.1 DfW 가이드라인'},
+    {id:'s7-2',t:'7.2 파라미터 최적화'},
+    {id:'s7-3',t:'7.3 실무 트러블슈팅'}
+  ]},
+  { id:'module8', title:'Module 8. 최신 트렌드 및 고급 주제', sections:[
+    {id:'s8-1',t:'8.1 AI 및 데이터 기반 접근'},
+    {id:'s8-2',t:'8.2 차세대 패키징과 Warpage 도전'},
+    {id:'s8-3',t:'8.3 디지털 트윈 및 스마트 제조'}
+  ]},
+  { id:'appendixA', title:'별첨 A. PCB Bare Board Warpage', sections:[
+    {id:'sA-1',t:'A.1 Bare Board Warpage의 특수성'},
+    {id:'sA-2',t:'A.2 Stack-up별 Warpage 특성'},
+    {id:'sA-3',t:'A.3 Copper Balance 상세 분석'},
+    {id:'sA-4',t:'A.4 재료별 물성 데이터 레퍼런스'},
+    {id:'sA-5',t:'A.5 Bare Board 실무 체크리스트'}
+  ]},
+  { id:'appendixB', title:'별첨 B. PBA Warpage', sections:[
+    {id:'sB-1',t:'B.1 PBA Warpage의 특수성'},
+    {id:'sB-2',t:'B.2 Reflow 단계별 거동 분석'},
+    {id:'sB-3',t:'B.3 부품 유형별 상호작용'},
+    {id:'sB-4',t:'B.4 PBA 시뮬레이션 고려사항'},
+    {id:'sB-5',t:'B.5 허용 기준 및 관리 전략'},
+    {id:'sB-6',t:'B.6 PBA 실무 체크리스트'}
+  ]},
+  { id:'appendixC', title:'별첨 C. 공식·용어·참고자료', sections:[
+    {id:'sC-1',t:'C.1 핵심 공식 모음'},
+    {id:'sC-2',t:'C.2 전문 용어 사전'},
+    {id:'sC-3',t:'C.3 추가 학습 참고 자료'}
+  ]}
+];
+
+// Build Navigation
+const navContainer = document.getElementById('navContainer');
+modules.forEach((mod, idx) => {
+  const div = document.createElement('div');
+  div.className = 'nav-module';
+  div.innerHTML = `
+    <button class="nav-module-title" data-idx="${idx}" onclick="toggleNav(this, '${mod.id}')">${mod.title}</button>
+    <div class="nav-sections" id="nav-sec-${idx}">
+      ${mod.sections.map(s => `<a class="nav-section-link" href="#${s.id}">${s.t}</a>`).join('')}
+    </div>
+  `;
+  navContainer.appendChild(div);
+});
+
+function toggleNav(btn, modId) {
+  const idx = btn.dataset.idx;
+  const sec = document.getElementById('nav-sec-' + idx);
+  const isOpen = sec.classList.contains('open');
+  // Close all
+  document.querySelectorAll('.nav-sections').forEach(s => s.classList.remove('open'));
+  document.querySelectorAll('.nav-module-title').forEach(b => b.classList.remove('active'));
+  if (!isOpen) {
+    sec.classList.add('open');
+    btn.classList.add('active');
+  }
+  document.getElementById(modId).scrollIntoView({behavior:'smooth'});
+  // Close mobile sidebar
+  document.getElementById('sidebar').classList.remove('open');
+}
+
+// Close sidebar on nav link click (mobile)
+document.querySelectorAll('.nav-section-link').forEach(link => {
+  link.addEventListener('click', () => {
+    document.getElementById('sidebar').classList.remove('open');
+  });
+});
+
+// Progress bar
+window.addEventListener('scroll', () => {
+  const h = document.documentElement;
+  const scrolled = h.scrollTop / (h.scrollHeight - h.clientHeight) * 100;
+  document.getElementById('progressFill').style.width = scrolled + '%';
+  // Back to top button
+  document.getElementById('backToTop').classList.toggle('show', h.scrollTop > 600);
+});
+
+// Section fade-in
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) e.target.classList.add('visible');
+  });
+}, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+
+document.querySelectorAll('.section').forEach(s => observer.observe(s));
+</script>
+</body>
+</html>
