@@ -3,15 +3,22 @@
 
 Supports both CVAE and DDPM (auto-detected from checkpoint).
 
-Metrics computed for the held-out design:
-  1. Sample Diversity     : mean per-pixel variance across K generated samples
-  2. Reconstruction MSE   : MSE of deterministic reconstruction (CVAE only)
-  3. MMD                  : Maximum Mean Discrepancy (RBF kernel) between
-                            generated and real elevation distributions
+Two-step validation:
+  Step 1 — Memorisation check (train split)
+    - Train Recon MSE : can the model reconstruct designs it has seen?
+    - Real Diversity  : how much do the real elevation samples vary? (baseline)
+
+  Step 2 — Generalisation check (val / held-out split)
+    - Val Recon MSE   : reconstruction on the held-out design (CVAE only)
+    - Active KL dims  : are latent dims being used? (CVAE only)
+    - Gen Diversity   : per-pixel variance across K generated samples
+    - MMD             : distance between generated and real distributions
 
 Usage:
-  python evaluate.py                       # evaluates all folds
+  python evaluate.py                       # evaluates all folds (both steps)
   python evaluate.py --fold 0              # evaluate only fold 0
+  python evaluate.py --step 1              # memorisation check only
+  python evaluate.py --step 2              # generalisation check only
   python evaluate.py --config config.txt   # explicit config path
 """
 
@@ -42,6 +49,8 @@ def parse_args():
                         help='Max samples to generate per GPU batch (reduces VRAM usage)')
     parser.add_argument('--cpu',    action='store_true',
                         help='Force CPU evaluation (avoids GPU usage entirely)')
+    parser.add_argument('--step',   type=int, default=None, choices=[1, 2],
+                        help='Run only step 1 (memorisation) or step 2 (generalisation)')
     return parser.parse_args()
 
 
@@ -99,6 +108,19 @@ def active_kl_dims(model, loader, device, threshold: float = 0.1) -> tuple[int, 
     mean_kl = kl_per_dim_acc / max(n_batches, 1)
     n_active = int((mean_kl > threshold).sum().item())
     return n_active, model.z_dim
+
+
+def real_diversity(samples: torch.Tensor) -> float:
+    """Mean per-pixel variance across real elevation samples.
+
+    Args:
+        samples: (N, D) flattened real elevations, or (N, 1, H, W)
+    Returns:
+        scalar
+    """
+    if samples.dim() == 4:
+        samples = samples.view(samples.size(0), -1)
+    return samples.float().var(dim=0).mean().item()
 
 
 def sample_diversity(samples: torch.Tensor) -> float:
@@ -186,11 +208,13 @@ def load_model_from_checkpoint(checkpoint: dict, config: dict, device: torch.dev
 
 @torch.no_grad()
 def evaluate_fold(config: dict, fold: int, k: int, device: torch.device,
-                  batch_size: int = None) -> dict:
+                  batch_size: int = None, step: int = None) -> dict:
     """Run evaluation for one leave-one-out fold.
 
     Args:
-        batch_size: Max samples per forward pass. If None, generate all K at once.
+        batch_size : Max samples per forward pass. If None, generate all K at once.
+        step       : 1 = memorisation check only, 2 = generalisation check only,
+                     None = both steps.
 
     Returns:
         dict of metric name -> value
@@ -200,14 +224,8 @@ def evaluate_fold(config: dict, fold: int, k: int, device: torch.device,
     print(f"Fold {fold}  --  held-out design: {design_names[fold]}")
     print('='*60)
 
-    # Override fold in config
     cfg = dict(config)
     cfg['val_fold'] = fold
-
-    # Load val dataset (the held-out design)
-    val_dataset = PCBWarpageDataset(
-        cfg['dataset_dir'], cfg, split='val', val_fold=fold)
-    val_loader  = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=0)
 
     # Load model checkpoint
     model_path = cfg.get('modelpath', './outputs/cvae_pcb.pth')
@@ -219,65 +237,123 @@ def evaluate_fold(config: dict, fold: int, k: int, device: torch.device,
     model, model_type = load_model_from_checkpoint(checkpoint, cfg, device)
     print(f"Loaded {model_type.upper()} checkpoint (epoch {checkpoint.get('epoch', '?')})")
 
-    # 1. Reconstruction MSE + active KL dims (CVAE only)
-    if model_type == 'cvae':
-        recon_mse = reconstruction_mse(model, val_loader, device)
-        print(f"  Reconstruction MSE : {recon_mse:.6f}")
-        n_active, z_dim = active_kl_dims(model, val_loader, device)
-        print(f"  Active KL dims     : {n_active}/{z_dim}  "
-              f"({'healthy' if n_active > z_dim // 4 else 'WARNING: possible posterior collapse'})")
-    else:
-        recon_mse = float('nan')
-        n_active  = None
-        print(f"  Reconstruction MSE : N/A (DDPM)")
+    result = {'fold': fold, 'design': design_names[fold]}
 
-    # 2. Collect real elevation images (flattened)
-    real_flat_list = []
-    design_batch   = None
-    hand_batch     = None
+    # ==================================================================
+    # Step 1 — Memorisation check (train split)
+    # ==================================================================
+    run_step1 = step in (None, 1)
+    train_recon_mse = float('nan')
 
-    for design, elevation, hand_features in val_loader:
-        real_flat_list.append(elevation.view(elevation.size(0), -1))
-        if design_batch is None:
-            design_batch = design[:1].to(device)
-            hand_batch   = hand_features[:1].to(device)
+    if run_step1:
+        print(f"\n[Step 1] Memorisation check — train split")
 
-    real_flat = torch.cat(real_flat_list, dim=0)  # (N_real, H*W)
+        train_dataset = PCBWarpageDataset(
+            cfg['dataset_dir'], cfg, split='train', val_fold=fold)
+        train_loader = DataLoader(
+            train_dataset, batch_size=32, shuffle=False, num_workers=0)
 
-    # 3. Generate K samples for the held-out design (batched to limit VRAM)
-    if batch_size and batch_size < k:
-        chunks = []
-        remaining = k
-        while remaining > 0:
-            n = min(batch_size, remaining)
-            chunks.append(model.sample(design_batch, hand_batch, num_samples=n))
-            remaining -= n
-        gen_samples = torch.cat(chunks, dim=0)  # (K, 1, H, W)
-    else:
-        gen_samples = model.sample(design_batch, hand_batch, num_samples=k)  # (K, 1, H, W)
+        if model_type == 'cvae':
+            train_recon_mse = reconstruction_mse(model, train_loader, device)
+            verdict = 'good' if train_recon_mse < 0.005 else 'high — model may be underfitting'
+            print(f"  Train Recon MSE  : {train_recon_mse:.6f}  ({verdict})")
+        else:
+            print(f"  Train Recon MSE  : N/A (DDPM)")
 
-    # 4. Diversity metric
-    diversity = sample_diversity(gen_samples)
-    print(f"  Sample Diversity   : {diversity:.6f}")
+        # Real sample diversity — baseline for comparison with generated diversity
+        real_train_list = []
+        for _, elevation, _ in train_loader:
+            real_train_list.append(elevation.view(elevation.size(0), -1))
+        real_train_flat = torch.cat(real_train_list, dim=0)
+        real_div = real_diversity(real_train_flat)
+        print(f"  Real Diversity   : {real_div:.6f}  "
+              f"(baseline — generated diversity should be in this ballpark)")
 
-    # 5. MMD (downsample feature space for tractability)
-    gen_flat = gen_samples.view(k, -1).cpu()
-    proj_dim = min(128, real_flat.size(1))
-    torch.manual_seed(42)
-    proj = torch.randn(real_flat.size(1), proj_dim) / (real_flat.size(1) ** 0.5)
-    real_proj = real_flat.cpu() @ proj
-    gen_proj  = gen_flat      @ proj
-    mmd_val   = mmd(real_proj, gen_proj)
-    print(f"  MMD                : {mmd_val:.6f}")
+        result['train_recon_mse'] = train_recon_mse
+        result['real_diversity']  = real_div
 
-    return {
-        'fold':        fold,
-        'design':      design_names[fold],
-        'recon_mse':   recon_mse,
-        'active_dims': n_active,
-        'diversity':   diversity,
-        'mmd':         mmd_val,
-    }
+    # ==================================================================
+    # Step 2 — Generalisation check (val / held-out split)
+    # ==================================================================
+    run_step2 = step in (None, 2)
+    val_recon_mse = float('nan')
+    n_active      = None
+    gen_diversity = float('nan')
+    mmd_val       = float('nan')
+
+    if run_step2:
+        print(f"\n[Step 2] Generalisation check — val split (held-out: {design_names[fold]})")
+
+        val_dataset = PCBWarpageDataset(
+            cfg['dataset_dir'], cfg, split='val', val_fold=fold)
+        val_loader  = DataLoader(
+            val_dataset, batch_size=32, shuffle=False, num_workers=0)
+
+        # 2a. Val reconstruction MSE + active KL dims (CVAE only)
+        if model_type == 'cvae':
+            val_recon_mse = reconstruction_mse(model, val_loader, device)
+            verdict = 'good' if val_recon_mse < 0.01 else 'high'
+            print(f"  Val Recon MSE    : {val_recon_mse:.6f}  ({verdict})")
+
+            n_active, z_dim = active_kl_dims(model, val_loader, device)
+            status = 'healthy' if n_active > z_dim // 4 else 'WARNING: possible posterior collapse'
+            print(f"  Active KL dims   : {n_active}/{z_dim}  ({status})")
+        else:
+            print(f"  Val Recon MSE    : N/A (DDPM)")
+
+        # 2b. Collect real val elevations
+        real_flat_list = []
+        design_batch   = None
+        hand_batch     = None
+
+        for design, elevation, hand_features in val_loader:
+            real_flat_list.append(elevation.view(elevation.size(0), -1))
+            if design_batch is None:
+                design_batch = design[:1].to(device)
+                hand_batch   = hand_features[:1].to(device)
+
+        real_flat = torch.cat(real_flat_list, dim=0)  # (N_real, H*W)
+
+        # 2c. Generate K samples (batched to limit VRAM)
+        if batch_size and batch_size < k:
+            chunks = []
+            remaining = k
+            while remaining > 0:
+                n = min(batch_size, remaining)
+                chunks.append(model.sample(design_batch, hand_batch, num_samples=n))
+                remaining -= n
+            gen_samples = torch.cat(chunks, dim=0)
+        else:
+            gen_samples = model.sample(design_batch, hand_batch, num_samples=k)
+
+        # 2d. Generated diversity
+        gen_diversity = sample_diversity(gen_samples)
+        real_val_div  = real_diversity(real_flat)
+        ratio = gen_diversity / real_val_div if real_val_div > 0 else float('nan')
+        print(f"  Real Diversity   : {real_val_div:.6f}  (val split baseline)")
+        print(f"  Gen  Diversity   : {gen_diversity:.6f}  "
+              f"(ratio vs real: {ratio:.2f}x  "
+              f"{'good' if 0.3 <= ratio <= 3.0 else 'low — try higher temperature'})")
+
+        # 2e. MMD
+        gen_flat = gen_samples.view(k, -1).cpu()
+        proj_dim = min(128, real_flat.size(1))
+        torch.manual_seed(42)
+        proj = torch.randn(real_flat.size(1), proj_dim) / (real_flat.size(1) ** 0.5)
+        real_proj = real_flat.cpu() @ proj
+        gen_proj  = gen_flat        @ proj
+        mmd_val   = mmd(real_proj, gen_proj)
+        print(f"  MMD              : {mmd_val:.6f}  "
+              f"({'good' if mmd_val < 0.1 else 'moderate' if mmd_val < 0.3 else 'high — distributions differ'})")
+
+        result.update({
+            'val_recon_mse': val_recon_mse,
+            'active_dims':   n_active,
+            'gen_diversity': gen_diversity,
+            'mmd':           mmd_val,
+        })
+
+    return result
 
 
 # ------------------------------------------------------------------
@@ -297,7 +373,8 @@ def main():
 
     all_results = []
     for fold in folds:
-        result = evaluate_fold(config, fold, k, device, batch_size=batch_size)
+        result = evaluate_fold(config, fold, k, device,
+                               batch_size=batch_size, step=args.step)
         if result:
             all_results.append(result)
 
@@ -305,17 +382,38 @@ def main():
         print(f"\n{'='*60}")
         print("Leave-One-Out Summary")
         print('='*60)
-        metrics = ['recon_mse', 'diversity', 'mmd']
-        for m in metrics:
-            vals = [r[m] for r in all_results if not (m == 'recon_mse' and np.isnan(r[m]))]
-            if vals:
-                print(f"  {m:<18} : mean={np.mean(vals):.6f}  std={np.std(vals):.6f}")
-            else:
-                print(f"  {m:<18} : N/A")
-        active_vals = [r['active_dims'] for r in all_results if r.get('active_dims') is not None]
-        if active_vals:
-            print(f"  {'active_kl_dims':<18} : mean={np.mean(active_vals):.1f}  "
-                  f"min={min(active_vals)}  max={max(active_vals)}")
+
+        step = args.step
+
+        # Step 1 summary
+        if step in (None, 1):
+            print("[Step 1 — Memorisation]")
+            for m, label in [('train_recon_mse', 'train_recon_mse'),
+                              ('real_diversity',  'real_diversity')]:
+                vals = [r[m] for r in all_results
+                        if m in r and not np.isnan(r[m])]
+                if vals:
+                    print(f"  {label:<20} : mean={np.mean(vals):.6f}  std={np.std(vals):.6f}")
+                else:
+                    print(f"  {label:<20} : N/A")
+
+        # Step 2 summary
+        if step in (None, 2):
+            print("[Step 2 — Generalisation]")
+            for m, label in [('val_recon_mse', 'val_recon_mse'),
+                              ('gen_diversity', 'gen_diversity'),
+                              ('mmd',           'mmd')]:
+                vals = [r[m] for r in all_results
+                        if m in r and not np.isnan(r[m])]
+                if vals:
+                    print(f"  {label:<20} : mean={np.mean(vals):.6f}  std={np.std(vals):.6f}")
+                else:
+                    print(f"  {label:<20} : N/A")
+            active_vals = [r['active_dims'] for r in all_results
+                           if r.get('active_dims') is not None]
+            if active_vals:
+                print(f"  {'active_kl_dims':<20} : mean={np.mean(active_vals):.1f}  "
+                      f"min={min(active_vals)}  max={max(active_vals)}")
 
 
 if __name__ == '__main__':
