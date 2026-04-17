@@ -254,6 +254,43 @@
   }
   .callout.loss-c strong { color: var(--loss); }
 
+  .callout.warn-c {
+    background: rgba(244,92,123,0.08);
+    border-left: 3px solid var(--latent);
+    color: var(--txt2);
+  }
+  .callout.warn-c strong { color: var(--latent); }
+
+  .callout.ok-c {
+    background: rgba(0,212,170,0.07);
+    border-left: 3px solid var(--design);
+    color: var(--txt2);
+  }
+  .callout.ok-c strong { color: var(--design); }
+
+  /* Metric table */
+  .metric-table {
+    width: 100%; border-collapse: collapse;
+    font-size: 12px; margin: 12px 0;
+  }
+  .metric-table th {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1px; color: var(--txt3);
+    padding: 8px 12px; border-bottom: 1px solid var(--brd);
+    text-align: left;
+  }
+  .metric-table td {
+    padding: 9px 12px; border-bottom: 1px solid var(--brd);
+    color: var(--txt2); vertical-align: top; line-height: 1.6;
+  }
+  .metric-table tr:last-child td { border-bottom: none; }
+  .metric-table .key-col {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: var(--txt); font-weight: 600;
+    white-space: nowrap;
+  }
+
   .callout.out-c {
     background: var(--out-d);
     border-left: 3px solid var(--out);
@@ -1595,6 +1632,312 @@
           다음 레이어가 "이 섞인 신호에서 어떤 것이 공간 패턴이고 어떤 것이 조건 정보인지"
           스스로 분리해야 하므로, 데이터가 적을 때 이 분리가 잘 되지 않습니다.
         </div>
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- ================================================================ -->
+  <!--              LOSS FUNCTION & TRAINING HYPERPARAMETERS             -->
+  <!-- ================================================================ -->
+  <div class="phase" style="margin-top: 72px;">
+    <span class="phase-tag" style="background: var(--loss-d); color: var(--loss);">Loss & 학습 하이퍼파라미터</span>
+    <div class="phase-line" style="background: linear-gradient(90deg, var(--loss-m), transparent);"></div>
+  </div>
+
+  <div class="step">
+    <div class="step-num" style="background: var(--loss-d); color: var(--loss);">β</div>
+    <div class="step-content" style="border-color: var(--loss-m);">
+      <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--loss);"></div>
+      <h3 style="color: var(--loss);">Loss 공식 — β와 free_bits의 역할</h3>
+      <span class="role" style="color: var(--loss);">CVAE 학습의 핵심 균형 파라미터</span>
+
+      <p class="desc">
+        CVAE의 총 loss는 두 항의 합입니다. 이 두 항은 서로 상충(trade-off)하며,
+        <strong style="color: var(--loss);">β</strong>와 <strong style="color: var(--film);">free_bits</strong>가 이 균형을 조절합니다.
+      </p>
+
+      <div class="eq" style="max-width: 620px; line-height: 2.4;">
+        <span class="l">Total Loss</span> = <span class="o">Recon Loss</span> + <span class="l">β</span> × <span class="z">KL Loss</span><br>
+        <span class="dim">────────────────────────────────────────────────────</span><br>
+        <span class="o">Recon</span> = MSE(<span class="o">x̂</span>, x) + spectral_weight × FFT_MSE(<span class="o">x̂</span>, x)<br>
+        <span class="z">KL</span> = −½ Σ<sub>j</sub> max( <span class="dim">free_bits</span>, 1 + logσ²<sub>j</sub> − μ<sub>j</sub>² − σ²<sub>j</sub> )
+      </div>
+
+      <!-- beta_max explanation -->
+      <div class="diagram" style="border-color: var(--loss-m);">
+        <div class="title" style="color: var(--loss);">β — Prior 정렬 강도 (beta_max로 제어)</div>
+
+        <div class="side-grid">
+          <div>
+            <p style="font-size: 13px; color: var(--txt2); line-height: 1.9; margin-bottom: 12px;">
+              β는 <strong style="color: var(--loss);">KL penalty의 가중치</strong>입니다.
+              KL Loss는 학습된 posterior q(z₁|x,c) = 𝒩(μ,σ²)가 prior p(z₁) = 𝒩(0,I)와 얼마나 다른지를 측정합니다.
+            </p>
+            <table class="metric-table">
+              <tr><th>β 값</th><th>효과</th></tr>
+              <tr>
+                <td class="key-col">β → 0</td>
+                <td>KL 페널티 없음. encoder가 posterior를 prior에서 자유롭게 멀어지게 학습. μ가 0에서 멀어지고 σ가 수축함.
+                  <strong style="color: var(--latent);">→ 추론 시 z~𝒩(0,I) 샘플이 out-of-distribution</strong></td>
+              </tr>
+              <tr>
+                <td class="key-col">β = 1</td>
+                <td>표준 VAE. Recon과 KL이 동등한 비중. μ≈0, σ≈1로 수렴하는 강한 압력.</td>
+              </tr>
+              <tr>
+                <td class="key-col">β &gt; 1</td>
+                <td>β-VAE. KL이 더 강조됨. posterior가 prior에 매우 가깝지만 recon 품질 저하 가능.</td>
+              </tr>
+            </table>
+          </div>
+
+          <div>
+            <div class="diagram" style="background: var(--bg); border-color: var(--brd); padding: 16px;">
+              <div class="title">Cyclical Annealing 스케줄 (현재 설정)</div>
+              <div class="num-example">
+<span class="comment"># config.txt 기본값</span>
+beta_max     = 0.2
+beta_cycles  = 4
+epochs       = 200
+
+<span class="comment"># 한 사이클 = 50 epoch</span>
+<span class="comment"># epoch 0  → β = 0.00</span>
+<span class="comment"># epoch 25 → β = 0.10</span>
+<span class="comment"># epoch 49 → β = 0.196</span>
+<span class="comment"># epoch 50 → β = 0.00 (리셋)</span>
+              </div>
+              <div style="font-size: 11px; color: var(--txt3); line-height: 1.7;">
+                사이클마다 β를 0으로 리셋하는 이유: 초반엔 recon을 먼저 학습하고, 이후 KL regularization을 강화하는 전략.
+                posterior collapse(KL→0)를 방지하는 효과도 있음.
+              </div>
+            </div>
+
+            <div class="callout warn-c" style="margin-top: 8px;">
+              <strong>beta_max=0.2 문제:</strong><br>
+              KL 당기는 힘이 약해서 μ가 0에서 멀리 drift함.
+              진단 결과 평균 |μ|=0.56, 최대 |μ|=3.67까지 관측됨.
+              <strong>권장: beta_max를 1.0으로 올리기.</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- free_bits explanation -->
+      <div class="diagram" style="border-color: var(--film-m); margin-top: 16px;">
+        <div class="title" style="color: var(--film);">free_bits — Posterior Collapse 방지 하한선</div>
+
+        <p style="font-size: 13px; color: var(--txt2); line-height: 1.9; margin-bottom: 12px;">
+          <strong style="color: var(--film);">free_bits</strong>는 각 latent 차원마다 KL의 최솟값을 보장하는 하한선입니다.
+          posterior collapse — decoder가 z₁을 완전히 무시하고 조건 c만으로 출력을 결정하는 현상 — 를 방지합니다.
+        </p>
+
+        <div class="eq" style="max-width: 560px; text-align: left; line-height: 2.2;">
+          <span class="dim"># 차원 j의 KL이 free_bits 미만이면 강제로 올림</span><br>
+          <span class="f">KL_j_effective</span> = max( <span class="f">free_bits</span>, <span class="z">KL_j_raw</span> )<br>
+          <span class="dim"># Loss에 쓰이는 KL = Σ_j KL_j_effective</span>
+        </div>
+
+        <div class="side-grid" style="margin-top: 12px;">
+          <div style="background: var(--film-d); border: 1px solid var(--film-m); border-radius: 10px; padding: 16px;">
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--film); font-weight: 700; margin-bottom: 10px;">free_bits가 없으면 (=0)</div>
+            <div style="font-size: 12px; color: var(--txt2); line-height: 1.9;">
+              일부 차원의 KL이 0으로 수렴 가능<br>
+              → posterior가 prior와 완전히 같아짐<br>
+              → decoder가 해당 차원의 z₁ 정보 무시<br>
+              → <strong>posterior collapse</strong>
+            </div>
+          </div>
+          <div style="background: var(--design-d); border: 1px solid var(--design-m); border-radius: 10px; padding: 16px;">
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--design); font-weight: 700; margin-bottom: 10px;">free_bits=0.5이면</div>
+            <div style="font-size: 12px; color: var(--txt2); line-height: 1.9;">
+              각 차원이 최소 0.5 nats의 KL 유지<br>
+              → encoder가 z₁에 항상 정보를 담음<br>
+              → active_kl_dims가 높게 유지됨<br>
+              → <strong>모든 64차원이 활성 상태</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- tension explanation -->
+        <div class="callout film-c" style="margin-top: 16px;">
+          <strong>β와 free_bits의 상충 관계:</strong><br><br>
+          두 파라미터는 <strong>서로 반대 방향</strong>으로 작용합니다.<br><br>
+          <span style="color: var(--loss);">β (beta_max) ↑</span> &nbsp;→ posterior를 prior 𝒩(0,I)에 가깝게 <strong>당기는</strong> 힘<br>
+          <span style="color: var(--film);">free_bits ↑</span> &nbsp;&nbsp;&nbsp;→ posterior가 prior에 너무 가까워지는 걸 <strong>막는</strong> 힘<br><br>
+          현재 <code style="font-family:'JetBrains Mono',monospace; font-size:11px;">beta_max=0.2, free_bits=0.5</code> 조합의 문제:<br>
+          당기는 힘(β=0.2)이 약한데 막는 힘(free_bits=0.5)이 상대적으로 강함.
+          결과적으로 encoder는 prior에서 멀어도 페널티가 작고, z₁에 정보는 담아야 하므로 μ를 크게 유지하는 방향으로 학습됨.<br><br>
+          <strong>권장 조합: beta_max=1.0, free_bits=0.1</strong><br>
+          당기는 힘을 강화하고 막는 힘을 줄여 μ≈0, σ≈1 수렴을 유도.
+        </div>
+
+        <!-- Healthy vs unhealthy -->
+        <div class="side-grid" style="margin-top: 12px;">
+          <div class="callout ok-c">
+            <strong>건강한 posterior 기준</strong><br>
+            평균 |μ| &lt; 0.2<br>
+            평균 σ ∈ [0.85, 1.1]<br>
+            active_kl_dims &gt; z_dim × 0.25<br>
+            총 KL ∈ [z_dim × 0.3, z_dim × 1.0] nats
+          </div>
+          <div class="callout warn-c">
+            <strong>문제 징후</strong><br>
+            평균 |μ| &gt; 0.5 → prior 불일치<br>
+            평균 σ &lt; 0.5 → posterior 너무 좁음<br>
+            active_dims &lt; z_dim × 0.25 → collapse<br>
+            Gen Std가 fold마다 동일 → decoder가 z₁ 무시
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================================================================ -->
+  <!--              PRIOR-POSTERIOR MISMATCH DIAGNOSIS                   -->
+  <!-- ================================================================ -->
+  <div class="phase" style="margin-top: 72px;">
+    <span class="phase-tag" style="background: var(--latent-d); color: var(--latent);">Prior-Posterior 불일치 진단</span>
+    <div class="phase-line" style="background: linear-gradient(90deg, var(--latent-m), transparent);"></div>
+  </div>
+
+  <div class="step">
+    <div class="step-num" style="background: var(--latent-d); color: var(--latent);">D</div>
+    <div class="step-content" style="border-color: var(--latent-m);">
+      <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--latent);"></div>
+      <h3 style="color: var(--latent);">추론 시 발생하는 Prior-Posterior 불일치</h3>
+      <span class="role" style="color: var(--latent);">학습과 추론 사이의 z₁ 분포 차이</span>
+
+      <p class="desc">
+        CVAE는 학습 시와 추론 시 z₁을 서로 다른 분포에서 샘플링합니다.
+        β가 충분히 크지 않으면 두 분포 사이에 큰 gap이 생겨, 생성 품질이 크게 저하됩니다.
+      </p>
+
+      <!-- Training vs Inference z1 sampling -->
+      <div class="diagram" style="border-color: var(--brd-light);">
+        <div class="title">학습 vs 추론: z₁ 샘플링 경로 비교</div>
+
+        <div class="side-grid">
+          <div style="background: var(--elev-d); border: 1px solid var(--elev-m); border-radius: 10px; padding: 16px;">
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--elev); font-weight: 700; margin-bottom: 10px;">학습 시 — Posterior Sampling</div>
+            <div class="node-row" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+              <div style="font-size: 12px; color: var(--txt2); line-height: 1.9;">
+                실제 elevation x → Elevation Encoder → (μ, σ)<br>
+                z₁ = μ + ε·σ &nbsp; <span style="color: var(--txt3);">(ε ~ 𝒩(0,I))</span><br><br>
+                z₁의 분포 = <strong style="color: var(--elev);">q(z₁|x,c) = 𝒩(μ, σ²)</strong><br>
+                β가 낮으면 μ≠0, σ≠1인 채로 학습됨
+              </div>
+            </div>
+          </div>
+          <div style="background: var(--out-d); border: 1px solid var(--out-m); border-radius: 10px; padding: 16px;">
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--out); font-weight: 700; margin-bottom: 10px;">추론 시 — Prior Sampling</div>
+            <div style="font-size: 12px; color: var(--txt2); line-height: 1.9;">
+              Elevation Encoder 사용 안 함<br>
+              z₁ ~ <strong style="color: var(--out);">𝒩(0, I)</strong> 에서 직접 샘플링<br><br>
+              decoder는 학습 때 본 적 없는<br>
+              <strong style="color: var(--latent);">out-of-distribution z₁</strong>을 받게 됨<br>
+              → 비현실적 출력, 낮은 diversity
+            </div>
+          </div>
+        </div>
+
+        <div style="text-align: center; margin: 16px 0 8px;">
+          <div style="display: inline-block; background: var(--bg); border: 1px solid var(--brd); border-radius: 10px; padding: 14px 28px; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 2;">
+            <span style="color: var(--txt3);">이상적:</span> &nbsp;
+            <span style="color: var(--elev);">q(z₁|x,c)</span>
+            <span style="color: var(--txt3);"> ≈ </span>
+            <span style="color: var(--out);">p(z₁) = 𝒩(0,I)</span>
+            &nbsp; <span style="color: var(--txt3);">→ KL Loss → 0</span><br>
+            <span style="color: var(--txt3);">실현 방법: β를 충분히 크게 → μ→0, σ→1 수렴 압력</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Diagnostic checklist -->
+      <div class="diagram" style="border-color: var(--film-m); margin-top: 16px;">
+        <div class="title" style="color: var(--film);">진단 체크리스트 — debug.py 3단계</div>
+
+        <table class="metric-table">
+          <tr>
+            <th>Check</th>
+            <th>확인하는 것</th>
+            <th>통과 기준</th>
+            <th>실패 시 의미</th>
+          </tr>
+          <tr>
+            <td class="key-col">Check 1<br><span style="color:var(--txt3);font-weight:400;">z1 sensitivity</span></td>
+            <td>z₁=0 vs z₁~𝒩(0,I) 출력 평균 픽셀 차이</td>
+            <td>차이 &gt; 0.01</td>
+            <td>decoder가 z₁을 무시함. beta_max 올리기 + fusion_method=concat 시도</td>
+          </tr>
+          <tr>
+            <td class="key-col">Check 2<br><span style="color:var(--txt3);font-weight:400;">prior output range</span></td>
+            <td>z~𝒩(0,I)로 생성된 샘플의 픽셀 평균값</td>
+            <td>출력 평균 ∈ [0.1, 0.9]</td>
+            <td>prior 불일치. z가 out-of-distribution으로 샘플링됨</td>
+          </tr>
+          <tr>
+            <td class="key-col">Check 3<br><span style="color:var(--txt3);font-weight:400;">posterior stats</span></td>
+            <td>학습 데이터 전체에 걸친 μ, σ 통계</td>
+            <td>평균 |μ| &lt; 0.2<br>평균 σ ∈ [0.8, 1.1]</td>
+            <td>prior-posterior mismatch. beta_max 올리고 free_bits 줄이기</td>
+          </tr>
+        </table>
+
+        <!-- Actual observed values callout -->
+        <div class="callout warn-c" style="margin-top: 12px;">
+          <strong>실제 관측값 (beta_max=0.2, free_bits=0.5, 200 epoch):</strong><br>
+          평균 |μ| = <strong>0.5635</strong> (기준 &lt;0.2 → 초과),&nbsp;
+          최대 |μ| = <strong>3.6719</strong> (일부 차원 심각하게 drift)<br>
+          평균 σ = <strong>0.7228</strong> (기준 ~1.0 → 작음),&nbsp;
+          최솟값 σ = <strong>0.1557</strong> (일부 차원 매우 좁음)<br>
+          총 KL = 21.60 nats, 차원당 평균 = 0.3376 nats<br><br>
+          <strong>결론:</strong> posterior가 prior에서 멀리 떨어져 있어 추론 시 z~𝒩(0,I) 샘플이 out-of-distribution.
+          Gen Std가 fold마다 거의 동일하게 나오는 현상의 근본 원인.
+        </div>
+
+        <div class="callout ok-c" style="margin-top: 8px;">
+          <strong>목표값 (beta_max=1.0, free_bits=0.1 재학습 후):</strong><br>
+          평균 |μ| &lt; 0.2,&nbsp; 평균 σ ∈ [0.85, 1.05]<br>
+          Gen Diversity / Real Diversity 비율 ∈ [0.3×, 3.0×]<br>
+          MMD &lt; 0.1 (fold 평균),&nbsp; Gen Std 패턴이 fold마다 달라짐
+        </div>
+      </div>
+
+      <!-- What each symptom means -->
+      <div class="diagram" style="border-color: var(--decode-m); margin-top: 16px;">
+        <div class="title" style="color: var(--decode);">증상별 원인 맵</div>
+
+        <table class="metric-table">
+          <tr><th>관측 증상</th><th>원인</th><th>해결책</th></tr>
+          <tr>
+            <td class="key-col">Gen Diversity 낮음</td>
+            <td>z~𝒩(0,I)가 decoder에 out-of-distribution으로 들어와 항상 비슷한 "안전한" 출력으로 수렴</td>
+            <td>beta_max ↑ → μ→0 수렴 → prior 샘플이 정상 범위로</td>
+          </tr>
+          <tr>
+            <td class="key-col">Gen Std가 fold마다 동일</td>
+            <td>posterior가 prior에서 멀어서 z₁의 다양성이 설계별 c 효과를 압도하지 못함</td>
+            <td>beta_max ↑ + free_bits ↓</td>
+          </tr>
+          <tr>
+            <td class="key-col">MMD 높음</td>
+            <td>생성 분포의 mean shift 또는 spread 불일치. prior-posterior gap이 주 원인</td>
+            <td>beta_max ↑ → prior 정렬 → 분포 overlap 향상</td>
+          </tr>
+          <tr>
+            <td class="key-col">Recon MSE는 낮음</td>
+            <td>decoder가 암기는 잘 함. 문제는 추론 시 z₁ 분포 불일치이지 모델 용량 부족이 아님</td>
+            <td>beta_max ↑ → recon이 약간 올라가는 것은 정상</td>
+          </tr>
+          <tr>
+            <td class="key-col">Active KL dims 높음 (59.9/64)</td>
+            <td>encoder는 z₁에 정보를 담음. 문제는 담긴 위치(μ≠0)가 prior와 달라서 추론 시 접근 불가</td>
+            <td>beta_max ↑ → μ→0으로 수렴하면 같은 정보를 prior-compatible 위치에 담음</td>
+          </tr>
+        </table>
       </div>
 
     </div>
