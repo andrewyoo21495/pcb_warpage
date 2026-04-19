@@ -1945,5 +1945,175 @@ epochs       = 200
 
 </div>
 
+<!-- =====================================================================
+     APPENDIX: MMD
+     ===================================================================== -->
+<div class="wrap" style="margin-top: 80px;">
+
+  <div class="phase">
+    <div class="phase-tag" style="background: var(--out-d); color: var(--out); border: 1px solid var(--out-m);">Appendix</div>
+    <div class="phase-line" style="background: var(--out-m);"></div>
+    <div style="font-size: 13px; color: var(--txt3); white-space: nowrap;">MMD — Maximum Mean Discrepancy</div>
+  </div>
+
+  <div class="diagram" style="border-color: var(--out-m);">
+    <div class="title" style="color: var(--out);">MMD (Maximum Mean Discrepancy) 이란?</div>
+
+    <p style="color: var(--txt2); font-size: 14px; line-height: 1.8; margin-bottom: 20px;">
+      두 분포 <strong style="color: var(--out);">P</strong> (실제 데이터)와 <strong style="color: var(--latent);">Q</strong> (모델 생성)가 얼마나 다른지를 측정하는 거리 지표.
+      값이 0이면 두 분포가 완전히 같고, 클수록 분포 간 차이가 크다.
+    </p>
+
+    <!-- Intuition -->
+    <div class="side-grid" style="margin-bottom: 20px;">
+      <div style="background: var(--out-d); border: 1px solid var(--out-m); border-radius: 10px; padding: 16px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--out); font-weight: 700; margin-bottom: 10px;">직관적 설명</div>
+        <div style="font-size: 13px; color: var(--txt2); line-height: 1.9;">
+          실제 샘플 집합과 생성 샘플 집합을<br>
+          커널 함수를 통해 고차원 공간으로 임베딩한 뒤,<br>
+          두 집합의 <strong style="color: var(--out);">평균 임베딩 벡터 간 거리</strong>를 측정.<br><br>
+          "두 분포에서 뽑은 샘플들이<br>
+          통계적으로 구별 가능한가?"에 대한 답.
+        </div>
+      </div>
+      <div style="background: var(--surf2); border: 1px solid var(--brd); border-radius: 10px; padding: 16px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--txt2); font-weight: 700; margin-bottom: 10px;">수식 (개념)</div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--txt2); line-height: 2.1;">
+          MMD² =<br>
+          &nbsp;&nbsp;<span style="color: var(--out);">E[k(x, x')]</span><br>
+          &nbsp;&nbsp;− 2·<span style="color: var(--film);">E[k(x, ŷ)]</span><br>
+          &nbsp;&nbsp;+ <span style="color: var(--latent);">E[k(ŷ, ŷ')]</span><br><br>
+          <span style="color: var(--txt3);">k(·,·) = RBF / Gaussian kernel</span><br>
+          <span style="color: var(--txt3);">x ~ P(real),&nbsp; ŷ ~ Q(generated)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Term-by-term explanation -->
+    <table class="metric-table" style="margin-bottom: 20px;">
+      <tr><th>항</th><th>의미</th><th>값이 크면</th></tr>
+      <tr>
+        <td class="key-col" style="color: var(--out);">E[k(x, x')]</td>
+        <td>실제 샘플끼리의 유사도 평균</td>
+        <td>실제 분포가 응집되어 있음</td>
+      </tr>
+      <tr>
+        <td class="key-col" style="color: var(--film);">E[k(x, ŷ)]</td>
+        <td>실제 ↔ 생성 샘플 간 유사도 평균</td>
+        <td>두 분포가 많이 겹침 → MMD ↓</td>
+      </tr>
+      <tr>
+        <td class="key-col" style="color: var(--latent);">E[k(ŷ, ŷ')]</td>
+        <td>생성 샘플끼리의 유사도 평균</td>
+        <td>생성 분포가 응집되어 있음</td>
+      </tr>
+    </table>
+
+    <!-- This project context -->
+    <div class="diagram" style="border-color: var(--film-m); margin-top: 0;">
+      <div class="title" style="color: var(--film);">이 프로젝트에서의 의미</div>
+      <p style="color: var(--txt2); font-size: 13px; line-height: 1.8; margin-bottom: 14px;">
+        Leave-one-out 평가에서 각 폴드(held-out design)마다 MMD를 계산.
+        실제 elevation 샘플 분포와 모델이 해당 design으로부터 생성한 샘플 분포를 비교.
+      </p>
+      <table class="metric-table">
+        <tr><th>관측값</th><th>해석</th></tr>
+        <tr>
+          <td class="key-col">MMD 낮음 (&lt;0.05)</td>
+          <td>생성 분포가 실제 분포를 잘 커버함 — 이상적 상태</td>
+        </tr>
+        <tr>
+          <td class="key-col">MMD 높음 (≥0.15)</td>
+          <td>생성 샘플이 실제와 다른 영역에 몰려 있음. prior-posterior mismatch 또는 diversity 부족이 주 원인</td>
+        </tr>
+        <tr>
+          <td class="key-col">MMD std 큼</td>
+          <td>일부 design에는 잘 맞고 일부에는 완전히 틀림 → 특정 design 유형에 대한 일반화 불안정</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Diversity collapse connection -->
+    <div class="diagram" style="border-color: var(--latent-m); margin-top: 16px;">
+      <div class="title" style="color: var(--latent);">Diversity Collapse와 MMD의 관계</div>
+      <p style="color: var(--txt2); font-size: 13px; line-height: 1.8; margin-bottom: 14px;">
+        현재 모델의 핵심 문제: <strong style="color: var(--latent);">모델이 "mean predictor"는 되었지만 "generator"가 아닌 상태.</strong><br>
+        주어진 design의 평균적인 elevation은 잘 재현하지만, z를 바꿔 샘플링해도 거의 같은 출력이 나옴.
+      </p>
+      <table class="metric-table" style="margin-bottom: 14px;">
+        <tr><th>지표</th><th>현재 관측값</th><th>목표값</th><th>의미</th></tr>
+        <tr>
+          <td class="key-col">gen_diversity</td>
+          <td style="color: var(--latent);">0.000780</td>
+          <td style="color: var(--design);">real_diversity의 30~300%</td>
+          <td>생성 샘플이 실제의 12% 다양성밖에 없음</td>
+        </tr>
+        <tr>
+          <td class="key-col">active_kl_dims</td>
+          <td style="color: var(--latent);">mean 5.7 / 64</td>
+          <td style="color: var(--design);">≥ 15</td>
+          <td>64차원 중 ~58개가 사실상 unused</td>
+        </tr>
+        <tr>
+          <td class="key-col">MMD</td>
+          <td style="color: var(--latent);">0.195 ± 0.135</td>
+          <td style="color: var(--design);">&lt; 0.10</td>
+          <td>생성 분포가 실제 분포에서 멀리 떨어짐</td>
+        </tr>
+      </table>
+      <div class="callout warn-c">
+        <strong>Diversity Collapse → MMD 상승 메커니즘:</strong><br>
+        active z 차원 부족 → 생성 샘플들이 비슷한 위치에 몰림 → E[k(ŷ,ŷ')] 매우 큼<br>
+        → 실제 분포는 넓게 퍼져 있는데 생성 분포는 한 점 근처에 집중 → MMD ↑
+      </div>
+    </div>
+
+    <!-- Fix strategies -->
+    <div class="diagram" style="border-color: var(--design-m); margin-top: 16px;">
+      <div class="title" style="color: var(--design);">Diversity &amp; MMD 개선 전략</div>
+      <table class="metric-table">
+        <tr><th>전략</th><th>방법</th><th>기대 효과</th><th>주의점</th></tr>
+        <tr>
+          <td class="key-col">① beta 줄이기</td>
+          <td>beta_max = 0.3 ~ 0.4</td>
+          <td>KL penalty 완화 → 더 많은 z 차원 활성화 → diversity ↑</td>
+          <td>너무 낮으면 prior-posterior gap 재발</td>
+        </tr>
+        <tr>
+          <td class="key-col">② free_bits 올리기</td>
+          <td>free_bits = 0.5 ~ 1.0<br><span style="color:var(--txt3);font-size:11px;">64차원 × 0.5 = 최소 KL 32 nats</span></td>
+          <td>각 차원에 최소 정보량 보장 → collapse 방지</td>
+          <td>너무 높으면 recon에 집중 못 함</td>
+        </tr>
+        <tr>
+          <td class="key-col">③ z_dim 줄이기</td>
+          <td>z_dim = 16 ~ 32</td>
+          <td>작은 병목 → 각 차원이 더 의미 있게 사용됨</td>
+          <td>표현력 손실 가능성</td>
+        </tr>
+        <tr>
+          <td class="key-col">④ Cyclical Annealing 조정</td>
+          <td>사이클 수 ↑ (4→8), 각 사이클 내 상승 비율 ↓</td>
+          <td>recon → KL 전환을 더 자주, 더 부드럽게</td>
+          <td>학습 불안정 가능성</td>
+        </tr>
+        <tr>
+          <td class="key-col">⑤ InfoVAE / MMD-VAE</td>
+          <td>KL term을 MMD term으로 교체</td>
+          <td>직접 분포 정렬 → prior-posterior gap 제거</td>
+          <td>구현 변경 필요, hyperparameter 민감</td>
+        </tr>
+      </table>
+      <div class="callout ok-c" style="margin-top: 12px;">
+        <strong>권장 우선순위:</strong><br>
+        ① + ② 조합을 먼저 시도 (beta_max=0.35, free_bits=0.5).<br>
+        active_kl_dims가 mean ≥ 15개로 올라오면 gen_diversity와 MMD도 자연히 개선됨.<br>
+        그래도 안 되면 ③ (z_dim 축소)을 고려.
+      </div>
+    </div>
+
+  </div>
+</div>
+
 </body>
 </html>
