@@ -207,6 +207,10 @@ def plot_sample_grid(real_tensor, gen_tensor, design_name, save_path, show,
     """
     Top rows   : up to n_per_row real samples
     Bottom rows: up to n_per_row generated samples
+
+    For non-grayscale cmaps, vmin/vmax are derived from the actual data range
+    shared across real and gen, so the full colormap is utilised and both rows
+    remain on the same scale for direct comparison.
     """
     real = real_tensor.squeeze(1).numpy()
     gen  = gen_tensor.squeeze(1).numpy()
@@ -215,6 +219,15 @@ def plot_sample_grid(real_tensor, gen_tensor, design_name, save_path, show,
     n_gen  = min(n_per_row, gen.shape[0])
     n_cols = max(n_real, n_gen)
 
+    # For colour maps, use the shared data range so real and gen are comparable.
+    # For grayscale, keep the fixed [0, 1] normalised range.
+    if cmap == 'gray':
+        vmin, vmax = 0.0, 1.0
+    else:
+        all_data = np.concatenate([real[:n_real], gen[:n_gen]], axis=0)
+        vmin = float(all_data.min())
+        vmax = float(all_data.max())
+
     fig, axes = plt.subplots(2, n_cols, figsize=(2.2 * n_cols, 5))
     fig.suptitle(f"Sample grid — {design_name}", fontsize=13)
 
@@ -222,7 +235,7 @@ def plot_sample_grid(real_tensor, gen_tensor, design_name, save_path, show,
         # Real row
         ax_r = axes[0, col]
         if col < n_real:
-            ax_r.imshow(real[col], cmap=cmap, vmin=0, vmax=1)
+            ax_r.imshow(real[col], cmap=cmap, vmin=vmin, vmax=vmax)
             ax_r.set_title(f'Real {col+1}', fontsize=7)
         else:
             ax_r.axis('off')
@@ -231,7 +244,7 @@ def plot_sample_grid(real_tensor, gen_tensor, design_name, save_path, show,
         # Gen row
         ax_g = axes[1, col]
         if col < n_gen:
-            ax_g.imshow(gen[col], cmap=cmap, vmin=0, vmax=1)
+            ax_g.imshow(gen[col], cmap=cmap, vmin=vmin, vmax=vmax)
             ax_g.set_title(f'Gen {col+1}', fontsize=7)
         else:
             ax_g.axis('off')
@@ -388,7 +401,7 @@ def evaluate_fold(config, fold, model, k, temperature, save_dir, show, grid_n,
                      n_per_row=grid_n)
     plot_sample_grid(real_tensor, gen_tensor, design_name,
                      save_path=str(out / 'B_sample_grid_color.png'), show=show,
-                     n_per_row=grid_n, cmap='RdYlBu_r')
+                     n_per_row=grid_n, cmap='jet')
 
     # ---- Panel C: Histogram ----
     print("  Plotting Panel C: Pixel histogram ...")
