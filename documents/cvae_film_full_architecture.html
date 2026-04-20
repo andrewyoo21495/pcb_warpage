@@ -2115,5 +2115,149 @@ epochs       = 200
   </div>
 </div>
 
+<!-- =====================================================================
+     APPENDIX: beta_cycles — Cyclical KL Annealing
+     ===================================================================== -->
+<div class="wrap" style="margin-top: 80px;">
+
+  <div class="phase">
+    <div class="phase-tag" style="background: var(--loss-d); color: var(--loss); border: 1px solid var(--loss-m);">Appendix</div>
+    <div class="phase-line" style="background: var(--loss-m);"></div>
+    <div style="font-size: 13px; color: var(--txt3); white-space: nowrap;">beta_cycles — Cyclical KL Annealing</div>
+  </div>
+
+  <div class="diagram" style="border-color: var(--loss-m);">
+    <div class="title" style="color: var(--loss);">beta_cycles 란?</div>
+
+    <p style="color: var(--txt2); font-size: 14px; line-height: 1.8; margin-bottom: 20px;">
+      학습 전체 epoch을 N개의 사이클로 나누고, 각 사이클마다 β를 <strong style="color: var(--loss);">0 → beta_max</strong>로 선형 증가시킨 뒤
+      다음 사이클 시작 시 다시 0으로 리셋하는 스케줄.
+      단순히 "beta를 서서히 올린다"보다 더 많은 latent 차원을 활성화할 수 있다.
+    </p>
+
+    <!-- Schedule visualization -->
+    <div class="diagram" style="border-color: var(--brd); background: var(--bg); margin-bottom: 16px;">
+      <div class="title" style="color: var(--txt2);">스케줄 시각화 (200 epoch, beta_cycles=4, beta_max=0.4)</div>
+      <div class="num-example">
+<span class="comment"># cycle_len = 200 / 4 = 50 epoch</span>
+<span class="comment"># get_cyclical_beta(epoch, total=200, beta_max=0.4, n_cycles=4)</span>
+
+epoch   0 → 49 :  β  0.00 → 0.40   <span class="comment"># 1번째 사이클</span>
+epoch  50 → 99 :  β  0.00 → 0.40   <span class="comment"># 2번째 사이클 (리셋)</span>
+epoch 100 → 149:  β  0.00 → 0.40   <span class="comment"># 3번째 사이클 (리셋)</span>
+epoch 150 → 199:  β  0.00 → 0.40   <span class="comment"># 4번째 사이클 (리셋)</span>
+      </div>
+    </div>
+
+    <!-- Two-phase explanation -->
+    <div class="side-grid" style="margin-bottom: 20px;">
+      <div style="background: var(--elev-d); border: 1px solid var(--elev-m); border-radius: 10px; padding: 16px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--elev); font-weight: 700; margin-bottom: 10px;">사이클 초반 — β ≈ 0 구간</div>
+        <div style="font-size: 13px; color: var(--txt2); line-height: 1.9;">
+          KL penalty 없음<br>
+          → 모델이 z에 자유롭게 정보를 담음<br>
+          → 새로운 latent 차원들이 <strong style="color: var(--elev);">활성화</strong>되는 기회<br>
+          → reconstruction 품질이 먼저 올라감
+        </div>
+      </div>
+      <div style="background: var(--loss-d); border: 1px solid var(--loss-m); border-radius: 10px; padding: 16px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--loss); font-weight: 700; margin-bottom: 10px;">사이클 후반 — β → beta_max 구간</div>
+        <div style="font-size: 13px; color: var(--txt2); line-height: 1.9;">
+          KL penalty 강해짐<br>
+          → 활성화된 z를 prior에 <strong style="color: var(--loss);">정렬</strong><br>
+          → μ → 0, σ → 1 방향으로 수렴<br>
+          → prior-posterior gap 감소
+        </div>
+      </div>
+    </div>
+
+    <!-- Why reset helps -->
+    <div class="diagram" style="border-color: var(--design-m); margin-bottom: 16px;">
+      <div class="title" style="color: var(--design);">왜 리셋이 도움이 되는가</div>
+      <p style="color: var(--txt2); font-size: 13px; line-height: 1.8; margin-bottom: 12px;">
+        단순히 β를 0에서 1까지 한 번만 올리면 (1 사이클), 한 번의 기회에 활성화된 차원들만 살아남고 나머지는 영구적으로 collapse.<br>
+        사이클마다 리셋하면, <strong style="color: var(--design);">매 사이클 초반마다 새로운 차원이 활성화될 기회</strong>를 얻고,
+        이전 사이클에서 정렬된 차원 위에 추가로 쌓이는 형태로 학습이 진행됨.
+      </p>
+      <table class="metric-table">
+        <tr><th>사이클 수</th><th>동작</th><th>기대 효과</th></tr>
+        <tr>
+          <td class="key-col">1 (단순 annealing)</td>
+          <td>β 0 → max 한 번</td>
+          <td>초반에 활성화된 소수 차원만 살아남음</td>
+        </tr>
+        <tr>
+          <td class="key-col">4 (현재)</td>
+          <td>50 epoch 주기로 리셋</td>
+          <td>매 사이클마다 추가 차원 활성화 기회</td>
+        </tr>
+        <tr>
+          <td class="key-col">6 (권장)</td>
+          <td>33 epoch 주기로 리셋</td>
+          <td>더 잦은 활성화 기회 → active dims 증가</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Relationship with free_bits -->
+    <div class="diagram" style="border-color: var(--film-m); margin-bottom: 16px;">
+      <div class="title" style="color: var(--film);">beta_cycles vs free_bits — 역할 비교</div>
+      <p style="color: var(--txt2); font-size: 13px; line-height: 1.8; margin-bottom: 12px;">
+        두 파라미터 모두 posterior collapse 방지를 목표로 하지만 작동 방식이 다르다.
+      </p>
+      <table class="metric-table">
+        <tr><th>파라미터</th><th>작동 방식</th><th>한계</th></tr>
+        <tr>
+          <td class="key-col" style="color: var(--loss);">beta_cycles</td>
+          <td>학습 스케줄 조정 — 리셋마다 새 차원이 활성화될 기회 부여</td>
+          <td>free_bits 천장이 낮으면 리셋해도 결국 같은 차원 수에 수렴</td>
+        </tr>
+        <tr>
+          <td class="key-col" style="color: var(--film);">free_bits</td>
+          <td>각 차원의 최소 KL 보장 — 차원당 최소 정보량 강제</td>
+          <td>너무 높으면 reconstruction 품질 저하</td>
+        </tr>
+      </table>
+      <div class="callout warn-c" style="margin-top: 12px;">
+        <strong>현재 문제 (free_bits=0.1, z_dim=64):</strong><br>
+        공짜 KL 예산 = 64 × 0.1 = <strong>6.4 nats</strong><br>
+        실제 active_kl_dims = <strong>5.7</strong> → 모델이 정확히 공짜 예산 한도까지만 사용하고 멈춤.<br>
+        beta_cycles를 늘려도 <strong>free_bits 천장 자체를 뚫지는 못함</strong>.
+        free_bits를 0.5로 올리면 예산이 32 nats로 늘어나 active dims ~30개 기대.
+      </div>
+    </div>
+
+    <!-- Practical guidance -->
+    <div class="diagram" style="border-color: var(--out-m);">
+      <div class="title" style="color: var(--out);">파라미터 조합 가이드</div>
+      <table class="metric-table">
+        <tr><th>상황</th><th>권장 설정</th><th>이유</th></tr>
+        <tr>
+          <td class="key-col">active_kl_dims 낮음<br>(collapse 심각)</td>
+          <td>free_bits ↑ (0.1→0.5)<br>beta_max ↓ (0.8→0.4)<br>beta_cycles ↑ (4→6)</td>
+          <td>free_bits가 가장 직접적. beta 낮추면 reconstruction이 z 사용을 유도. cycles 증가는 보조적</td>
+        </tr>
+        <tr>
+          <td class="key-col">μ drift 심각<br>(|μ| &gt;&gt; 0.2)</td>
+          <td>beta_max ↑<br>free_bits 유지</td>
+          <td>KL pressure를 높여 μ→0 수렴 강화</td>
+        </tr>
+        <tr>
+          <td class="key-col">recon_mse 너무 높음</td>
+          <td>beta_max ↓<br>beta_cycles ↑</td>
+          <td>KL pressure 완화. 사이클 수 늘려 초반 recon 학습 기회 보전</td>
+        </tr>
+      </table>
+      <div class="callout ok-c" style="margin-top: 12px;">
+        <strong>현재 권장 설정 (우선순위 순):</strong><br>
+        1. <code>free_bits = 0.5</code> — 가장 임팩트 큼 (6.4 → 32 nats)<br>
+        2. <code>beta_max = 0.4</code> — reconstruction 여유 확보<br>
+        3. <code>beta_cycles = 6</code> — 보조적 효과, 활성화 기회 증가
+      </div>
+    </div>
+
+  </div>
+</div>
+
 </body>
 </html>
