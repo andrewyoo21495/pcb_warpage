@@ -203,7 +203,7 @@ def plot_mean_std(design_np, real_tensor, gen_tensor, design_name, save_path, sh
 # ------------------------------------------------------------------
 
 def plot_sample_grid(real_tensor, gen_tensor, design_name, save_path, show,
-                     n_per_row=8):
+                     n_per_row=8, cmap='gray'):
     """
     Top rows   : up to n_per_row real samples
     Bottom rows: up to n_per_row generated samples
@@ -222,7 +222,7 @@ def plot_sample_grid(real_tensor, gen_tensor, design_name, save_path, show,
         # Real row
         ax_r = axes[0, col]
         if col < n_real:
-            ax_r.imshow(real[col], cmap='gray', vmin=0, vmax=1)
+            ax_r.imshow(real[col], cmap=cmap, vmin=0, vmax=1)
             ax_r.set_title(f'Real {col+1}', fontsize=7)
         else:
             ax_r.axis('off')
@@ -231,7 +231,7 @@ def plot_sample_grid(real_tensor, gen_tensor, design_name, save_path, show,
         # Gen row
         ax_g = axes[1, col]
         if col < n_gen:
-            ax_g.imshow(gen[col], cmap='gray', vmin=0, vmax=1)
+            ax_g.imshow(gen[col], cmap=cmap, vmin=0, vmax=1)
             ax_g.set_title(f'Gen {col+1}', fontsize=7)
         else:
             ax_g.axis('off')
@@ -386,6 +386,9 @@ def evaluate_fold(config, fold, model, k, temperature, save_dir, show, grid_n,
     plot_sample_grid(real_tensor, gen_tensor, design_name,
                      save_path=str(out / 'B_sample_grid.png'), show=show,
                      n_per_row=grid_n)
+    plot_sample_grid(real_tensor, gen_tensor, design_name,
+                     save_path=str(out / 'B_sample_grid_color.png'), show=show,
+                     n_per_row=grid_n, cmap='RdYlBu_r')
 
     # ---- Panel C: Histogram ----
     print("  Plotting Panel C: Pixel histogram ...")
