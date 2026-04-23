@@ -53,7 +53,7 @@ def _parse_value(value_str):
         try:
             return [int(p) if '.' not in p else float(p) for p in parts]
         except ValueError:
-            return [p.lower() for p in parts]
+            return parts    # keep original case for paths and names
 
     # Boolean
     if value_str.lower() in ('true', 'false'):
@@ -65,7 +65,7 @@ def _parse_value(value_str):
             return float(value_str)
         return int(value_str)
     except ValueError:
-        return value_str.lower()
+        return value_str    # keep original case for paths and names
 
 
 def display_config(config):
