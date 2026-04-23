@@ -1,0 +1,73 @@
+model_type  ddpm        # cvae / ddpm
+mode        Train       # Train / Inference
+gpu_ids     0           # -1 for CPU, single GPU index for single GPU
+
+log_file_dir    ./outputs/ddpm_train.log
+modelpath       ./outputs/ddpm_pcb.pth
+
+%   Dataset
+dataset_dir             ./data
+design_names            design_A, design_B, design_C, design_D, design_E, design_F, design_G, design_H, design_I, design_J
+design_image_dir        ./data/design
+elevation_base_dir      ./data/elevation
+elevation_subdir        images
+num_designs             10
+num_samples_per_design  200
+
+%   Image parameters
+image_size  256
+
+%   CVAE network parameters  (not used by DDPM, kept for dataset compatibility)
+z_dim       64
+c_dim       16
+c_cnn_dim   8
+c_hand_dim  4
+
+%   Fusion method (CVAE only, ignored for DDPM)
+fusion_method   film
+
+%   Training parameters  (shared by CVAE and DDPM)
+training_epochs         200
+batch_size              16
+learning_rate           0.0001
+num_workers             4
+weight_decay            0.0001
+early_stop_threshold    0.0        # disabled: DDPM loss scale differs from CVAE
+
+%   KL weight / anti-collapse  (CVAE only, ignored for DDPM)
+beta_start  0.0
+beta_max    0.8
+beta_cycles 4
+free_bits       0.1
+spectral_weight 0.1
+logvar_clamp_min -6.0
+logvar_clamp_max  4.0
+
+%   DDPM parameters  (reduced size for 2000-sample dataset)
+ddpm_T              1000    # diffusion timesteps
+ddpm_base_ch        32      # U-Net base channels: [32, 64, 128, 128] -> ~3.5M params
+ddpm_cond_dim       128     # global condition vector dimension (halved from 256)
+ddpm_eta            0.7     # DDIM stochasticity: 0=deterministic, 1=full DDPM
+ddpm_ddim_steps     50      # DDIM inference steps
+ddpm_dropout        0.20    # slightly stronger regularization for smaller model
+ema_decay           0.9999  # EMA decay for DDPM
+
+%   Augmentation
+use_design_aug      True
+use_elevation_aug   True
+aug_d4              True
+aug_small_rot_deg   5.0
+aug_elev_noise_std  0.015
+aug_elev_noise_grid 8
+
+%   Validation (leave-one-out, 0-indexed)
+val_fold    0       # which design to hold out: 0=A, 1=B, 2=C, 3=D
+
+%   Inference
+num_gen_samples 10
+
+%   Physical scaling  (used by sample.py --denormalize)
+elevation_min   0.0
+elevation_max   1.0
+
+selected_features  7,9,11,13,14,15,17,20,21

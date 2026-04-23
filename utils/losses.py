@@ -35,8 +35,8 @@ def spectral_reconstruction_loss(
     Returns:
         scalar loss
     """
-    fft_recon = torch.fft.rfft2(x_recon, norm='ortho')
-    fft_real  = torch.fft.rfft2(x,       norm='ortho')
+    fft_recon = torch.fft.rfft2(x_recon.float(), norm='ortho')
+    fft_real  = torch.fft.rfft2(x.float(),       norm='ortho')
     return F.mse_loss(fft_recon.abs(), fft_real.abs())
 
 
