@@ -262,6 +262,9 @@ def create_dataloaders(config: dict):
     train_dataset = PCBWarpageDataset(dataset_dir, config, split='train', val_fold=val_fold)
     val_dataset   = PCBWarpageDataset(dataset_dir, config, split='val',   val_fold=val_fold)
 
+    persistent = num_workers > 0
+    prefetch   = 2 if num_workers > 0 else None
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
@@ -269,6 +272,8 @@ def create_dataloaders(config: dict):
         num_workers=num_workers,
         pin_memory=True,
         drop_last=True,
+        persistent_workers=persistent,
+        prefetch_factor=prefetch,
     )
     val_loader = DataLoader(
         val_dataset,
@@ -276,5 +281,7 @@ def create_dataloaders(config: dict):
         shuffle=False,
         num_workers=num_workers,
         pin_memory=True,
+        persistent_workers=persistent,
+        prefetch_factor=prefetch,
     )
     return train_loader, val_loader

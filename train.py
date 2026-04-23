@@ -51,6 +51,7 @@ def get_device(config: dict) -> torch.device:
 
     if gpu_id >= 0 and torch.cuda.is_available():
         device = torch.device(f'cuda:{gpu_id}')
+        torch.backends.cudnn.benchmark = True
         print(f"Using GPU: {torch.cuda.get_device_name(device)}")
     else:
         device = torch.device('cpu')
@@ -98,7 +99,7 @@ def _count_active_kl_dims(
     return int((mean_kl > threshold).sum().item())
 
 
-def train_one_epoch_cvae(model, loader, optimizer, device, beta,
+def train_one_epoch_cvae(model, loader, optimizer, scaler, device, use_amp, beta,
                          free_bits, spectral_weight):
     model.train()
     total_loss = recon_sum = kl_sum = 0.0
@@ -106,18 +107,21 @@ def train_one_epoch_cvae(model, loader, optimizer, device, beta,
     n_batches = 0
 
     for design, elevation, hand_features in loader:
-        design        = design.to(device)
-        elevation     = elevation.to(device)
-        hand_features = hand_features.to(device)
+        design        = design.to(device, non_blocking=True)
+        elevation     = elevation.to(device, non_blocking=True)
+        hand_features = hand_features.to(device, non_blocking=True)
 
-        optimizer.zero_grad()
-        x_recon, mu, logvar = model(elevation, design, hand_features)
-        loss, recon, kl = cvae_loss(
-            x_recon, elevation, mu, logvar, beta,
-            free_bits=free_bits, spectral_weight=spectral_weight)
-        loss.backward()
+        optimizer.zero_grad(set_to_none=True)
+        with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+            x_recon, mu, logvar = model(elevation, design, hand_features)
+            loss, recon, kl = cvae_loss(
+                x_recon, elevation, mu, logvar, beta,
+                free_bits=free_bits, spectral_weight=spectral_weight)
+        scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
-        optimizer.step()
+        scaler.step(optimizer)
+        scaler.update()
 
         total_loss += loss.item()
         recon_sum  += recon.item()
@@ -139,21 +143,22 @@ def train_one_epoch_cvae(model, loader, optimizer, device, beta,
 
 
 @torch.no_grad()
-def validate_cvae(model, loader, device, beta, free_bits, spectral_weight):
+def validate_cvae(model, loader, device, use_amp, beta, free_bits, spectral_weight):
     model.eval()
     total_loss = recon_sum = kl_sum = 0.0
     kl_per_dim_acc = None
     n_batches = 0
 
     for design, elevation, hand_features in loader:
-        design        = design.to(device)
-        elevation     = elevation.to(device)
-        hand_features = hand_features.to(device)
+        design        = design.to(device, non_blocking=True)
+        elevation     = elevation.to(device, non_blocking=True)
+        hand_features = hand_features.to(device, non_blocking=True)
 
-        x_recon, mu, logvar = model(elevation, design, hand_features)
-        loss, recon, kl = cvae_loss(
-            x_recon, elevation, mu, logvar, beta,
-            free_bits=free_bits, spectral_weight=spectral_weight)
+        with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+            x_recon, mu, logvar = model(elevation, design, hand_features)
+            loss, recon, kl = cvae_loss(
+                x_recon, elevation, mu, logvar, beta,
+                free_bits=free_bits, spectral_weight=spectral_weight)
 
         total_loss += loss.item()
         recon_sum  += recon.item()
@@ -176,21 +181,24 @@ def validate_cvae(model, loader, device, beta, free_bits, spectral_weight):
 # DDPM training functions
 # ==================================================================
 
-def train_one_epoch_ddpm(model, ema, loader, optimizer, device):
+def train_one_epoch_ddpm(model, ema, loader, optimizer, scaler, device, use_amp):
     model.train()
     total_loss = 0.0
     n_batches = 0
 
     for design, elevation, hand_features in loader:
-        design        = design.to(device)
-        elevation     = elevation.to(device)
-        hand_features = hand_features.to(device)
+        design        = design.to(device, non_blocking=True)
+        elevation     = elevation.to(device, non_blocking=True)
+        hand_features = hand_features.to(device, non_blocking=True)
 
-        optimizer.zero_grad()
-        loss = model(elevation, design, hand_features)
-        loss.backward()
+        optimizer.zero_grad(set_to_none=True)
+        with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+            loss = model(elevation, design, hand_features)
+        scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        optimizer.step()
+        scaler.step(optimizer)
+        scaler.update()
         ema.update()
 
         total_loss += loss.item()
@@ -200,17 +208,18 @@ def train_one_epoch_ddpm(model, ema, loader, optimizer, device):
 
 
 @torch.no_grad()
-def validate_ddpm(model, loader, device):
+def validate_ddpm(model, loader, device, use_amp):
     model.eval()
     total_loss = 0.0
     n_batches = 0
 
     for design, elevation, hand_features in loader:
-        design        = design.to(device)
-        elevation     = elevation.to(device)
-        hand_features = hand_features.to(device)
+        design        = design.to(device, non_blocking=True)
+        elevation     = elevation.to(device, non_blocking=True)
+        hand_features = hand_features.to(device, non_blocking=True)
 
-        loss = model(elevation, design, hand_features)
+        with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+            loss = model(elevation, design, hand_features)
         total_loss += loss.item()
         n_batches  += 1
 
@@ -238,6 +247,7 @@ def main():
 
     # Device
     device = get_device(config)
+    use_amp = device.type == 'cuda'
 
     # Data
     train_loader, val_loader = create_dataloaders(config)
@@ -270,6 +280,7 @@ def main():
         optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
         scheduler = optim.lr_scheduler.CosineAnnealingLR(
             optimizer, T_max=total_epochs, eta_min=1e-6)
+        scaler = torch.amp.GradScaler('cuda', enabled=use_amp)
 
         beta_max        = float(config.get('beta_max',        0.2))
         beta_cycles     = int(config.get('beta_cycles',       4))
@@ -289,9 +300,9 @@ def main():
 
             t0 = time.time()
             train_loss, train_recon, train_kl, train_active = train_one_epoch_cvae(
-                model, train_loader, optimizer, device, beta, free_bits, spectral_weight)
+                model, train_loader, optimizer, scaler, device, use_amp, beta, free_bits, spectral_weight)
             val_loss, val_recon, val_kl, val_active = validate_cvae(
-                model, val_loader, device, beta, free_bits, spectral_weight)
+                model, val_loader, device, use_amp, beta, free_bits, spectral_weight)
             scheduler.step()
             elapsed = time.time() - t0
 
@@ -338,6 +349,7 @@ def main():
         optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
         scheduler = optim.lr_scheduler.CosineAnnealingLR(
             optimizer, T_max=total_epochs, eta_min=1e-6)
+        scaler = torch.amp.GradScaler('cuda', enabled=use_amp)
 
         ema_decay = float(config.get('ema_decay', 0.9999))
         ema = EMA(model, decay=ema_decay)
@@ -352,8 +364,8 @@ def main():
         for epoch in range(total_epochs):
             t0 = time.time()
             train_loss = train_one_epoch_ddpm(
-                model, ema, train_loader, optimizer, device)
-            val_loss = validate_ddpm(model, val_loader, device)
+                model, ema, train_loader, optimizer, scaler, device, use_amp)
+            val_loss = validate_ddpm(model, val_loader, device, use_amp)
             scheduler.step()
             elapsed = time.time() - t0
 

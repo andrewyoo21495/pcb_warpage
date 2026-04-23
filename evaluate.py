@@ -62,6 +62,7 @@ def get_device(config: dict) -> torch.device:
     gpu_ids = config.get('gpu_ids', -1)
     gpu_id  = gpu_ids[0] if isinstance(gpu_ids, list) else int(gpu_ids)
     if gpu_id >= 0 and torch.cuda.is_available():
+        torch.backends.cudnn.benchmark = True
         return torch.device(f'cuda:{gpu_id}')
     return torch.device('cpu')
 
@@ -71,7 +72,8 @@ def get_device(config: dict) -> torch.device:
 # ------------------------------------------------------------------
 
 @torch.no_grad()
-def active_kl_dims(model, loader, device, threshold: float = 0.1) -> tuple[int, int]:
+def active_kl_dims(model, loader, device, use_amp: bool,
+                   threshold: float = 0.1) -> tuple[int, int]:
     """Count latent dimensions whose mean KL exceeds `threshold` nats.
 
     Runs the elevation encoder over the dataset and computes the per-dim KL
@@ -83,6 +85,7 @@ def active_kl_dims(model, loader, device, threshold: float = 0.1) -> tuple[int, 
         model     : CVAE model (must have a .forward() returning (recon, mu, logvar))
         loader    : DataLoader over the evaluation set
         device    : torch.device
+        use_amp   : enable automatic mixed precision
         threshold : minimum mean KL (nats) for a dim to be considered active
 
     Returns:
@@ -93,11 +96,12 @@ def active_kl_dims(model, loader, device, threshold: float = 0.1) -> tuple[int, 
     n_batches = 0
 
     for design, elevation, hand_features in loader:
-        design        = design.to(device)
-        elevation     = elevation.to(device)
-        hand_features = hand_features.to(device)
+        design        = design.to(device, non_blocking=True)
+        elevation     = elevation.to(device, non_blocking=True)
+        hand_features = hand_features.to(device, non_blocking=True)
 
-        _, mu, logvar = model(elevation, design, hand_features)
+        with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+            _, mu, logvar = model(elevation, design, hand_features)
         kl_dims = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp()).mean(dim=0)
         kl_per_dim_acc = kl_dims if kl_per_dim_acc is None else kl_per_dim_acc + kl_dims
         n_batches += 1
@@ -134,17 +138,18 @@ def sample_diversity(samples: torch.Tensor) -> float:
     return samples.var(dim=0).mean().item()
 
 
-def reconstruction_mse(model, loader, device) -> float:
+def reconstruction_mse(model, loader, device, use_amp: bool) -> float:
     """Average MSE of deterministic reconstructions (CVAE only)."""
     model.eval()
     mse_total = 0.0
     n_batches = 0
     with torch.no_grad():
         for design, elevation, hand_features in loader:
-            design        = design.to(device)
-            elevation     = elevation.to(device)
-            hand_features = hand_features.to(device)
-            recon = model.reconstruct(elevation, design, hand_features)
+            design        = design.to(device, non_blocking=True)
+            elevation     = elevation.to(device, non_blocking=True)
+            hand_features = hand_features.to(device, non_blocking=True)
+            with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+                recon = model.reconstruct(elevation, design, hand_features)
             mse_total += torch.nn.functional.mse_loss(recon, elevation).item()
             n_batches += 1
     return mse_total / max(n_batches, 1)
@@ -226,6 +231,7 @@ def evaluate_fold(config: dict, fold: int, k: int, device: torch.device,
 
     cfg = dict(config)
     cfg['val_fold'] = fold
+    use_amp = device.type == 'cuda'
 
     # Load model checkpoint
     model_path = cfg.get('modelpath', './outputs/cvae_pcb.pth')
@@ -254,7 +260,7 @@ def evaluate_fold(config: dict, fold: int, k: int, device: torch.device,
             train_dataset, batch_size=32, shuffle=False, num_workers=0)
 
         if model_type == 'cvae':
-            train_recon_mse = reconstruction_mse(model, train_loader, device)
+            train_recon_mse = reconstruction_mse(model, train_loader, device, use_amp)
             verdict = 'good' if train_recon_mse < 0.005 else 'high — model may be underfitting'
             print(f"  Train Recon MSE  : {train_recon_mse:.6f}  ({verdict})")
         else:
@@ -291,11 +297,11 @@ def evaluate_fold(config: dict, fold: int, k: int, device: torch.device,
 
         # 2a. Val reconstruction MSE + active KL dims (CVAE only)
         if model_type == 'cvae':
-            val_recon_mse = reconstruction_mse(model, val_loader, device)
+            val_recon_mse = reconstruction_mse(model, val_loader, device, use_amp)
             verdict = 'good' if val_recon_mse < 0.01 else 'high'
             print(f"  Val Recon MSE    : {val_recon_mse:.6f}  ({verdict})")
 
-            n_active, z_dim = active_kl_dims(model, val_loader, device)
+            n_active, z_dim = active_kl_dims(model, val_loader, device, use_amp)
             status = 'healthy' if n_active > z_dim // 4 else 'WARNING: possible posterior collapse'
             print(f"  Active KL dims   : {n_active}/{z_dim}  ({status})")
         else:
@@ -309,22 +315,23 @@ def evaluate_fold(config: dict, fold: int, k: int, device: torch.device,
         for design, elevation, hand_features in val_loader:
             real_flat_list.append(elevation.view(elevation.size(0), -1))
             if design_batch is None:
-                design_batch = design[:1].to(device)
-                hand_batch   = hand_features[:1].to(device)
+                design_batch = design[:1].to(device, non_blocking=True)
+                hand_batch   = hand_features[:1].to(device, non_blocking=True)
 
         real_flat = torch.cat(real_flat_list, dim=0)  # (N_real, H*W)
 
         # 2c. Generate K samples (batched to limit VRAM)
-        if batch_size and batch_size < k:
-            chunks = []
-            remaining = k
-            while remaining > 0:
-                n = min(batch_size, remaining)
-                chunks.append(model.sample(design_batch, hand_batch, num_samples=n))
-                remaining -= n
-            gen_samples = torch.cat(chunks, dim=0)
-        else:
-            gen_samples = model.sample(design_batch, hand_batch, num_samples=k)
+        with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+            if batch_size and batch_size < k:
+                chunks = []
+                remaining = k
+                while remaining > 0:
+                    n = min(batch_size, remaining)
+                    chunks.append(model.sample(design_batch, hand_batch, num_samples=n))
+                    remaining -= n
+                gen_samples = torch.cat(chunks, dim=0)
+            else:
+                gen_samples = model.sample(design_batch, hand_batch, num_samples=k)
 
         # 2d. Generated diversity
         gen_diversity = sample_diversity(gen_samples)

@@ -73,6 +73,7 @@ def get_device(config: dict) -> torch.device:
     gpu_ids = config.get('gpu_ids', -1)
     gpu_id  = gpu_ids[0] if isinstance(gpu_ids, list) else int(gpu_ids)
     if gpu_id >= 0 and torch.cuda.is_available():
+        torch.backends.cudnn.benchmark = True
         return torch.device(f'cuda:{gpu_id}')
     return torch.device('cpu')
 
@@ -382,10 +383,12 @@ def generate_for_design(design_path: str, model, model_type: str, config: dict,
     hand_features = extract_handcrafted_features(design_orig)
     hand_features = hand_features.unsqueeze(0).to(device)
 
+    use_amp = device.type == 'cuda'
     print(f"Generating {k} elevation samples for {design_path}  "
           f"(temperature={args.temperature}, model={model_type.upper()}) ...")
-    samples = model.sample(design_tensor, hand_features,
-                           num_samples=k, temperature=args.temperature)
+    with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+        samples = model.sample(design_tensor, hand_features,
+                               num_samples=k, temperature=args.temperature)
 
     print_sample_stats(samples)
     save_individual_samples(samples, save_dir=save_dir, colormap=args.colormap)
