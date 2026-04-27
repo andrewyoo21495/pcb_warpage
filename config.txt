@@ -4,6 +4,8 @@ gpu_ids     0           # -1 for CPU, single GPU index for single GPU
 
 log_file_dir    ./outputs/train.log
 modelpath       ./outputs/cvae_pcb.pth
+vis_save_dir    ./outputs/vis_cvae
+sample_save_dir ./outputs/samples_cvae
 
 %   Dataset
 dataset_dir             ./data

@@ -46,8 +46,9 @@ def parse_args():
                         help='Override num_gen_samples from config')
     parser.add_argument('--temperature', type=float, default=1.0,
                         help='Sampling temperature: >1 increases diversity, <1 reduces it (default: 1.0)')
-    parser.add_argument('--save',       type=str,   default='outputs/samples',
-                        help='Directory to save individual elevation PNG files (default: outputs/samples)')
+    parser.add_argument('--save',       type=str,   default=None,
+                        help='Directory to save individual elevation PNG files '
+                             '(default: sample_save_dir from config, or outputs/samples)')
     parser.add_argument('--denormalize', action='store_true',
                         help='Also save inverse-scaled physical values as .txt files '
                              '(reads elevation_min / elevation_max from config.txt)')
@@ -434,6 +435,8 @@ def main():
     print(f"Loaded {model_type.upper()} model from {model_path}  "
           f"(epoch {checkpoint.get('epoch', '?')})")
 
+    save_dir = args.save or config.get('sample_save_dir', 'outputs/samples')
+
     if args.design_dir:
         # --- Batch mode: iterate all design PNGs in the folder ---
         design_dir = Path(args.design_dir)
@@ -447,7 +450,7 @@ def main():
         print(f"\nBatch mode: found {len(design_files)} design images in '{design_dir}'")
         print("=" * 60)
 
-        base_save_dir = Path(args.save)
+        base_save_dir = Path(save_dir)
         all_samples = {}
 
         for design_path in design_files:
@@ -477,7 +480,7 @@ def main():
 
     else:
         # --- Single design mode (original behaviour) ---
-        generate_for_design(args.design, model, model_type, config, device, args, args.save)
+        generate_for_design(args.design, model, model_type, config, device, args, save_dir)
 
 
 if __name__ == '__main__':

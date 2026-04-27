@@ -57,8 +57,9 @@ def parse_args():
                         help='Evaluate a single fold (0-indexed); default: all folds')
     parser.add_argument('--k',        type=int, default=None,
                         help='Number of samples to generate per design (overrides config)')
-    parser.add_argument('--save',     type=str, default='outputs/vis',
-                        help='Directory to save visualisation PNGs')
+    parser.add_argument('--save',     type=str, default=None,
+                        help='Directory to save visualisation PNGs '
+                             '(default: vis_save_dir from config, or outputs/vis)')
     parser.add_argument('--show',     action='store_true',
                         help='Also display plots interactively')
     parser.add_argument('--grid-n',   type=int, default=8,
@@ -442,15 +443,16 @@ def main():
     design_names = _resolve_design_names(config)
     k            = args.k if args.k else int(config.get('num_gen_samples', 10))
     folds        = [args.fold] if args.fold is not None else list(range(len(design_names)))
+    save_dir     = args.save or config.get('vis_save_dir', 'outputs/vis')
 
     print(f"\nGenerating {k} samples per design  |  temperature={args.temperature}")
-    print(f"Output directory: {args.save}")
+    print(f"Output directory: {save_dir}")
 
     all_results = []
     for fold in folds:
         result = evaluate_fold(
             config, fold, model, k, args.temperature,
-            save_dir=args.save, show=args.show,
+            save_dir=save_dir, show=args.show,
             grid_n=args.grid_n, design_names=design_names,
         )
         all_results.append(result)
@@ -460,7 +462,7 @@ def main():
         print("\nPlotting Panel D: Fold summary ...")
         plot_fold_summary(
             all_results,
-            save_path=str(Path(args.save) / 'D_fold_summary.png'),
+            save_path=str(Path(save_dir) / 'D_fold_summary.png'),
             show=args.show,
         )
 
