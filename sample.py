@@ -389,6 +389,7 @@ def generate_for_design(design_path: str, model, model_type: str, config: dict,
     with torch.amp.autocast(device_type=device.type, enabled=use_amp):
         samples = model.sample(design_tensor, hand_features,
                                num_samples=k, temperature=args.temperature)
+    samples = samples.float()
 
     print_sample_stats(samples)
     save_individual_samples(samples, save_dir=save_dir, colormap=args.colormap)
