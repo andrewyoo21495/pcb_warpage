@@ -102,6 +102,7 @@ def active_kl_dims(model, loader, device, use_amp: bool,
 
         with torch.amp.autocast(device_type=device.type, enabled=use_amp):
             _, mu, logvar = model(elevation, design, hand_features)
+        mu, logvar = mu.float(), logvar.float()
         kl_dims = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp()).mean(dim=0)
         kl_per_dim_acc = kl_dims if kl_per_dim_acc is None else kl_per_dim_acc + kl_dims
         n_batches += 1
@@ -150,7 +151,7 @@ def reconstruction_mse(model, loader, device, use_amp: bool) -> float:
             hand_features = hand_features.to(device, non_blocking=True)
             with torch.amp.autocast(device_type=device.type, enabled=use_amp):
                 recon = model.reconstruct(elevation, design, hand_features)
-            mse_total += torch.nn.functional.mse_loss(recon, elevation).item()
+            mse_total += torch.nn.functional.mse_loss(recon.float(), elevation).item()
             n_batches += 1
     return mse_total / max(n_batches, 1)
 
@@ -332,6 +333,7 @@ def evaluate_fold(config: dict, fold: int, k: int, device: torch.device,
                 gen_samples = torch.cat(chunks, dim=0)
             else:
                 gen_samples = model.sample(design_batch, hand_batch, num_samples=k)
+        gen_samples = gen_samples.float()
 
         # 2d. Generated diversity
         gen_diversity = sample_diversity(gen_samples)
