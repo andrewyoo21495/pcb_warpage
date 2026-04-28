@@ -220,14 +220,9 @@ def plot_sample_grid(real_tensor, gen_tensor, design_name, save_path, show,
     n_gen  = min(n_per_row, gen.shape[0])
     n_cols = max(n_real, n_gen)
 
-    # For colour maps, use the shared data range so real and gen are comparable.
-    # For grayscale, keep the fixed [0, 1] normalised range.
-    if cmap == 'gray':
-        vmin, vmax = 0.0, 1.0
-    else:
-        all_data = np.concatenate([real[:n_real], gen[:n_gen]], axis=0)
-        vmin = float(all_data.min())
-        vmax = float(all_data.max())
+    # Fixed [0,1] range = physical [0, 3000] after preprocessing normalization.
+    # This gives a consistent, physically meaningful scale across all experiments.
+    vmin, vmax = 0.0, 1.0
 
     fig, axes = plt.subplots(2, n_cols, figsize=(2.2 * n_cols, 5))
     fig.suptitle(f"Sample grid — {design_name}", fontsize=13)
