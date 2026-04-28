@@ -309,22 +309,22 @@ def load_scaling_metadata(config: dict, metadata_override: str = None) -> tuple[
 # Main
 # ------------------------------------------------------------------
 
-def plot_generated_histograms(all_samples: dict, base_save_dir,
+def plot_generated_histograms(all_samples: dict, hist_dir,
                               elev_min: float = 0.0,
                               elev_max: float = 1.0) -> None:
     """Plot elevation range distribution histograms for generated samples.
 
     For each design, applies inverse min-max scaling to recover physical
     elevation values, computes per-sample elevation range (max - min),
-    and saves a histogram to outputs/distribution/generated/.
+    and saves a histogram to hist_dir.
 
     Args:
         all_samples : dict mapping design_name -> (K, 1, H, W) tensor
-        base_save_dir : Path to the base output directory
+        hist_dir    : directory to save histogram PNGs
         elev_min : global minimum elevation used in preprocessing scaling
         elev_max : global maximum elevation used in preprocessing scaling
     """
-    hist_dir = Path("outputs/distribution/generated")
+    hist_dir = Path(hist_dir)
     hist_dir.mkdir(parents=True, exist_ok=True)
 
     scale = elev_max - elev_min
@@ -471,7 +471,7 @@ def main():
         print(f"\n{'=' * 60}")
         print("  Generating elevation range histograms for generated samples...")
         print(f"  (physical scale: [{elev_min:.4f}, {elev_max:.4f}])")
-        plot_generated_histograms(all_samples, base_save_dir,
+        plot_generated_histograms(all_samples, base_save_dir / 'distribution',
                                   elev_min=elev_min, elev_max=elev_max)
 
         print(f"\n{'=' * 60}")
@@ -479,8 +479,17 @@ def main():
         print(f"{'=' * 60}\n")
 
     else:
-        # --- Single design mode (original behaviour) ---
-        generate_for_design(args.design, model, model_type, config, device, args, save_dir)
+        # --- Single design mode ---
+        samples = generate_for_design(
+            args.design, model, model_type, config, device, args, save_dir)
+        design_name = Path(args.design).stem
+        elev_min, elev_max = _resolve_scaling(args, config)
+        print("\nGenerating elevation range histogram ...")
+        plot_generated_histograms(
+            {design_name: samples},
+            Path(save_dir) / 'distribution',
+            elev_min=elev_min, elev_max=elev_max,
+        )
 
 
 if __name__ == '__main__':
