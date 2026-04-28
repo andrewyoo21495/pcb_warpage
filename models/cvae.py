@@ -55,9 +55,11 @@ class CVAE(nn.Module):
             self.film_beta  = nn.Linear(self.c_dim, self.z_dim)
 
         elif self.fusion_method == 'cross_attention':
-            embed_dim = self.z_dim  # 64 (must be divisible by num_heads)
+            embed_dim    = self.z_dim   # 64
+            self.n_tokens = 4           # z1 을 4개 토큰으로 분할 (= num_heads)
+            # kv_proj: z_dim//n_tokens(=16) → embed_dim(=64)
             self.q_proj  = nn.Linear(self.c_dim, embed_dim)
-            self.kv_proj = nn.Linear(self.z_dim, embed_dim)
+            self.kv_proj = nn.Linear(self.z_dim // self.n_tokens, embed_dim)
             self.cross_attn = nn.MultiheadAttention(
                 embed_dim=embed_dim,
                 num_heads=4,
@@ -93,11 +95,15 @@ class CVAE(nn.Module):
             return gamma * z1 + beta
 
         elif self.fusion_method == 'cross_attention':
-            Q  = self.q_proj(c).unsqueeze(1)    # (B, 1, embed_dim)
-            K  = self.kv_proj(z1).unsqueeze(1)  # (B, 1, embed_dim)
-            V  = K
-            z, _ = self.cross_attn(Q, K, V)
-            return z.squeeze(1)                  # (B, embed_dim)
+            # z1: (B, z_dim) → (B, n_tokens, z_dim//n_tokens) 으로 분할
+            # Q(c) 가 z1의 4개 토큰에 걸쳐 실제 attention 수행
+            B = z1.size(0)
+            Q        = self.q_proj(c).unsqueeze(1)            # (B, 1, embed_dim)
+            z1_tok   = z1.view(B, self.n_tokens, -1)          # (B, 4, z_dim//4)
+            K        = self.kv_proj(z1_tok)                   # (B, 4, embed_dim)
+            V        = K
+            z, _     = self.cross_attn(Q, K, V)
+            return z.squeeze(1)                                # (B, embed_dim)
 
         else:
             raise ValueError(f"Unknown fusion_method: {self.fusion_method!r}. "
