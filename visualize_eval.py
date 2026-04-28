@@ -220,8 +220,8 @@ def plot_sample_grid(real_tensor, gen_tensor, design_name, save_path, show,
     n_gen  = min(n_per_row, gen.shape[0])
     n_cols = max(n_real, n_gen)
 
-    # Fixed [0,1] range = physical [0, 3000] after preprocessing normalization.
-    # This gives a consistent, physically meaningful scale across all experiments.
+    # Fixed [0,1] = physical [0,3000] calibration (preprocessing used max=3000).
+    # Both real and gen are on the same absolute physical scale across all runs.
     vmin, vmax = 0.0, 1.0
 
     fig, axes = plt.subplots(2, n_cols, figsize=(2.2 * n_cols, 5))
