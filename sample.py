@@ -354,18 +354,14 @@ def plot_generated_histograms(all_samples: dict, hist_dir,
 
 
 def _resolve_scaling(args, config):
-    """Resolve elevation scaling parameters from metadata or config."""
-    scaling = load_scaling_metadata(config, args.metadata)
-    if scaling is not None:
-        return scaling
+    """Resolve elevation scaling parameters from config.txt / config_ddpm.txt."""
     elev_min = float(config.get('elevation_min', 0.0))
     elev_max = float(config.get('elevation_max', 1.0))
-    if elev_min == 0.0 and elev_max == 1.0:
-        print("Warning: No scaling_metadata.json found and elevation_min/elevation_max "
-              "are at default [0.0, 1.0]. Set them in config.txt or re-run "
-              "preprocessing to generate scaling_metadata.json.")
+    if elev_max == 1.0:
+        print("Warning: elevation_max=1.0 in config — unit conversion will be identity. "
+              "Set elevation_max (e.g. 3000.0 μm) in config.txt for physical units.")
     else:
-        print(f"Using elevation_min/max from config.txt")
+        print(f"Using physical scale from config: [{elev_min}, {elev_max}] μm")
     return elev_min, elev_max
 
 

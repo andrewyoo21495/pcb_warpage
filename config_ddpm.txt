@@ -70,6 +70,6 @@ num_gen_samples 10
 
 %   Physical scaling  (used by sample.py --denormalize)
 elevation_min   0.0
-elevation_max   1.0
+elevation_max   3000.0
 
 selected_features  7,9,11,13,14,15,17,20,21

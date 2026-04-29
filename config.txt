@@ -71,7 +71,7 @@ val_fold    0       # which design to hold out: 0=A, 1=B, 2=C, 3=D
 num_gen_samples 10  # K samples to generate per design at inference
 
 %   Physical scaling  (used by sample.py --denormalize)
-elevation_min   0.0     # physical minimum value used in min-max scaling (e.g. mm)
-elevation_max   1.0     # physical maximum value used in min-max scaling (e.g. mm)
+elevation_min   0.0     # physical minimum value used in min-max scaling (μm)
+elevation_max   3000.0  # physical maximum value used in min-max scaling (μm)
 
 selected_features  7,9,11,13,14,15,17,20,21
