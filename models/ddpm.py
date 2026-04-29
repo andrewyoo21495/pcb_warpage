@@ -3,26 +3,32 @@
 
 Training flow:
   Design -> DDPMConditionEncoder -> (spatial_feats, global_cond)
+  [CFG] randomly zero-out condition with probability p_uncond
   Elevation x0 -> add noise at random t -> x_t
   UNet(x_t, t, global_cond, spatial_feats) -> predicted noise
   Loss = MSE(predicted_noise, actual_noise)
 
-Inference flow (DDIM):
-  Design -> DDPMConditionEncoder -> (spatial_feats, global_cond)  [computed once]
+Inference flow (DDIM with optional CFG):
+  Design -> DDPMConditionEncoder -> (spatial_feats_c, global_cond_c)
+  [CFG] null condition: spatial_feats_u = zeros, global_cond_u = zeros
   x_T ~ N(0, I)
   for t in reversed DDIM schedule:
-      eps = UNet(x_t, t, global_cond, spatial_feats)
+      eps_c   = UNet(x_t, t, global_cond_c, spatial_feats_c)
+      [CFG] eps_u = UNet(x_t, t, global_cond_u, spatial_feats_u)
+      [CFG] eps   = eps_u + guidance_scale * (eps_c - eps_u)
       x_{t-1} = DDIM_update(x_t, eps, t)
   return x_0
 
 Config keys read:
-    ddpm_T          int    (default 1000)  diffusion timesteps
-    ddpm_ddim_steps int    (default 50)    DDIM inference steps
-    ddpm_eta        float  (default 0.7)   DDIM stochasticity (0=deterministic, 1=full DDPM)
-    ddpm_base_ch    int    (default 64)    U-Net base channels
-    ddpm_cond_dim   int    (default 256)   global condition dimension
-    ddpm_dropout    float  (default 0.15)  dropout rate
-    image_size      int    (default 256)   spatial resolution
+    ddpm_T              int    (default 1000)  diffusion timesteps
+    ddpm_ddim_steps     int    (default 50)    DDIM inference steps
+    ddpm_eta            float  (default 0.7)   DDIM stochasticity (0=deterministic, 1=full DDPM)
+    ddpm_base_ch        int    (default 64)    U-Net base channels
+    ddpm_cond_dim       int    (default 256)   global condition dimension
+    ddpm_dropout        float  (default 0.15)  dropout rate
+    ddpm_p_uncond       float  (default 0.0)   CFG condition-drop probability during training
+    ddpm_guidance_scale float  (default 1.0)   CFG guidance scale at inference (1.0 = disabled)
+    image_size          int    (default 256)   spatial resolution
 """
 
 import math
@@ -64,6 +70,8 @@ class ConditionalDDPM(nn.Module):
         self.ddim_steps = int(config.get('ddpm_ddim_steps', 50))
         self.eta = float(config.get('ddpm_eta', 0.7))
         self.image_size = int(config.get('image_size', 256))
+        self.p_uncond = float(config.get('ddpm_p_uncond', 0.0))
+        self.guidance_scale = float(config.get('ddpm_guidance_scale', 1.0))
 
         # Sub-networks
         self.cond_encoder = DDPMConditionEncoder(config)
@@ -120,6 +128,16 @@ class ConditionalDDPM(nn.Module):
         # Condition encoding
         spatial_feats, global_cond = self.cond_encoder(design, hand_features)
 
+        # CFG: randomly zero out conditioning for a fraction of the batch
+        if self.p_uncond > 0.0:
+            drop_mask = torch.rand(B, device=device) < self.p_uncond
+            if drop_mask.any():
+                global_cond = global_cond.clone()
+                global_cond[drop_mask] = 0.0
+                spatial_feats = [f.clone() for f in spatial_feats]
+                for feat in spatial_feats:
+                    feat[drop_mask] = 0.0
+
         # Predict noise
         noise_pred = self.unet(x_t, t, global_cond, spatial_feats)
 
@@ -155,8 +173,14 @@ class ConditionalDDPM(nn.Module):
         design_exp = design[:1].expand(num_samples, -1, -1, -1)
         hand_exp = hand_features[:1].expand(num_samples, -1)
 
-        # Compute condition once
-        spatial_feats, global_cond = self.cond_encoder(design_exp, hand_exp)
+        # Compute conditional encoding once
+        spatial_feats_c, global_cond_c = self.cond_encoder(design_exp, hand_exp)
+
+        # CFG: prepare null (unconditional) encoding — zeros, same shapes
+        use_cfg = self.guidance_scale != 1.0 and self.p_uncond > 0.0
+        if use_cfg:
+            spatial_feats_u = [torch.zeros_like(f) for f in spatial_feats_c]
+            global_cond_u = torch.zeros_like(global_cond_c)
 
         # Effective eta
         eta = min(self.eta * temperature, 1.0)
@@ -172,8 +196,13 @@ class ConditionalDDPM(nn.Module):
         for i, t_val in enumerate(timesteps):
             t_batch = torch.full((num_samples,), t_val, device=device, dtype=torch.long)
 
-            # Predict noise
-            eps_pred = self.unet(x, t_batch, global_cond, spatial_feats)
+            # Predict noise (with CFG if enabled)
+            if use_cfg:
+                eps_c = self.unet(x, t_batch, global_cond_c, spatial_feats_c)
+                eps_u = self.unet(x, t_batch, global_cond_u, spatial_feats_u)
+                eps_pred = eps_u + self.guidance_scale * (eps_c - eps_u)
+            else:
+                eps_pred = self.unet(x, t_batch, global_cond_c, spatial_feats_c)
 
             # Current and previous alpha_bar
             ab_t = self.alpha_bar[t_val]

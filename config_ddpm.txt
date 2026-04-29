@@ -29,8 +29,8 @@ c_hand_dim  4
 fusion_method   film
 
 %   Training parameters  (shared by CVAE and DDPM)
-training_epochs         200
-batch_size              64
+training_epochs         1000
+batch_size              16
 learning_rate           0.0001
 num_workers             4
 weight_decay            0.0001
@@ -47,12 +47,16 @@ logvar_clamp_max  4.0
 
 %   DDPM parameters  (reduced size for 2000-sample dataset)
 ddpm_T              1000    # diffusion timesteps
-ddpm_base_ch        32      # U-Net base channels: [32, 64, 128, 128] -> ~3.5M params
-ddpm_cond_dim       128     # global condition vector dimension (halved from 256)
-ddpm_eta            0.7     # DDIM stochasticity: 0=deterministic, 1=full DDPM
-ddpm_ddim_steps     50      # DDIM inference steps
-ddpm_dropout        0.20    # slightly stronger regularization for smaller model
+ddpm_base_ch        64      # U-Net base channels: [64, 128, 256, 256] -> ~14M params
+ddpm_cond_dim       128     # global condition vector dimension
+ddpm_eta            0.0     # DDIM stochasticity: 0=deterministic, 1=full DDPM
+ddpm_ddim_steps     200     # DDIM inference steps
+ddpm_dropout        0.10    # dropout rate
 ema_decay           0.9999  # EMA decay for DDPM
+
+%   Classifier-Free Guidance (CFG)
+ddpm_p_uncond       0.15    # probability of dropping condition during training
+ddpm_guidance_scale 3.0     # guidance scale at inference (1.0=disabled, 2~7 typical)
 
 %   Augmentation
 use_design_aug      True
