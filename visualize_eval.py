@@ -100,8 +100,17 @@ def load_model(config, device):
         # Use raw model weights — EMA shadow appears corrupted for this
         # checkpoint (produces x0_pred with wrong sign).
         model.load_state_dict(ckpt['model_state'])
-        print(f"Loaded DDPM (raw weights) from {model_path}  "
-              f"(epoch {ckpt.get('epoch', '?')})")
+        # Restore z-score normalization stats
+        elev_mean = ckpt.get('elevation_norm_mean', None)
+        elev_std = ckpt.get('elevation_norm_std', None)
+        if elev_mean is not None and elev_std is not None:
+            model.set_elevation_stats(elev_mean, elev_std)
+            print(f"Loaded DDPM (raw weights) from {model_path}  "
+                  f"(epoch {ckpt.get('epoch', '?')}, "
+                  f"elev_mean={elev_mean:.4f}, elev_std={elev_std:.4f})")
+        else:
+            print(f"Loaded DDPM (raw weights) from {model_path}  "
+                  f"(epoch {ckpt.get('epoch', '?')}, no z-score stats in checkpoint)")
     else:
         model.load_state_dict(ckpt['model_state'])
         print(f"Loaded {model_type.upper()} from {model_path}  "

@@ -17,7 +17,7 @@ num_designs             10
 num_samples_per_design  200
 
 %   Image parameters
-image_size  256
+image_size  128
 
 %   CVAE network parameters  (not used by DDPM, kept for dataset compatibility)
 z_dim       64
@@ -56,7 +56,7 @@ ema_decay           0.9999  # EMA decay for DDPM
 
 %   Classifier-Free Guidance (CFG)
 ddpm_p_uncond       0.15    # probability of dropping condition during training
-ddpm_guidance_scale 3.0     # guidance scale at inference (1.0=disabled, 2~7 typical)
+ddpm_guidance_scale 1.0     # guidance scale at inference (1.0=disabled, 2~7 typical)
 
 %   Augmentation
 use_design_aug      True

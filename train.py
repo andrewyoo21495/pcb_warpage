@@ -346,6 +346,22 @@ def main():
     elif model_type == 'ddpm':
         from utils.ema import EMA
 
+        # Compute elevation mean/std from training data for z-score normalization
+        logger.info("Computing elevation mean/std from training data ...")
+        _elev_sum = 0.0
+        _elev_sq_sum = 0.0
+        _elev_count = 0
+        for _, elevation_batch, _ in train_loader:
+            _elev_sum += elevation_batch.sum().item()
+            _elev_sq_sum += (elevation_batch ** 2).sum().item()
+            _elev_count += elevation_batch.numel()
+        elev_mean = _elev_sum / _elev_count
+        elev_std = ((_elev_sq_sum / _elev_count) - elev_mean ** 2) ** 0.5
+        logger.info(f"  Elevation stats (in [0,1]): mean={elev_mean:.6f}, std={elev_std:.6f}")
+
+        # Set z-score normalization on model
+        model.set_elevation_stats(elev_mean, elev_std)
+
         optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
         scheduler = optim.lr_scheduler.CosineAnnealingLR(
             optimizer, T_max=total_epochs, eta_min=1e-6)
@@ -380,13 +396,15 @@ def main():
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 torch.save({
-                    'epoch':           epoch + 1,
-                    'model_type':      'ddpm',
-                    'model_state':     model.state_dict(),
-                    'ema_state_dict':  ema.shadow,
-                    'optimizer_state': optimizer.state_dict(),
-                    'val_loss':        val_loss,
-                    'config':          config,
+                    'epoch':                epoch + 1,
+                    'model_type':           'ddpm',
+                    'model_state':          model.state_dict(),
+                    'ema_state_dict':       ema.shadow,
+                    'optimizer_state':      optimizer.state_dict(),
+                    'val_loss':             val_loss,
+                    'config':               config,
+                    'elevation_norm_mean':  elev_mean,
+                    'elevation_norm_std':   elev_std,
                 }, model_path)
                 logger.info(f"  -> Checkpoint saved (val_loss={val_loss:.6f})")
 

@@ -88,6 +88,20 @@ class ConditionalDDPM(nn.Module):
         self.register_buffer('sqrt_alpha_bar', alpha_bar.sqrt().float())
         self.register_buffer('sqrt_one_minus_alpha_bar', (1.0 - alpha_bar).sqrt().float())
 
+        # Z-score normalization buffers (defaults = identity transform)
+        self.register_buffer('elev_mean', torch.tensor(0.0))
+        self.register_buffer('elev_std', torch.tensor(1.0))
+
+    def set_elevation_stats(self, mean: float, std: float):
+        """Set elevation z-score normalization statistics.
+
+        Args:
+            mean: mean of elevation images in [0,1] space
+            std:  std of elevation images in [0,1] space
+        """
+        self.elev_mean.fill_(mean)
+        self.elev_std.fill_(std)
+
     # ------------------------------------------------------------------
     # Forward (training)
     # ------------------------------------------------------------------
@@ -100,7 +114,8 @@ class ConditionalDDPM(nn.Module):
     ) -> torch.Tensor:
         """Training forward: compute noise prediction loss.
 
-        Internally normalizes elevation from [0,1] to [-1,1].
+        Internally normalizes elevation from [0,1] via z-score:
+            x0 = (elevation - mean) / std
 
         Args:
             elevation     : (B, 1, H, W) float32 in [0, 1]
@@ -113,8 +128,8 @@ class ConditionalDDPM(nn.Module):
         B = elevation.shape[0]
         device = elevation.device
 
-        # Normalize to [-1, 1]
-        x0 = elevation * 2.0 - 1.0
+        # Z-score normalize: centers data around 0 with unit variance
+        x0 = (elevation - self.elev_mean) / self.elev_std
 
         # Random timesteps
         t = torch.randint(0, self.T, (B,), device=device, dtype=torch.long)
@@ -211,17 +226,8 @@ class ConditionalDDPM(nn.Module):
             else:
                 ab_t_prev = torch.tensor(1.0, device=device)
 
-            # Predict x0  (no fixed clamp — the [-1,1] clamp biases the
-            # estimate toward 0 when data is concentrated in a narrow sub-range
-            # of [-1,1], e.g. PCB elevation data with mean ≈ -0.68)
+            # Predict x0
             x0_pred = (x - (1.0 - ab_t).sqrt() * eps_pred) / ab_t.sqrt()
-
-            # === DEBUG (remove later) ===
-            if i % 50 == 0 or i == len(timesteps) - 1:
-                print(f"  step {i:3d}  t={t_val:4d}  "
-                      f"eps mean={eps_pred.mean():.4f} std={eps_pred.std():.4f}  "
-                      f"x0_pred mean={x0_pred.mean():.4f} std={x0_pred.std():.4f}  "
-                      f"x mean={x.mean():.4f} std={x.std():.4f}")
 
             # DDIM sigma
             sigma = eta * (
@@ -240,5 +246,5 @@ class ConditionalDDPM(nn.Module):
 
             x = ab_t_prev.sqrt() * x0_pred + dir_xt + sigma * noise
 
-        # Convert [-1, 1] -> [0, 1]
-        return (x * 0.5 + 0.5).clamp(0.0, 1.0)
+        # Inverse z-score: x0 was (elevation - mean) / std, so recover [0,1]
+        return (x * self.elev_std + self.elev_mean).clamp(0.0, 1.0)
