@@ -96,13 +96,12 @@ def load_model(config, device):
 
     model = build_model(config).to(device)
 
-    if model_type == 'ddpm' and 'ema_state_dict' in ckpt:
-        sd = model.state_dict()
-        for k, v in ckpt['ema_state_dict'].items():
-            if k in sd:
-                sd[k] = v
-        model.load_state_dict(sd)
-        print(f"Loaded DDPM (EMA weights) from {model_path}")
+    if model_type == 'ddpm':
+        # Use raw model weights — EMA shadow appears corrupted for this
+        # checkpoint (produces x0_pred with wrong sign).
+        model.load_state_dict(ckpt['model_state'])
+        print(f"Loaded DDPM (raw weights) from {model_path}  "
+              f"(epoch {ckpt.get('epoch', '?')})")
     else:
         model.load_state_dict(ckpt['model_state'])
         print(f"Loaded {model_type.upper()} from {model_path}  "

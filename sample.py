@@ -111,14 +111,11 @@ def load_model_from_checkpoint(checkpoint: dict, config: dict, device: torch.dev
 
     model = build_model(config).to(device)
 
-    if model_type == 'ddpm' and 'ema_state_dict' in checkpoint:
-        ema_sd = checkpoint['ema_state_dict']
-        model_sd = model.state_dict()
-        for name in ema_sd:
-            if name in model_sd:
-                model_sd[name] = ema_sd[name]
-        model.load_state_dict(model_sd)
-        print(f"  Loaded DDPM checkpoint with EMA weights")
+    if model_type == 'ddpm':
+        # Use raw model weights — EMA shadow appears corrupted for this
+        # checkpoint (produces x0_pred with wrong sign).
+        model.load_state_dict(checkpoint['model_state'])
+        print(f"  Loaded DDPM checkpoint with raw weights")
     else:
         model.load_state_dict(checkpoint['model_state'])
 

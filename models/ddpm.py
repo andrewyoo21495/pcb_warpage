@@ -211,9 +211,10 @@ class ConditionalDDPM(nn.Module):
             else:
                 ab_t_prev = torch.tensor(1.0, device=device)
 
-            # Predict x0
+            # Predict x0  (no fixed clamp — the [-1,1] clamp biases the
+            # estimate toward 0 when data is concentrated in a narrow sub-range
+            # of [-1,1], e.g. PCB elevation data with mean ≈ -0.68)
             x0_pred = (x - (1.0 - ab_t).sqrt() * eps_pred) / ab_t.sqrt()
-            x0_pred = x0_pred.clamp(-1.0, 1.0)
 
             # DDIM sigma
             sigma = eta * (
