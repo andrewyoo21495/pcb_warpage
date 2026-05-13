@@ -216,6 +216,13 @@ class ConditionalDDPM(nn.Module):
             # of [-1,1], e.g. PCB elevation data with mean ≈ -0.68)
             x0_pred = (x - (1.0 - ab_t).sqrt() * eps_pred) / ab_t.sqrt()
 
+            # === DEBUG (remove later) ===
+            if i % 50 == 0 or i == len(timesteps) - 1:
+                print(f"  step {i:3d}  t={t_val:4d}  "
+                      f"eps mean={eps_pred.mean():.4f} std={eps_pred.std():.4f}  "
+                      f"x0_pred mean={x0_pred.mean():.4f} std={x0_pred.std():.4f}  "
+                      f"x mean={x.mean():.4f} std={x.std():.4f}")
+
             # DDIM sigma
             sigma = eta * (
                 ((1.0 - ab_t_prev) / (1.0 - ab_t)).sqrt()
