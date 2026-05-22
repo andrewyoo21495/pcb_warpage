@@ -273,24 +273,46 @@ def plot_sample_grid(real_tensor, gen_tensor, design_name, save_path, show,
 # Panel C — Pixel histogram
 # ------------------------------------------------------------------
 
-def plot_histogram(real_tensor, gen_tensor, design_name, save_path, show):
-    """Overlaid pixel value density histogram, real vs generated."""
-    real_px = real_tensor.numpy().ravel()
-    gen_px  = gen_tensor.numpy().ravel()
+def plot_histogram(real_tensor, gen_tensor, design_name, save_path, show,
+                   elev_min=0.0, elev_max=1.0):
+    """Overlaid elevation range (max-min per sample) histogram, real vs generated.
 
-    real_mean, real_std = real_px.mean(), real_px.std()
-    gen_mean,  gen_std  = gen_px.mean(),  gen_px.std()
+    Each sample's elevation range is computed after inverse min-max scaling
+    to physical units, giving a per-sample warpage magnitude comparison.
+    """
+    scale = elev_max - elev_min
+
+    real_np = real_tensor.squeeze(1).numpy()  # (N, H, W)
+    gen_np  = gen_tensor.squeeze(1).numpy()   # (K, H, W)
+
+    # Inverse scaling to physical values, then per-sample range
+    real_physical = real_np * scale + elev_min
+    gen_physical  = gen_np * scale + elev_min
+
+    real_ranges = np.array([s.max() - s.min() for s in real_physical])
+    gen_ranges  = np.array([s.max() - s.min() for s in gen_physical])
+
+    # Shared bin edges
+    all_ranges = np.concatenate([real_ranges, gen_ranges])
+    bins = np.linspace(all_ranges.min() * 0.95, all_ranges.max() * 1.05,
+                       max(15, len(real_ranges) // 2))
 
     fig, ax = plt.subplots(figsize=(8, 4))
-    ax.hist(real_px, bins=100, range=(0, 1), density=True,
-            alpha=0.55, color='steelblue', label=f'Real  μ={real_mean:.3f} σ={real_std:.3f}')
-    ax.hist(gen_px,  bins=100, range=(0, 1), density=True,
-            alpha=0.55, color='tomato',    label=f'Gen   μ={gen_mean:.3f} σ={gen_std:.3f}')
-    ax.axvline(real_mean, color='steelblue', linestyle='--', linewidth=1.2)
-    ax.axvline(gen_mean,  color='tomato',    linestyle='--', linewidth=1.2)
-    ax.set_xlabel('Pixel value (normalised [0, 1])')
-    ax.set_ylabel('Density')
-    ax.set_title(f'Pixel distribution — {design_name}')
+
+    ax.hist(real_ranges, bins=bins, alpha=0.6, color='steelblue',
+            edgecolor='white',
+            label=f'Real (n={len(real_ranges)})  μ={real_ranges.mean():.2f}')
+    ax.hist(gen_ranges, bins=bins, alpha=0.6, color='tomato',
+            edgecolor='white',
+            label=f'Gen (n={len(gen_ranges)})  μ={gen_ranges.mean():.2f}')
+
+    ax.axvline(real_ranges.mean(), color='steelblue', linestyle='--', linewidth=1.5)
+    ax.axvline(gen_ranges.mean(),  color='tomato',    linestyle='--', linewidth=1.5)
+
+    unit = '' if (elev_min == 0.0 and elev_max == 1.0) else ' (μm)'
+    ax.set_xlabel(f'Elevation Range (max − min){unit}')
+    ax.set_ylabel('Count')
+    ax.set_title(f'Elevation Range Distribution — {design_name}')
     ax.legend()
     fig.tight_layout()
     _save_and_show(fig, save_path, show)
@@ -383,7 +405,7 @@ def compute_mmd(real_tensor, gen_tensor):
 
 @torch.no_grad()
 def evaluate_fold(config, fold, model, k, temperature, save_dir, show, grid_n,
-                  design_names):
+                  design_names, elev_min=0.0, elev_max=1.0):
     design_name = design_names[fold]
     print(f"\n{'='*60}")
     print(f"Fold {fold}  --  held-out design: {design_name}")
@@ -412,10 +434,11 @@ def evaluate_fold(config, fold, model, k, temperature, save_dir, show, grid_n,
                      save_path=str(out / 'B_sample_grid_color.png'), show=show,
                      n_per_row=grid_n, cmap='jet')
 
-    # ---- Panel C: Histogram ----
-    print("  Plotting Panel C: Pixel histogram ...")
+    # ---- Panel C: Elevation range histogram ----
+    print("  Plotting Panel C: Elevation range histogram ...")
     plot_histogram(real_tensor, gen_tensor, design_name,
-                   save_path=str(out / 'C_histogram.png'), show=show)
+                   save_path=str(out / 'C_histogram.png'), show=show,
+                   elev_min=elev_min, elev_max=elev_max)
 
     # ---- Metrics for Panel D ----
     real_div  = real_tensor.view(real_tensor.size(0), -1).float().var(dim=0).mean().item()
@@ -453,8 +476,13 @@ def main():
     folds        = [args.fold] if args.fold is not None else list(range(len(design_names)))
     save_dir     = args.save or config.get('vis_save_dir', 'outputs/vis')
 
+    elev_min = float(config.get('elevation_min', 0.0))
+    elev_max = float(config.get('elevation_max', 1.0))
+
     print(f"\nGenerating {k} samples per design  |  temperature={args.temperature}")
     print(f"Output directory: {save_dir}")
+    if elev_max != 1.0:
+        print(f"Physical elevation scale: [{elev_min}, {elev_max}] μm")
 
     all_results = []
     for fold in folds:
@@ -462,6 +490,7 @@ def main():
             config, fold, model, k, args.temperature,
             save_dir=save_dir, show=args.show,
             grid_n=args.grid_n, design_names=design_names,
+            elev_min=elev_min, elev_max=elev_max,
         )
         all_results.append(result)
 

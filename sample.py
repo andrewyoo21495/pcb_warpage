@@ -314,9 +314,43 @@ def load_scaling_metadata(config: dict, metadata_override: str = None) -> tuple[
 # Main
 # ------------------------------------------------------------------
 
+def _load_real_elevation_images(design_name: str, config: dict,
+                                image_size: int) -> np.ndarray | None:
+    """Load all real elevation images for a design and return as numpy array.
+
+    Returns:
+        (N, H, W) float32 array in [0, 1], or None if not found.
+    """
+    elevation_base_dir = Path(config.get('elevation_base_dir',
+                                         Path(config.get('dataset_dir', './data')) / 'elevation'))
+    elevation_subdir = str(config.get('elevation_subdir', '')).strip()
+
+    if elevation_subdir:
+        elev_dir = elevation_base_dir / design_name / elevation_subdir
+    else:
+        elev_dir = elevation_base_dir / design_name
+
+    if not elev_dir.exists():
+        print(f"  Warning: real elevation dir not found: {elev_dir}")
+        return None
+
+    elev_paths = sorted(elev_dir.glob('*.png'))
+    if not elev_paths:
+        print(f"  Warning: no PNG files in {elev_dir}")
+        return None
+
+    images = []
+    for p in elev_paths:
+        img = Image.open(p).convert('L').resize((image_size, image_size), Image.LANCZOS)
+        images.append(np.array(img, dtype=np.float32) / 255.0)
+
+    return np.stack(images, axis=0)  # (N, H, W)
+
+
 def plot_generated_histograms(all_samples: dict, hist_dir,
                               elev_min: float = 0.0,
-                              elev_max: float = 1.0) -> None:
+                              elev_max: float = 1.0,
+                              all_real: dict = None) -> None:
     """Plot elevation range distribution histograms for generated samples.
 
     For each design, applies inverse min-max scaling to recover physical
@@ -328,6 +362,8 @@ def plot_generated_histograms(all_samples: dict, hist_dir,
         hist_dir    : directory to save histogram PNGs
         elev_min : global minimum elevation used in preprocessing scaling
         elev_max : global maximum elevation used in preprocessing scaling
+        all_real : dict mapping design_name -> (N, H, W) numpy array in [0,1],
+                   or None to skip real data overlay
     """
     hist_dir = Path(hist_dir)
     hist_dir.mkdir(parents=True, exist_ok=True)
@@ -338,17 +374,43 @@ def plot_generated_histograms(all_samples: dict, hist_dir,
         samples_np = samples.squeeze(1).cpu().numpy()  # (K, H, W)
         # Inverse min-max scaling: physical = normalized * (max - min) + min
         samples_physical = samples_np * scale + elev_min
-        ranges = [arr.max() - arr.min() for arr in samples_physical]
-        ranges = np.array(ranges)
+        gen_ranges = np.array([arr.max() - arr.min() for arr in samples_physical])
+
+        # Load real data if available
+        real_ranges = None
+        if all_real and design_name in all_real and all_real[design_name] is not None:
+            real_np = all_real[design_name]  # (N, H, W) in [0,1]
+            real_physical = real_np * scale + elev_min
+            real_ranges = np.array([arr.max() - arr.min() for arr in real_physical])
 
         fig, ax = plt.subplots(figsize=(8, 5))
-        ax.hist(ranges, bins=max(10, len(ranges) // 2), color='steelblue',
-                edgecolor='white', alpha=0.85)
+
+        # Determine shared bin edges
+        if real_ranges is not None:
+            all_ranges = np.concatenate([real_ranges, gen_ranges])
+        else:
+            all_ranges = gen_ranges
+        bins = np.linspace(all_ranges.min() * 0.95, all_ranges.max() * 1.05,
+                           max(15, len(gen_ranges) // 2))
+
+        if real_ranges is not None:
+            ax.hist(real_ranges, bins=bins, color='steelblue',
+                    edgecolor='white', alpha=0.6,
+                    label=f"Real (n={len(real_ranges)})  "
+                          f"μ={real_ranges.mean():.2f}")
+            ax.axvline(real_ranges.mean(), color='steelblue', linestyle='--',
+                       linewidth=1.5)
+
+        ax.hist(gen_ranges, bins=bins, color='tomato',
+                edgecolor='white', alpha=0.6,
+                label=f"Generated (n={len(gen_ranges)})  "
+                      f"μ={gen_ranges.mean():.2f}")
+        ax.axvline(gen_ranges.mean(), color='tomato', linestyle='--',
+                   linewidth=1.5)
+
         ax.set_title(f"Elevation Range Distribution — {design_name}")
         ax.set_xlabel("Elevation Range (max − min)")
         ax.set_ylabel("Count")
-        ax.axvline(ranges.mean(), color='red', linestyle='--', linewidth=1.2,
-                   label=f"Mean = {ranges.mean():.4f}\nMin = {ranges.min():.4f}  |  Max = {ranges.max():.4f}")
         ax.legend()
         fig.tight_layout()
 
@@ -467,13 +529,18 @@ def main():
             )
             all_samples[design_name] = samples
 
-        # Generate elevation range histograms for generated data (in physical scale)
+        # Generate elevation range histograms (generated vs real, in physical scale)
         elev_min, elev_max = _resolve_scaling(args, config)
+        image_size = int(config.get('image_size', 256))
+        all_real = {}
+        for dname in all_samples:
+            all_real[dname] = _load_real_elevation_images(dname, config, image_size)
         print(f"\n{'=' * 60}")
-        print("  Generating elevation range histograms for generated samples...")
+        print("  Generating elevation range histograms (generated vs real)...")
         print(f"  (physical scale: [{elev_min:.4f}, {elev_max:.4f}])")
         plot_generated_histograms(all_samples, base_save_dir / 'distribution',
-                                  elev_min=elev_min, elev_max=elev_max)
+                                  elev_min=elev_min, elev_max=elev_max,
+                                  all_real=all_real)
 
         print(f"\n{'=' * 60}")
         print(f"  Batch complete: processed {len(design_files)} designs.")
@@ -485,11 +552,14 @@ def main():
             args.design, model, model_type, config, device, args, save_dir)
         design_name = Path(args.design).stem
         elev_min, elev_max = _resolve_scaling(args, config)
-        print("\nGenerating elevation range histogram ...")
+        image_size = int(config.get('image_size', 256))
+        real_data = _load_real_elevation_images(design_name, config, image_size)
+        print("\nGenerating elevation range histogram (generated vs real) ...")
         plot_generated_histograms(
             {design_name: samples},
             Path(save_dir) / 'distribution',
             elev_min=elev_min, elev_max=elev_max,
+            all_real={design_name: real_data},
         )
 
 
