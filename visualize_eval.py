@@ -294,8 +294,9 @@ def plot_histogram(real_tensor, gen_tensor, design_name, save_path, show,
 
     # Shared bin edges
     all_ranges = np.concatenate([real_ranges, gen_ranges])
-    bins = np.linspace(all_ranges.min() * 0.95, all_ranges.max() * 1.05,
-                       max(15, len(real_ranges) // 2))
+    margin = (all_ranges.max() - all_ranges.min()) * 0.1 + 1e-6
+    bins = np.linspace(all_ranges.min() - margin, all_ranges.max() + margin,
+                       min(30, max(15, len(real_ranges) // 4)))
 
     fig, ax = plt.subplots(figsize=(8, 4))
 
