@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Training script for PCB Warpage models (CVAE and DDPM).
+"""Training script for PCB Warpage models (CVAE, DDPM, LDM, LFM).
 
 Usage:
   python train.py                      # uses config.txt in current dir
@@ -9,6 +9,8 @@ Usage:
 Set model_type in config.txt:
   model_type  cvae   -> Conditional VAE with cyclical KL annealing
   model_type  ddpm   -> Conditional DDPM with EMA
+  model_type  ldm    -> Latent Diffusion Model (requires pretrained CVAE)
+  model_type  lfm    -> Latent Flow Matching (requires pretrained CVAE)
 """
 
 import argparse
@@ -226,6 +228,58 @@ def validate_ddpm(model, loader, device, use_amp):
     return total_loss / max(n_batches, 1)
 
 
+# ==================================================================
+# LDM / LFM training functions (shared — both return scalar loss)
+# ==================================================================
+
+def train_one_epoch_latent(model, ema, loader, optimizer, scaler, device, use_amp):
+    """One training epoch for LDM or LFM (identical interface: forward → scalar loss)."""
+    model.train()
+    total_loss = 0.0
+    n_batches = 0
+
+    for design, elevation, hand_features in loader:
+        design        = design.to(device, non_blocking=True)
+        elevation     = elevation.to(device, non_blocking=True)
+        hand_features = hand_features.to(device, non_blocking=True)
+
+        optimizer.zero_grad(set_to_none=True)
+        with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+            loss = model(elevation, design, hand_features)
+        scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(
+            [p for p in model.parameters() if p.requires_grad], max_norm=1.0)
+        scaler.step(optimizer)
+        scaler.update()
+        ema.update()
+
+        total_loss += loss.item()
+        n_batches  += 1
+
+    return total_loss / max(n_batches, 1)
+
+
+@torch.no_grad()
+def validate_latent(model, loader, device, use_amp):
+    """Validation for LDM or LFM."""
+    model.eval()
+    total_loss = 0.0
+    n_batches = 0
+
+    for design, elevation, hand_features in loader:
+        design        = design.to(device, non_blocking=True)
+        elevation     = elevation.to(device, non_blocking=True)
+        hand_features = hand_features.to(device, non_blocking=True)
+
+        with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+            loss = model(elevation, design, hand_features)
+        total_loss += loss.item()
+        n_batches  += 1
+
+    return total_loss / max(n_batches, 1)
+
+
 # ------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------
@@ -417,6 +471,82 @@ def main():
 
         logger.info("Training complete.")
         logger.info(f"Best val noise-pred loss: {best_val_loss:.6f}")
+
+    # ============================================================
+    # LDM / LFM training (shared logic — both use latent-space loss)
+    # ============================================================
+    elif model_type in ('ldm', 'lfm'):
+        from utils.ema import EMA
+
+        # Load pretrained CVAE weights
+        cvae_path = str(config.get('cvae_checkpoint', './outputs/cvae_pcb.pth'))
+        if not Path(cvae_path).exists():
+            raise FileNotFoundError(
+                f"Pretrained CVAE checkpoint not found: {cvae_path}\n"
+                f"Train a CVAE first (model_type=cvae), then set "
+                f"'cvae_checkpoint' in your config to point to the CVAE .pth file."
+            )
+        model.load_pretrained_cvae(cvae_path)
+
+        # Only optimize trainable parameters (denoiser / velocity_net)
+        trainable_params = [p for p in model.parameters() if p.requires_grad]
+        optimizer = optim.AdamW(trainable_params, lr=lr, weight_decay=weight_decay)
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=total_epochs, eta_min=1e-6)
+        scaler = torch.amp.GradScaler('cuda', enabled=use_amp)
+
+        ema_decay = float(config.get('ema_decay', 0.9999))
+        ema = EMA(model, decay=ema_decay)
+
+        model_label = model_type.upper()
+        loss_label = 'noise-pred' if model_type == 'ldm' else 'velocity'
+
+        logger.info("=" * 60)
+        logger.info(f"Training {model_label}  |  cvae={cvae_path}  "
+                    f"|  val_fold={config.get('val_fold')}  "
+                    f"|  epochs={total_epochs}  "
+                    f"|  ema_decay={ema_decay}{stop_info}")
+        logger.info("=" * 60)
+
+        for epoch in range(total_epochs):
+            t0 = time.time()
+            train_loss = train_one_epoch_latent(
+                model, ema, train_loader, optimizer, scaler, device, use_amp)
+            val_loss = validate_latent(model, val_loader, device, use_amp)
+            scheduler.step()
+            elapsed = time.time() - t0
+
+            logger.info(
+                f"Epoch {epoch+1:4d}/{total_epochs}  "
+                f"train_{loss_label}={train_loss:.6f}  "
+                f"val_{loss_label}={val_loss:.6f}  "
+                f"lr={scheduler.get_last_lr()[0]:.2e}  "
+                f"({elapsed:.1f}s)"
+            )
+
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                torch.save({
+                    'epoch':             epoch + 1,
+                    'model_type':        model_type,
+                    'model_state':       model.state_dict(),
+                    'ema_state_dict':    ema.shadow,
+                    'optimizer_state':   optimizer.state_dict(),
+                    'val_loss':          val_loss,
+                    'config':            config,
+                    'cvae_checkpoint':   cvae_path,
+                }, model_path)
+                logger.info(f"  -> Checkpoint saved (val_{loss_label}={val_loss:.6f})")
+
+            if early_stop_thresh > 0.0 and val_loss < early_stop_thresh:
+                logger.info(
+                    f"Early stop at epoch {epoch+1}: "
+                    f"val_{loss_label}={val_loss:.6f} < threshold={early_stop_thresh:.4f}"
+                )
+                break
+
+        logger.info("Training complete.")
+        logger.info(f"Best val {loss_label} loss: {best_val_loss:.6f}")
 
     else:
         raise ValueError(f"Unknown model_type: {model_type!r}")

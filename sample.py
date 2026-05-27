@@ -102,9 +102,10 @@ def load_design(path: str, image_size: int) -> tuple[torch.Tensor, np.ndarray, I
 # ------------------------------------------------------------------
 
 def load_model_from_checkpoint(checkpoint: dict, config: dict, device: torch.device):
-    """Load a model from checkpoint, handling both CVAE and DDPM.
+    """Load a model from checkpoint, handling CVAE, DDPM, LDM, and LFM.
 
-    For DDPM checkpoints, EMA weights are loaded for inference.
+    For DDPM/LDM/LFM checkpoints, EMA weights are loaded for inference.
+    For LDM/LFM, the pretrained CVAE is also loaded from the saved path.
     """
     model_type = checkpoint.get('model_type', 'cvae')
     config['model_type'] = model_type
@@ -112,10 +113,7 @@ def load_model_from_checkpoint(checkpoint: dict, config: dict, device: torch.dev
     model = build_model(config).to(device)
 
     if model_type == 'ddpm':
-        # Use raw model weights — EMA shadow appears corrupted for this
-        # checkpoint (produces x0_pred with wrong sign).
         model.load_state_dict(checkpoint['model_state'])
-        # Restore z-score normalization stats
         elev_mean = checkpoint.get('elevation_norm_mean', None)
         elev_std = checkpoint.get('elevation_norm_std', None)
         if elev_mean is not None and elev_std is not None:
@@ -124,6 +122,22 @@ def load_model_from_checkpoint(checkpoint: dict, config: dict, device: torch.dev
                   f"(elev_mean={elev_mean:.4f}, elev_std={elev_std:.4f})")
         else:
             print(f"  Loaded DDPM checkpoint with raw weights (no z-score stats)")
+
+    elif model_type in ('ldm', 'lfm'):
+        # LDM/LFM: load full state dict (includes frozen CVAE + trained denoiser)
+        # Try EMA weights first for better generation quality
+        if 'ema_state_dict' in checkpoint:
+            ema_sd = checkpoint['ema_state_dict']
+            model_sd = model.state_dict()
+            for name in ema_sd:
+                if name in model_sd:
+                    model_sd[name] = ema_sd[name]
+            model.load_state_dict(model_sd)
+            print(f"  Loaded {model_type.upper()} checkpoint with EMA weights")
+        else:
+            model.load_state_dict(checkpoint['model_state'])
+            print(f"  Loaded {model_type.upper()} checkpoint with raw weights")
+
     else:
         model.load_state_dict(checkpoint['model_state'])
 

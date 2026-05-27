@@ -6,8 +6,10 @@
 
 ```
 pcb_warpage/
-├── config.txt                          # All hyperparameters (model_type, CVAE, DDPM)
-├── train.py                            # Training loop (CVAE or DDPM)
+├── config.txt                          # CVAE hyperparameters
+├── config_ldm.txt                      # LDM hyperparameters
+├── config_lfm.txt                      # LFM hyperparameters
+├── train.py                            # Training loop (CVAE / DDPM / LDM / LFM)
 ├── evaluate.py                         # Leave-one-out evaluation
 ├── sample.py                           # Inference / generation
 ├── analyze_features.py                 # Feature importance ranking & selection
@@ -16,53 +18,63 @@ pcb_warpage/
 │   ├── generate_elevation.py           # Synthetic elevation images (per design)
 │   └── visualize_samples.py            # Sanity-check plots
 ├── models/
-│   ├── __init__.py                     # build_model() factory (cvae / ddpm)
+│   ├── __init__.py                     # build_model() factory (cvae/ddpm/ldm/lfm)
 │   ├── cvae.py                         # Full CVAE (Concat / FiLM / CrossAttn)
 │   ├── design_encoder.py              # CNN + handcrafted features → c (deterministic)
 │   ├── elevation_encoder.py           # CNN → μ, logvar, z1 (stochastic)
 │   ├── decoder.py                     # FiLM-conditioned upsampler
 │   ├── ddpm.py                        # Conditional DDPM (cosine schedule + DDIM)
 │   ├── ddpm_condition_encoder.py      # Multi-scale CNN → spatial feats + global cond
-│   └── unet.py                        # U-Net noise predictor with AdaGN
+│   ├── unet.py                        # U-Net noise predictor with AdaGN
+│   ├── ldm.py                         # Latent Diffusion Model (DDIM in CVAE latent space)
+│   ├── lfm.py                         # Latent Flow Matching (ODE in CVAE latent space)
+│   └── latent_denoiser.py             # Shared MLP denoiser/velocity net (LDM + LFM)
+├── documents/
+│   ├── LDM_Architecture.md            # LDM technical documentation (Korean)
+│   ├── LFM_Architecture.md            # LFM technical documentation (Korean)
+│   └── ...                            # Other architecture docs
 └── utils/
     ├── load_config.py                  # config.txt parser
     ├── handcrafted_features.py         # 24-dim design feature extractor
     ├── losses.py                       # MSE recon + KL + cyclical β annealing (CVAE)
     ├── dataset.py                      # PCBWarpageDataset + DataLoader factory
-    └── ema.py                          # Exponential Moving Average (DDPM)
+    └── ema.py                          # Exponential Moving Average (DDPM/LDM/LFM)
 ```
 
 ---
 
 ## Model Selection
 
-This project supports two generative model architectures:
+This project supports four generative model architectures:
 
-| Model | Config value | Description |
-|---|---|---|
-| **CVAE** | `model_type  cvae` | Conditional VAE with 3 fusion methods (default) |
-| **DDPM** | `model_type  ddpm` | Conditional Denoising Diffusion Probabilistic Model |
+| Model | Config value | Config file | Description |
+|---|---|---|---|
+| **CVAE** | `model_type  cvae` | `config.txt` | Conditional VAE with 3 fusion methods (default) |
+| **DDPM** | `model_type  ddpm` | `config.txt` | Conditional Denoising Diffusion Probabilistic Model |
+| **LDM** | `model_type  ldm` | `config_ldm.txt` | Latent Diffusion — DDIM in CVAE latent space (requires pretrained CVAE) |
+| **LFM** | `model_type  lfm` | `config_lfm.txt` | Latent Flow Matching — ODE in CVAE latent space (requires pretrained CVAE) |
 
-Set the model type in `config.txt`:
+Set the model type in the config file:
 ```
-model_type  cvae    # or: ddpm
+model_type  cvae    # or: ddpm, ldm, lfm
 ```
 
-Both models share the same data pipeline, config system, evaluation metrics, and
+All models share the same data pipeline, config system, evaluation metrics, and
 sampling interface. The `model_type` key determines which model is built, trained,
 and evaluated.
 
 ### Architecture Comparison
 
-| | CVAE | DDPM |
-|---|---|---|
-| **Parameters** | ~4.2M | ~14.3M |
-| **Condition encoder** | CNN → 64-dim vector | Multi-scale CNN → spatial maps + 256-dim vector |
-| **Generation method** | Single forward pass (decoder) | Iterative reverse diffusion (DDIM, 50 steps) |
-| **Stochasticity** | Latent z1 ~ N(0,I) | Pure noise → iterative denoising |
-| **Training loss** | MSE recon + β·KL | MSE noise prediction |
-| **Inference speed** | Fast (single pass) | Slower (50 DDIM steps) |
-| **Strengths** | Fast inference, explicit latent space | Superior spatial detail, better mode coverage |
+| | CVAE | DDPM | LDM | LFM |
+|---|---|---|---|---|
+| **Parameters** | ~4.2M | ~14.3M | ~2M (denoiser) + frozen CVAE | ~2M (velocity net) + frozen CVAE |
+| **Diffusion space** | N/A | Pixel (128×128) | Latent (64-dim) | Latent (64-dim) |
+| **Condition encoder** | CNN → 64-dim | Multi-scale CNN → 256-dim | Reuses CVAE DesignEncoder | Reuses CVAE DesignEncoder |
+| **Generation method** | Single pass | DDIM (50 steps) | DDIM in latent (50 steps) + decoder | Euler ODE (30 steps) + decoder |
+| **Training loss** | MSE recon + β·KL | MSE noise prediction | MSE noise (latent) | MSE velocity (latent) |
+| **Inference speed** | Fast (single pass) | Slow (50 UNet steps) | Fast (50 MLP steps + 1 decoder) | Fastest (30 MLP steps + 1 decoder) |
+| **Prerequisites** | None | None | Pretrained CVAE | Pretrained CVAE |
+| **Small data** | Good | Poor | Good | Good |
 
 ---
 
@@ -265,6 +277,52 @@ The training loop automatically adapts to the selected `model_type`.
 - Checkpoint includes both model weights and EMA weights
 - At inference, EMA weights are used (smoother, higher quality outputs)
 
+### LDM Training (Latent Diffusion Model)
+
+**Requires a pretrained CVAE checkpoint.** LDM performs diffusion in the CVAE's 64-dim latent space instead of pixel space, dramatically reducing training difficulty.
+
+| Key | Default | Description |
+|---|---|---|
+| `cvae_checkpoint` | `./outputs/cvae_pcb.pth` | Path to pretrained CVAE checkpoint (**required**) |
+| `training_epochs` | 500 | Total epochs (fewer needed than pixel DDPM) |
+| `batch_size` | 64 | Can be larger (lightweight MLP model) |
+| `learning_rate` | 0.0002 | Slightly higher LR for MLP |
+| `ldm_T` | 500 | Diffusion timesteps in latent space |
+| `ldm_ddim_steps` | 50 | DDIM inference steps |
+| `ldm_hidden_dim` | 512 | Denoiser MLP hidden width |
+| `ldm_n_blocks` | 8 | Denoiser residual blocks |
+| `ldm_dropout` | 0.1 | Denoiser dropout rate |
+| `ldm_finetune_encoder` | False | Fine-tune DesignEncoder (True = unfreeze) |
+| `ema_decay` | 0.9999 | EMA decay rate |
+
+- Only the LatentDenoiser MLP (~2M params) is trained; CVAE components are frozen
+- Training loss: MSE between predicted and actual noise in 64-dim latent space
+- Uses cosine beta schedule (same as DDPM but with T=500)
+- CVAE network params (`z_dim`, `c_dim`, `fusion_method`) must match the pretrained CVAE
+
+### LFM Training (Latent Flow Matching)
+
+**Requires a pretrained CVAE checkpoint.** LFM uses flow matching (ODE-based) instead of diffusion, with even simpler training dynamics.
+
+| Key | Default | Description |
+|---|---|---|
+| `cvae_checkpoint` | `./outputs/cvae_pcb.pth` | Path to pretrained CVAE checkpoint (**required**) |
+| `training_epochs` | 500 | Total epochs |
+| `batch_size` | 64 | Can be larger (lightweight MLP model) |
+| `learning_rate` | 0.0002 | Slightly higher LR for MLP |
+| `lfm_ode_steps` | 30 | Euler ODE inference steps (fewer than DDIM) |
+| `lfm_hidden_dim` | 512 | Velocity net MLP hidden width |
+| `lfm_n_blocks` | 8 | Velocity net residual blocks |
+| `lfm_dropout` | 0.1 | Velocity net dropout rate |
+| `lfm_sigma_min` | 0.001 | Numerical stability for t near 0/1 |
+| `lfm_finetune_encoder` | False | Fine-tune DesignEncoder (True = unfreeze) |
+| `ema_decay` | 0.9999 | EMA decay rate |
+
+- Training loss: MSE between predicted and target velocity along straight-line path
+- No noise schedule needed (simpler than LDM)
+- Uses linear interpolation path (optimal transport) between noise and data
+- Inference via Euler ODE integration (30 steps default — fewer than LDM's 50)
+
 ### Data Augmentation
 
 Physics-aware augmentations are applied to the **training split only** and are designed to stay within the manifold of plausible PCB warpage fields. All geometric transforms are applied identically to the design and its paired elevation, and handcrafted features are recomputed from the augmented design so the conditioning remains consistent.
@@ -309,13 +367,13 @@ The evaluation script auto-detects the model type from the checkpoint file.
 
 Metrics reported per fold:
 
-| Metric | CVAE | DDPM | Description |
-|---|---|---|---|
-| Reconstruction MSE | Yes | N/A | MSE of deterministic reconstruction (μ path) |
-| Sample Diversity | Yes | Yes | Mean per-pixel variance across K generated samples |
-| MMD | Yes | Yes | Maximum Mean Discrepancy between generated and real distributions |
+| Metric | CVAE | DDPM | LDM | LFM | Description |
+|---|---|---|---|---|---|
+| Reconstruction MSE | Yes | N/A | N/A | N/A | MSE of deterministic reconstruction (μ path) |
+| Sample Diversity | Yes | Yes | Yes | Yes | Mean per-pixel variance across K generated samples |
+| MMD | Yes | Yes | Yes | Yes | Maximum Mean Discrepancy between generated and real distributions |
 
-For DDPM, reconstruction MSE is not applicable since diffusion models don't have
+For DDPM/LDM/LFM, reconstruction MSE is not applicable since these models don't have
 a deterministic reconstruction path.
 
 ---
@@ -379,6 +437,8 @@ Each histogram shows the distribution of per-sample elevation ranges (max - min)
 |---|---|
 | CVAE | Scales z1 prior noise; >1 = more diverse, <1 = less |
 | DDPM | Scales DDIM eta (stochasticity); >1 = more diverse, <1 = more deterministic |
+| LDM  | Scales initial latent noise std; >1 = more diverse, <1 = less |
+| LFM  | Scales initial latent noise std; >1 = more diverse, <1 = less |
 
 ### Denormalization
 
@@ -516,6 +576,53 @@ python sample.py --design data/design/design_C.png --k 16 --save outputs/ddpm_sa
 python sample.py --design-dir data/design/ --k 16 --save outputs/ddpm_samples/
 ```
 
+### LDM Workflow (Latent Diffusion Model)
+
+LDM is a 2-stage approach: first train a CVAE, then train a diffusion model in its latent space.
+
+```bash
+# 1–2. Same as CVAE (data preparation)
+
+# 3. Stage 1: Train CVAE first (if not already done)
+python train.py --config config.txt     # model_type = cvae
+# -> saves ./outputs/cvae_pcb.pth
+
+# 4. Stage 2: Train LDM using pretrained CVAE
+#    config_ldm.txt must have:
+#      cvae_checkpoint  ./outputs/cvae_pcb.pth
+#      z_dim, c_dim, fusion_method must match the CVAE config
+python train.py --config config_ldm.txt
+
+# 5. Evaluate (auto-detects LDM from checkpoint)
+python evaluate.py --config config_ldm.txt
+
+# 6. Generate samples
+python sample.py --config config_ldm.txt --design data/design/design_C.png --k 16
+
+# 6b. Batch mode
+python sample.py --config config_ldm.txt --design-dir data/design/ --k 16 --save outputs/ldm_samples/
+```
+
+### LFM Workflow (Latent Flow Matching)
+
+Same 2-stage approach as LDM, but uses flow matching instead of diffusion.
+
+```bash
+# 1–3. Same as LDM (train CVAE first)
+
+# 4. Train LFM using pretrained CVAE
+python train.py --config config_lfm.txt
+
+# 5. Evaluate
+python evaluate.py --config config_lfm.txt
+
+# 6. Generate samples
+python sample.py --config config_lfm.txt --design data/design/design_C.png --k 16
+
+# 6b. Batch mode
+python sample.py --config config_lfm.txt --design-dir data/design/ --k 16 --save outputs/lfm_samples/
+```
+
 ---
 
 ## Config Reference
@@ -524,7 +631,7 @@ Full list of `config.txt` keys:
 
 ```
 %   Model selection
-model_type          cvae        # cvae / ddpm
+model_type          cvae        # cvae / ddpm / ldm / lfm
 mode                Train       # Train / Inference
 gpu_ids             0           # -1 for CPU
 
@@ -543,7 +650,7 @@ num_designs         10
 %   Image
 image_size          256
 
-%   CVAE network
+%   CVAE network  (also used by LDM/LFM — must match pretrained CVAE)
 z_dim               64      # stochastic latent dim (z1)
 c_dim               64      # condition vector dim
 c_cnn_dim           64      # design CNN branch output
@@ -552,7 +659,7 @@ fusion_method       film    # concat / film / cross_attention
 selected_features           # optional: comma-separated feature indices, e.g. 0,7,11,13
 
 %   Training (shared)
-training_epochs     50      # CVAE: ~50–200; DDPM: ~2000
+training_epochs     50      # CVAE: ~50–200; DDPM: ~2000; LDM/LFM: ~500
 early_stop_threshold 0.001  # halt when val loss < this; 0 = disabled
 batch_size          32
 learning_rate       0.0001
@@ -571,7 +678,24 @@ ddpm_cond_dim       256     # global condition vector dimension
 ddpm_eta            0.7     # DDIM stochasticity: 0=deterministic, 1=full DDPM
 ddpm_ddim_steps     50      # DDIM inference steps
 ddpm_dropout        0.15    # dropout in U-Net ResBlocks
-ema_decay           0.9999  # EMA decay for DDPM
+ema_decay           0.9999  # EMA decay for DDPM / LDM / LFM
+
+%   LDM parameters  (Latent Diffusion Model)
+cvae_checkpoint         ./outputs/cvae_pcb.pth  # pretrained CVAE (REQUIRED for LDM/LFM)
+ldm_T                   500     # diffusion timesteps in latent space
+ldm_ddim_steps          50      # DDIM inference steps
+ldm_hidden_dim          512     # denoiser MLP hidden width
+ldm_n_blocks            8       # denoiser residual blocks
+ldm_dropout             0.1     # denoiser dropout rate
+ldm_finetune_encoder    False   # fine-tune design encoder
+
+%   LFM parameters  (Latent Flow Matching)
+lfm_ode_steps           30      # Euler ODE inference steps
+lfm_hidden_dim          512     # velocity net MLP hidden width
+lfm_n_blocks            8       # velocity net residual blocks
+lfm_dropout             0.1     # velocity net dropout rate
+lfm_sigma_min           0.001   # numerical stability for t near 0/1
+lfm_finetune_encoder    False   # fine-tune design encoder
 
 %   Augmentation
 use_design_aug      True        # brightness/contrast jitter on design input
@@ -624,5 +748,19 @@ Checkpoints are saved as PyTorch `.pth` files with model-type-specific contents:
 }
 ```
 
+### LDM / LFM Checkpoint
+```python
+{
+    'epoch':           int,
+    'model_type':      'ldm' or 'lfm',
+    'model_state':     OrderedDict,  # full state (frozen CVAE + trained denoiser/velocity)
+    'ema_state_dict':  dict,         # EMA weights (used for inference)
+    'optimizer_state':  OrderedDict,
+    'val_loss':        float,
+    'config':          dict,
+    'cvae_checkpoint': str,          # path to the pretrained CVAE used
+}
+```
+
 When loading checkpoints for evaluation or sampling, the scripts auto-detect
-`model_type` and use EMA weights for DDPM.
+`model_type` and use EMA weights for DDPM, LDM, and LFM.

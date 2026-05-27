@@ -8,7 +8,7 @@ def build_model(config: dict):
         config: dict from load_config().
 
     Returns:
-        nn.Module — either CVAE or ConditionalDDPM.
+        nn.Module — CVAE, ConditionalDDPM, LatentDiffusionModel, or LatentFlowMatching.
     """
     model_type = str(config.get('model_type', 'cvae')).lower()
 
@@ -18,7 +18,14 @@ def build_model(config: dict):
     elif model_type == 'ddpm':
         from models.ddpm import ConditionalDDPM
         return ConditionalDDPM(config)
+    elif model_type == 'ldm':
+        from models.ldm import LatentDiffusionModel
+        return LatentDiffusionModel(config)
+    elif model_type == 'lfm':
+        from models.lfm import LatentFlowMatching
+        return LatentFlowMatching(config)
     else:
         raise ValueError(
-            f"Unknown model_type: {model_type!r}. Choose 'cvae' or 'ddpm'."
+            f"Unknown model_type: {model_type!r}. "
+            "Choose 'cvae', 'ddpm', 'ldm', or 'lfm'."
         )

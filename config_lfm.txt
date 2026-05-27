@@ -1,0 +1,69 @@
+model_type  lfm         # Latent Flow Matching (requires pretrained CVAE)
+mode        Train
+gpu_ids     0
+
+log_file_dir    ./outputs/train_lfm.log
+modelpath       ./outputs/lfm_pcb.pth
+vis_save_dir    ./outputs/vis_lfm
+sample_save_dir ./outputs/samples_lfm
+
+%   Pretrained CVAE checkpoint (REQUIRED — train CVAE first)
+cvae_checkpoint     ./outputs/cvae_pcb.pth
+
+%   Dataset  (same as CVAE config)
+dataset_dir             ./data
+design_names            design_A, design_B, design_C, design_D, design_E, design_F, design_G, design_H, design_I, design_J
+design_image_dir        ./data/design
+elevation_base_dir      ./data/elevation
+elevation_subdir        images
+num_designs             10
+num_samples_per_design  200
+
+%   Image parameters
+image_size  256
+
+%   CVAE network parameters (must match pretrained CVAE)
+z_dim       64
+c_dim       16
+c_cnn_dim   8
+c_hand_dim  4
+fusion_method   film
+
+%   LFM-specific parameters
+lfm_ode_steps       30      # Euler ODE inference steps (fewer needed than DDIM)
+lfm_hidden_dim      256     # velocity net MLP hidden width (256 for small data; try 512 for larger datasets)
+lfm_n_blocks        8       # velocity net residual blocks
+lfm_dropout         0.1     # velocity net dropout rate
+lfm_sigma_min       0.001   # numerical stability clamp for t near 0/1
+lfm_finetune_encoder False  # fine-tune design encoder (True = unfreeze)
+
+%   Training parameters
+training_epochs         500
+batch_size              64
+learning_rate           0.0002
+num_workers             4
+weight_decay            0.0001
+early_stop_threshold    0
+
+%   EMA
+ema_decay   0.9999
+
+%   Augmentation (same as CVAE)
+use_design_aug      True
+use_elevation_aug   True
+aug_d4              True
+aug_small_rot_deg   5.0
+aug_elev_noise_std  0.015
+aug_elev_noise_grid 8
+
+%   Validation
+val_fold    0
+
+%   Inference
+num_gen_samples 10
+
+%   Physical scaling
+elevation_min   0.0
+elevation_max   3000.0
+
+selected_features  7,9,11,13,14,15,17,20,21

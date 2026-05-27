@@ -182,25 +182,23 @@ def mmd(real: torch.Tensor, generated: torch.Tensor, sigma: float = 1.0) -> floa
 # ------------------------------------------------------------------
 
 def load_model_from_checkpoint(checkpoint: dict, config: dict, device: torch.device):
-    """Load a model from checkpoint, handling both CVAE and DDPM.
+    """Load a model from checkpoint, handling CVAE, DDPM, LDM, and LFM.
 
-    For DDPM checkpoints, EMA weights are loaded for inference.
+    For DDPM/LDM/LFM checkpoints, EMA weights are loaded for inference.
     """
     model_type = checkpoint.get('model_type', 'cvae')
-    # Override config model_type so build_model creates the right class
     config['model_type'] = model_type
 
     model = build_model(config).to(device)
 
-    if model_type == 'ddpm' and 'ema_state_dict' in checkpoint:
-        # Load EMA weights for inference (better generation quality)
+    if model_type in ('ddpm', 'ldm', 'lfm') and 'ema_state_dict' in checkpoint:
         ema_sd = checkpoint['ema_state_dict']
         model_sd = model.state_dict()
         for name in ema_sd:
             if name in model_sd:
                 model_sd[name] = ema_sd[name]
         model.load_state_dict(model_sd)
-        print(f"  Loaded DDPM checkpoint with EMA weights")
+        print(f"  Loaded {model_type.upper()} checkpoint with EMA weights")
     else:
         model.load_state_dict(checkpoint['model_state'])
 
