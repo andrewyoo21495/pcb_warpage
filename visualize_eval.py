@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Visual quality check for trained CVAE/DDPM models.
+"""Visual quality check for trained CVAE/DDPM/LDM/LFM models.
 
 For each held-out design (leave-one-out fold), generates four plots that
 compare the model's generated samples against the real elevation data:
@@ -51,7 +51,7 @@ from models            import build_model
 # ------------------------------------------------------------------
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Visualise CVAE/DDPM generation quality')
+    parser = argparse.ArgumentParser(description='Visualise CVAE/DDPM/LDM/LFM generation quality')
     parser.add_argument('--config',   type=str, default='config.txt')
     parser.add_argument('--fold',     type=int, default=None,
                         help='Evaluate a single fold (0-indexed); default: all folds')
@@ -111,6 +111,24 @@ def load_model(config, device):
         else:
             print(f"Loaded DDPM (raw weights) from {model_path}  "
                   f"(epoch {ckpt.get('epoch', '?')}, no z-score stats in checkpoint)")
+
+    elif model_type in ('ldm', 'lfm'):
+        # LDM/LFM: load full state dict (includes frozen CVAE + trained denoiser)
+        # Try EMA weights first for better generation quality
+        if 'ema_state_dict' in ckpt:
+            ema_sd = ckpt['ema_state_dict']
+            model_sd = model.state_dict()
+            for name in ema_sd:
+                if name in model_sd:
+                    model_sd[name] = ema_sd[name]
+            model.load_state_dict(model_sd)
+            print(f"Loaded {model_type.upper()} (EMA weights) from {model_path}  "
+                  f"(epoch {ckpt.get('epoch', '?')})")
+        else:
+            model.load_state_dict(ckpt['model_state'])
+            print(f"Loaded {model_type.upper()} (raw weights) from {model_path}  "
+                  f"(epoch {ckpt.get('epoch', '?')})")
+
     else:
         model.load_state_dict(ckpt['model_state'])
         print(f"Loaded {model_type.upper()} from {model_path}  "
