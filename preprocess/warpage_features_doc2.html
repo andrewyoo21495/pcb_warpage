@@ -209,7 +209,7 @@ code {
     <!-- Header -->
     <div class="header">
         <h1>PCB Warpage 특성 변수 설명서</h1>
-        <p>공정 상관분석을 위해 선정된 15개 핵심 변수의 정의, 수식, 시각적 예시를 정리한 문서입니다.<br>
+        <p>공정 상관분석을 위해 선정된 12개 핵심 변수의 정의, 수식, 시각적 예시를 정리한 문서입니다.<br>
         <code>wap_parameter_extract.py</code>로 추출되는 변수들과 1:1 대응됩니다.</p>
     </div>
 
@@ -218,7 +218,7 @@ code {
         <h2>목차</h2>
         <ol>
             <li><a href="#overview">개요 — PCB Warpage 데이터란?</a></li>
-            <li><a href="#basic-stats">기본 통계량 (6개 변수)</a></li>
+            <li><a href="#basic-stats">기본 통계량 (3개 변수)</a></li>
             <li><a href="#warpage-mode">Warpage Mode — 형상 분류 (5개 변수)</a></li>
             <li><a href="#geometry">표면 형상 특성 (4개 변수)</a></li>
             <li><a href="#summary">전체 변수 요약 테이블</a></li>
@@ -251,9 +251,9 @@ code {
         </div>
 
         <div class="info-box success">
-            <strong>선정된 변수 카테고리 (총 15개)</strong>
+            <strong>선정된 변수 카테고리 (총 12개)</strong>
             <ul style="margin-top:8px; padding-left:20px;">
-                <li><span class="category-tag cat-basic">기본 통계</span> max_warpage, mean_warpage, std_warpage, median_warpage, skewness, kurtosis (6개)</li>
+                <li><span class="category-tag cat-basic">기본 통계</span> max_warpage, skewness, kurtosis (3개)</li>
                 <li><span class="category-tag cat-mode">형상 분류</span> center_vs_edge_ratio, saddle_index, corner_elevation_std, warpage_mode, edge_profile_asymmetry (5개)</li>
                 <li><span class="category-tag cat-geometry">표면 형상</span> mean_gradient, max_gradient, mean_laplacian, laplacian_std (4개)</li>
             </ul>
@@ -264,8 +264,8 @@ code {
     <!-- 2. Basic Statistics -->
     <!-- ================================================================== -->
     <div class="section" id="basic-stats">
-        <h2><span class="step-badge">2</span> 기본 통계량 <span class="category-tag cat-basic">6개 변수</span></h2>
-        <p>warpage surface의 전체적인 크기와 분포 특성을 수치로 요약하는 가장 기본적인 변수들입니다.
+        <h2><span class="step-badge">2</span> 기본 통계량 <span class="category-tag cat-basic">3개 변수</span></h2>
+        <p>warpage surface의 전체적인 크기와 분포 형태를 수치로 요약하는 핵심 변수들입니다.
         계산이 간단하고 해석이 직관적이어서 공정 상관분석의 첫 번째 단계로 적합합니다.</p>
 
         <div class="img-container">
@@ -281,24 +281,6 @@ code {
                 <td class="formula">max(Z)</td>
                 <td>최대 warpage 값. 틸트 보정 후 min=0이므로 이 값이 곧 전체 elevation range와 같습니다.
                 <strong>제품 스펙 판정의 핵심 기준</strong>이 됩니다.</td>
-            </tr>
-            <tr>
-                <td><code>mean_warpage</code></td>
-                <td class="formula">μ = (1/N) Σ Z<sub>i</sub></td>
-                <td>평균 warpage. 전체적인 휨의 크기를 대표하는 값입니다.
-                max가 이상치에 의해 왜곡될 수 있으므로 mean과 함께 보는 것이 중요합니다.</td>
-            </tr>
-            <tr>
-                <td><code>std_warpage</code></td>
-                <td class="formula">σ = √[(1/N) Σ (Z<sub>i</sub> - μ)²]</td>
-                <td>표준편차. 값이 크면 warpage가 불균일하게 분포되어 있다는 의미입니다.
-                <strong>공정 균일성</strong>을 반영하는 핵심 지표입니다.</td>
-            </tr>
-            <tr>
-                <td><code>median_warpage</code></td>
-                <td class="formula">P50(Z)</td>
-                <td>중앙값. mean과 차이가 크면 분포가 비대칭적이라는 신호입니다.
-                이상치에 robust한 대표값입니다.</td>
             </tr>
             <tr>
                 <td><code>skewness</code></td>
@@ -318,7 +300,6 @@ code {
             <strong>공정 상관분석 활용</strong>
             <ul style="margin-top:8px; padding-left:20px;">
                 <li><code>max_warpage</code>: 스펙 초과 여부의 직접적 판정 기준</li>
-                <li><code>std_warpage</code>: 공정 균일성 — 값이 크면 warpage 변동이 불균일</li>
                 <li><code>skewness</code>: 양의 왜도가 크면 → 국소적으로 높은 warpage 발생 (hotspot)</li>
                 <li><code>kurtosis</code>: 큰 양수 → 극단적 warpage 존재, 이상 공정 조건 의심</li>
             </ul>
@@ -466,7 +447,7 @@ code {
     <!-- ================================================================== -->
     <div class="section" id="summary">
         <h2><span class="step-badge">5</span> 전체 변수 요약 테이블</h2>
-        <p>추출되는 15개 변수의 전체 목록입니다. Excel 출력 시 이 순서대로 열이 생성됩니다.</p>
+        <p>추출되는 12개 변수의 전체 목록입니다. Excel 출력 시 이 순서대로 열이 생성됩니다.</p>
 
         <table>
             <tr>
@@ -480,32 +461,26 @@ code {
             <tr><td>1</td><td><span class="category-tag cat-basic">기본 통계</span></td>
                 <td><code>max_warpage</code></td><td>연속</td><td>최대 warpage 값</td><td>max_warpage</td></tr>
             <tr><td>2</td><td><span class="category-tag cat-basic">기본 통계</span></td>
-                <td><code>mean_warpage</code></td><td>연속</td><td>평균 warpage 값</td><td>mean_warpage</td></tr>
-            <tr><td>3</td><td><span class="category-tag cat-basic">기본 통계</span></td>
-                <td><code>std_warpage</code></td><td>연속</td><td>warpage 표준편차</td><td>std_warpage</td></tr>
-            <tr><td>4</td><td><span class="category-tag cat-basic">기본 통계</span></td>
-                <td><code>median_warpage</code></td><td>연속</td><td>warpage 중앙값</td><td>median_warpage</td></tr>
-            <tr><td>5</td><td><span class="category-tag cat-basic">기본 통계</span></td>
                 <td><code>skewness</code></td><td>연속</td><td>분포 비대칭도</td><td>skewness</td></tr>
-            <tr><td>6</td><td><span class="category-tag cat-basic">기본 통계</span></td>
+            <tr><td>3</td><td><span class="category-tag cat-basic">기본 통계</span></td>
                 <td><code>kurtosis</code></td><td>연속</td><td>분포 첨도</td><td>kurtosis</td></tr>
-            <tr><td>7</td><td><span class="category-tag cat-mode">형상 분류</span></td>
+            <tr><td>4</td><td><span class="category-tag cat-mode">형상 분류</span></td>
                 <td><code>center_vs_edge_ratio</code></td><td>연속</td><td>중심/가장자리 비율</td><td>center_vs_edge_ratio</td></tr>
-            <tr><td>8</td><td><span class="category-tag cat-mode">형상 분류</span></td>
+            <tr><td>5</td><td><span class="category-tag cat-mode">형상 분류</span></td>
                 <td><code>saddle_index</code></td><td>연속</td><td>안장 형상 지수</td><td>saddle_index</td></tr>
-            <tr><td>9</td><td><span class="category-tag cat-mode">형상 분류</span></td>
+            <tr><td>6</td><td><span class="category-tag cat-mode">형상 분류</span></td>
                 <td><code>corner_elevation_std</code></td><td>연속</td><td>코너 elevation 표준편차</td><td>corner_elevation_std</td></tr>
-            <tr><td>10</td><td><span class="category-tag cat-mode">형상 분류</span></td>
+            <tr><td>7</td><td><span class="category-tag cat-mode">형상 분류</span></td>
                 <td><code>warpage_mode</code></td><td>범주</td><td>형상 분류</td><td>warpage_mode</td></tr>
-            <tr><td>11</td><td><span class="category-tag cat-mode">형상 분류</span></td>
+            <tr><td>8</td><td><span class="category-tag cat-mode">형상 분류</span></td>
                 <td><code>edge_profile_asymmetry</code></td><td>연속</td><td>변(edge) 비대칭도</td><td>edge_profile_asymmetry</td></tr>
-            <tr><td>12</td><td><span class="category-tag cat-geometry">표면 형상</span></td>
+            <tr><td>9</td><td><span class="category-tag cat-geometry">표면 형상</span></td>
                 <td><code>mean_gradient</code></td><td>연속</td><td>평균 기울기</td><td>mean_gradient</td></tr>
-            <tr><td>13</td><td><span class="category-tag cat-geometry">표면 형상</span></td>
+            <tr><td>10</td><td><span class="category-tag cat-geometry">표면 형상</span></td>
                 <td><code>max_gradient</code></td><td>연속</td><td>최대 기울기</td><td>max_gradient</td></tr>
-            <tr><td>14</td><td><span class="category-tag cat-geometry">표면 형상</span></td>
+            <tr><td>11</td><td><span class="category-tag cat-geometry">표면 형상</span></td>
                 <td><code>mean_laplacian</code></td><td>연속</td><td>평균 곡률</td><td>mean_laplacian</td></tr>
-            <tr><td>15</td><td><span class="category-tag cat-geometry">표면 형상</span></td>
+            <tr><td>12</td><td><span class="category-tag cat-geometry">표면 형상</span></td>
                 <td><code>laplacian_std</code></td><td>연속</td><td>곡률 변동성</td><td>laplacian_std</td></tr>
         </table>
     </div>
@@ -515,7 +490,7 @@ code {
     <!-- ================================================================== -->
     <div class="section" id="usage">
         <h2><span class="step-badge">6</span> 추출 도구 사용법</h2>
-        <p><code>wap_parameter_extract.py</code>를 사용하여 전처리 완료된 .txt 파일에서 위 15개 변수를 자동 추출하고
+        <p><code>wap_parameter_extract.py</code>를 사용하여 전처리 완료된 .txt 파일에서 위 12개 변수를 자동 추출하고
         Excel 파일로 저장합니다.</p>
 
         <h3>설치 요구사항</h3>
@@ -537,28 +512,28 @@ code {
             <tr>
                 <th>pcb_name</th>
                 <th>max_warpage</th>
-                <th>mean_warpage</th>
+                <th>skewness</th>
                 <th>...</th>
                 <th>laplacian_std</th>
             </tr>
             <tr>
                 <td>sample_001</td>
                 <td>523.4</td>
-                <td>187.2</td>
+                <td>-0.451</td>
                 <td>...</td>
                 <td>0.8923</td>
             </tr>
             <tr>
                 <td>sample_002</td>
                 <td>412.1</td>
-                <td>155.8</td>
+                <td>-0.327</td>
                 <td>...</td>
                 <td>0.7156</td>
             </tr>
         </table>
         <p style="margin-top:8px;">
             첫 번째 열은 <code>pcb_name</code> (파일명에서 확장자를 뺀 이름)이며,
-            이후 15개 열이 각 변수 값입니다. 카테고리별로 헤더 행이 색상으로 구분됩니다.
+            이후 12개 열이 각 변수 값입니다. 카테고리별로 헤더 행이 색상으로 구분됩니다.
         </p>
     </div>
 

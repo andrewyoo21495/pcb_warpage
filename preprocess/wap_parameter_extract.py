@@ -44,15 +44,11 @@ def extract_basic_statistics(Z: np.ndarray) -> Dict[str, float]:
     """Extract basic statistical features from the warpage surface.
 
     Variables:
-        max_warpage, mean_warpage, std_warpage, median_warpage,
-        skewness, kurtosis
+        max_warpage, skewness, kurtosis
     """
     vals = Z.ravel()
     return {
         "max_warpage": float(np.max(vals)),
-        "mean_warpage": float(np.mean(vals)),
-        "std_warpage": float(np.std(vals)),
-        "median_warpage": float(np.median(vals)),
         "skewness": float(skew(vals)),
         "kurtosis": float(kurtosis(vals)),  # excess kurtosis (Fisher)
     }
@@ -163,8 +159,7 @@ def extract_all_features(Z: np.ndarray) -> Dict[str, object]:
 # Column order for output
 FEATURE_COLUMNS = [
     # Basic statistics
-    "max_warpage", "mean_warpage", "std_warpage", "median_warpage",
-    "skewness", "kurtosis",
+    "max_warpage", "skewness", "kurtosis",
     # Warpage mode
     "center_vs_edge_ratio", "saddle_index", "corner_elevation_std",
     "warpage_mode", "edge_profile_asymmetry",
@@ -201,8 +196,7 @@ def discover_txt_files(directory: str) -> List[str]:
 CATEGORY_COLORS = {
     "Basic Statistics": {
         "fill": "E8F0FE",
-        "columns": ["max_warpage", "mean_warpage", "std_warpage",
-                     "median_warpage", "skewness", "kurtosis"],
+        "columns": ["max_warpage", "skewness", "kurtosis"],
     },
     "Warpage Mode": {
         "fill": "FCE8E6",
