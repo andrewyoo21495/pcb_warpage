@@ -192,7 +192,12 @@ def load_model_from_checkpoint(checkpoint: dict, config: dict, device: torch.dev
 
     model = build_model(config).to(device)
 
+    # Always load full model_state first (includes frozen CVAE weights for LDM/LFM)
+    model.load_state_dict(checkpoint['model_state'])
+
     if model_type in ('ddpm', 'ldm', 'lfm') and 'ema_state_dict' in checkpoint:
+        # Overlay EMA weights on top (only covers trainable params: denoiser for
+        # LDM/LFM, all params for DDPM)
         ema_sd = checkpoint['ema_state_dict']
         model_sd = model.state_dict()
         for name in ema_sd:
@@ -200,8 +205,6 @@ def load_model_from_checkpoint(checkpoint: dict, config: dict, device: torch.dev
                 model_sd[name] = ema_sd[name]
         model.load_state_dict(model_sd)
         print(f"  Loaded {model_type.upper()} checkpoint with EMA weights")
-    else:
-        model.load_state_dict(checkpoint['model_state'])
 
     model.eval()
     return model, model_type

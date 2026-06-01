@@ -124,8 +124,9 @@ def load_model_from_checkpoint(checkpoint: dict, config: dict, device: torch.dev
             print(f"  Loaded DDPM checkpoint with raw weights (no z-score stats)")
 
     elif model_type in ('ldm', 'lfm'):
-        # LDM/LFM: load full state dict (includes frozen CVAE + trained denoiser)
-        # Try EMA weights first for better generation quality
+        # LDM/LFM: load full state dict first (includes frozen CVAE + trained denoiser)
+        model.load_state_dict(checkpoint['model_state'])
+        # Then overlay EMA weights for the trainable denoiser/velocity_net
         if 'ema_state_dict' in checkpoint:
             ema_sd = checkpoint['ema_state_dict']
             model_sd = model.state_dict()
@@ -135,7 +136,6 @@ def load_model_from_checkpoint(checkpoint: dict, config: dict, device: torch.dev
             model.load_state_dict(model_sd)
             print(f"  Loaded {model_type.upper()} checkpoint with EMA weights")
         else:
-            model.load_state_dict(checkpoint['model_state'])
             print(f"  Loaded {model_type.upper()} checkpoint with raw weights")
 
     else:

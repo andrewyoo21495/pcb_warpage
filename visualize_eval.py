@@ -114,8 +114,9 @@ def load_model(config, device):
                   f"(epoch {ckpt.get('epoch', '?')}, no z-score stats in checkpoint)")
 
     elif model_type in ('ldm', 'lfm'):
-        # LDM/LFM: load full state dict (includes frozen CVAE + trained denoiser)
-        # Try EMA weights first for better generation quality
+        # LDM/LFM: load full model_state first (includes frozen CVAE components),
+        # then overlay EMA weights for the trainable denoiser/velocity_net.
+        model.load_state_dict(ckpt['model_state'])
         if 'ema_state_dict' in ckpt:
             ema_sd = ckpt['ema_state_dict']
             model_sd = model.state_dict()
@@ -126,7 +127,6 @@ def load_model(config, device):
             print(f"Loaded {model_type.upper()} (EMA weights) from {model_path}  "
                   f"(epoch {ckpt.get('epoch', '?')})")
         else:
-            model.load_state_dict(ckpt['model_state'])
             print(f"Loaded {model_type.upper()} (raw weights) from {model_path}  "
                   f"(epoch {ckpt.get('epoch', '?')})")
 
