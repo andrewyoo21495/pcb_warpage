@@ -35,6 +35,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -436,6 +437,14 @@ def evaluate_fold(config, fold, model, k, temperature, save_dir, show, grid_n,
     # Collect data
     real_tensor, design_batch, hand_batch = collect_real_samples(config, fold, next(model.parameters()).device)
     gen_tensor = generate_samples(model, design_batch, hand_batch, k, temperature)
+
+    # Resize generated samples to match real data if decoder output size differs
+    real_h, real_w = real_tensor.shape[2], real_tensor.shape[3]
+    gen_h,  gen_w  = gen_tensor.shape[2],  gen_tensor.shape[3]
+    if (gen_h, gen_w) != (real_h, real_w):
+        gen_tensor = F.interpolate(gen_tensor, size=(real_h, real_w),
+                                   mode='bilinear', align_corners=False)
+        print(f"  Resized generated samples: ({gen_h},{gen_w}) → ({real_h},{real_w})")
 
     design_np = design_batch.squeeze().cpu().numpy()   # (H, W)
 

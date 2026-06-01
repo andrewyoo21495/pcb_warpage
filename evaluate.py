@@ -27,6 +27,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from utils.load_config import load_config, display_config
@@ -332,6 +333,15 @@ def evaluate_fold(config: dict, fold: int, k: int, device: torch.device,
             else:
                 gen_samples = model.sample(design_batch, hand_batch, num_samples=k)
         gen_samples = gen_samples.float()
+
+        # Resize generated samples if decoder output size differs from dataset
+        real_hw = real_flat.size(1)  # H*W from dataset
+        gen_hw  = gen_samples.shape[2] * gen_samples.shape[3]
+        if gen_hw != real_hw:
+            real_h = int(real_hw ** 0.5)  # dataset images are square
+            gen_samples = F.interpolate(gen_samples, size=(real_h, real_h),
+                                        mode='bilinear', align_corners=False)
+            print(f"  Resized gen samples: {int(gen_hw**0.5)}→{real_h} to match dataset")
 
         # 2d. Generated diversity
         gen_diversity = sample_diversity(gen_samples)
