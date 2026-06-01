@@ -230,50 +230,18 @@ def export_to_excel(results: List[Dict], output_path: str) -> None:
     )
     pcb_fill = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
 
-    # Build column-to-category mapping
-    col_to_fill = {}
-    for cat_info in CATEGORY_COLORS.values():
-        fill = PatternFill(start_color=cat_info["fill"],
-                           end_color=cat_info["fill"], fill_type="solid")
-        for col_name in cat_info["columns"]:
-            col_to_fill[col_name] = fill
-
-    # --- Category header row (row 1) ---
-    ws.cell(row=1, column=1, value="")
-    col_idx = 2
-    for cat_name, cat_info in CATEGORY_COLORS.items():
-        n_cols = len(cat_info["columns"])
-        start_col = col_idx
-        end_col = col_idx + n_cols - 1
-        cell = ws.cell(row=1, column=start_col, value=cat_name)
-        cell.font = Font(bold=True, size=11)
-        cell.alignment = header_alignment
-        fill = PatternFill(start_color=cat_info["fill"],
-                           end_color=cat_info["fill"], fill_type="solid")
-        cell.fill = fill
-        cell.border = thin_border
-        if n_cols > 1:
-            ws.merge_cells(start_row=1, start_column=start_col,
-                           end_row=1, end_column=end_col)
-            for c in range(start_col + 1, end_col + 1):
-                ws.cell(row=1, column=c).fill = fill
-                ws.cell(row=1, column=c).border = thin_border
-        col_idx = end_col + 1
-
-    # --- Column header row (row 2) ---
+    # --- Column header row (row 1) ---
     all_columns = ["pcb_name"] + FEATURE_COLUMNS
     for ci, col_name in enumerate(all_columns, start=1):
-        cell = ws.cell(row=2, column=ci, value=col_name)
+        cell = ws.cell(row=1, column=ci, value=col_name)
         cell.font = header_font
         cell.alignment = header_alignment
         cell.border = thin_border
         if col_name == "pcb_name":
             cell.fill = pcb_fill
-        elif col_name in col_to_fill:
-            cell.fill = col_to_fill[col_name]
 
-    # --- Data rows (row 3+) ---
-    for ri, record in enumerate(results, start=3):
+    # --- Data rows (row 2+) ---
+    for ri, record in enumerate(results, start=2):
         for ci, col_name in enumerate(all_columns, start=1):
             value = record.get(col_name, "")
             cell = ws.cell(row=ri, column=ci, value=value)
@@ -286,8 +254,8 @@ def export_to_excel(results: List[Dict], output_path: str) -> None:
         ws.column_dimensions[chr(64 + ci) if ci <= 26
                              else chr(64 + (ci - 1) // 26) + chr(64 + (ci - 1) % 26 + 1)].width = 18
 
-    # Freeze panes: fix header rows and pcb_name column
-    ws.freeze_panes = "B3"
+    # Freeze panes: fix header row and pcb_name column
+    ws.freeze_panes = "B2"
 
     os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else '.', exist_ok=True)
     wb.save(output_path)
