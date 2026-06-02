@@ -15,6 +15,9 @@ import torch.nn.functional as F
 
 def reconstruction_loss(x_recon: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
     """Mean squared error between reconstruction and target."""
+    if x_recon.shape != x.shape:
+        x_recon = F.interpolate(x_recon, size=x.shape[-2:],
+                                mode='bilinear', align_corners=False)
     return F.mse_loss(x_recon, x, reduction='mean')
 
 
@@ -35,6 +38,9 @@ def spectral_reconstruction_loss(
     Returns:
         scalar loss
     """
+    if x_recon.shape != x.shape:
+        x_recon = F.interpolate(x_recon, size=x.shape[-2:],
+                                mode='bilinear', align_corners=False)
     fft_recon = torch.fft.rfft2(x_recon.float(), norm='ortho')
     fft_real  = torch.fft.rfft2(x.float(),       norm='ortho')
     return F.mse_loss(fft_recon.abs(), fft_real.abs())
