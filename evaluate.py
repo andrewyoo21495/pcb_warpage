@@ -152,7 +152,11 @@ def reconstruction_mse(model, loader, device, use_amp: bool) -> float:
             hand_features = hand_features.to(device, non_blocking=True)
             with torch.amp.autocast(device_type=device.type, enabled=use_amp):
                 recon = model.reconstruct(elevation, design, hand_features)
-            mse_total += torch.nn.functional.mse_loss(recon.float(), elevation).item()
+            recon = recon.float()
+            if recon.shape != elevation.shape:
+                recon = F.interpolate(recon, size=elevation.shape[-2:],
+                                      mode='bilinear', align_corners=False)
+            mse_total += F.mse_loss(recon, elevation).item()
             n_batches += 1
     return mse_total / max(n_batches, 1)
 
