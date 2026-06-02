@@ -23,14 +23,15 @@ num_samples_per_design  200
 image_size  128
 
 %   CVAE network parameters (must match pretrained CVAE)
-z_dim       64
-c_dim       16
+z_dim       16
+c_dim       4
 c_cnn_dim   8
 c_hand_dim  4
-fusion_method   film
+fusion_method   concat
 
 %   LFM-specific parameters
-lfm_ode_steps       30      # Euler ODE inference steps (fewer needed than DDIM)
+lfm_ode_steps       50      # ODE inference steps
+lfm_ode_solver      midpoint  # ODE solver: euler, midpoint, rk4
 lfm_hidden_dim      256     # velocity net MLP hidden width (256 for small data; try 512 for larger datasets)
 lfm_n_blocks        8       # velocity net residual blocks
 lfm_dropout         0.1     # velocity net dropout rate

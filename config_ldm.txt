@@ -23,16 +23,17 @@ num_samples_per_design  200
 image_size  128
 
 %   CVAE network parameters (must match pretrained CVAE)
-z_dim       64
-c_dim       16
+z_dim       16
+c_dim       4
 c_cnn_dim   8
 c_hand_dim  4
-fusion_method   film
+fusion_method   concat
 
 %   LDM-specific parameters
 ldm_T               500     # diffusion timesteps in latent space (fewer than pixel DDPM)
 ldm_ddim_steps      50      # DDIM inference steps
-ldm_hidden_dim      256     # denoiser MLP hidden width (256 for small data; try 512 for larger datasets)
+ldm_ddim_eta        0.5     # DDIM stochasticity: 0=deterministic, 1=full DDPM noise
+ldm_hidden_dim      512     # denoiser MLP hidden width
 ldm_n_blocks        8       # denoiser residual blocks
 ldm_dropout         0.1     # denoiser dropout rate
 ldm_finetune_encoder False  # fine-tune design encoder (True = unfreeze)

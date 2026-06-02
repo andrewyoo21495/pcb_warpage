@@ -68,6 +68,7 @@ class LatentDiffusionModel(nn.Module):
         # Diffusion parameters
         self.T = int(config.get('ldm_t', 500))
         self.ddim_steps = int(config.get('ldm_ddim_steps', 50))
+        self.ddim_eta = float(config.get('ldm_ddim_eta', 0.0))
 
         # ----- CVAE components (loaded later via load_pretrained_cvae) -----
         self.design_encoder = DesignEncoder(config)
@@ -288,7 +289,7 @@ class LatentDiffusionModel(nn.Module):
         z = torch.randn(num_samples, self.z_dim, device=device) * temperature
 
         # DDIM reverse loop
-        eta = 0.0  # deterministic DDIM for latent space (cleaner samples)
+        eta = self.ddim_eta  # 0 = deterministic, >0 adds stochasticity for diversity
 
         for i, t_val in enumerate(timesteps):
             t_batch = torch.full((num_samples,), t_val, device=device,

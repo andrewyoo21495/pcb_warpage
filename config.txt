@@ -20,29 +20,29 @@ num_samples_per_design  200
 image_size  128
 
 %   CVAE network parameters
-z_dim       64      # latent dimension for z1 (stochastic)
-c_dim       16      # condition vector dimension (design encoder output)
+z_dim       16      # latent dimension for z1 (stochastic)
+c_dim       4      # condition vector dimension (design encoder output)
 c_cnn_dim   8       # design encoder CNN branch output dim
 c_hand_dim  4       # handcrafted feature branch output dim
 
 %   Fusion method: concat / film / cross_attention  (CVAE only)
-fusion_method   film
+fusion_method   concat
 
 %   Training parameters  (shared by CVAE and DDPM)
 training_epochs         200
-batch_size              64
+batch_size              32
 learning_rate           0.0001
-num_workers             4
+num_workers             16
 weight_decay            0.0001
 early_stop_threshold    0.0001     # halt when val loss < this value; 0 = disabled
 
 %   KL weight (beta) and cyclical annealing  (CVAE only)
 beta_start  0.0
-beta_max    0.8
-beta_cycles 4
+beta_max    0.4
+beta_cycles 8
 
 %   Diversity / anti-collapse settings  (CVAE only)
-free_bits       0.1     # min KL per latent dim (nats); 0 = disabled
+free_bits       1.0     # min KL per latent dim (nats); 0 = disabled
 spectral_weight 0.1     # FFT magnitude loss weight; 0 = disabled
 logvar_clamp_min -6.0   # lower bound on logvar (wider = more expressive posterior)
 logvar_clamp_max  4.0   # upper bound on logvar

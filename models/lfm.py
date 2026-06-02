@@ -28,7 +28,8 @@ Advantages over LDM:
 
 Config keys read:
     cvae_checkpoint        str   path to pretrained CVAE checkpoint
-    lfm_ode_steps          int   (default 30)    Euler ODE inference steps
+    lfm_ode_steps          int   (default 30)    ODE inference steps
+    lfm_ode_solver         str   (default 'midpoint')  ODE solver: euler, midpoint, rk4
     lfm_hidden_dim         int   (default 512)   velocity net MLP width
     lfm_n_blocks           int   (default 8)     velocity net residual blocks
     lfm_dropout            float (default 0.1)   velocity net dropout
@@ -68,6 +69,7 @@ class LatentFlowMatching(nn.Module):
 
         # Flow matching parameters
         self.ode_steps = int(config.get('lfm_ode_steps', 30))
+        self.ode_solver = str(config.get('lfm_ode_solver', 'midpoint')).lower()
         self.sigma_min = float(config.get('lfm_sigma_min', 0.001))
 
         # ----- CVAE components (loaded later via load_pretrained_cvae) -----
@@ -234,7 +236,7 @@ class LatentFlowMatching(nn.Module):
         return F.mse_loss(v_pred, target_v)
 
     # ------------------------------------------------------------------
-    # Inference (Euler ODE integration in latent space)
+    # Inference (ODE integration in latent space)
     # ------------------------------------------------------------------
 
     @torch.no_grad()
@@ -266,12 +268,38 @@ class LatentFlowMatching(nn.Module):
         # Start from Gaussian noise
         z = torch.randn(num_samples, self.z_dim, device=device) * temperature
 
-        # Euler ODE integration: t = 0 → 1
+        # ODE integration: t = 0 → 1
         dt = 1.0 / self.ode_steps
+        solver = self.ode_solver
+
         for i in range(self.ode_steps):
-            t = torch.full((num_samples,), i * dt, device=device)
-            v = self.velocity_net(z, t, c_exp)
-            z = z + v * dt
+            t_i = i * dt
+
+            if solver == 'midpoint':
+                # Midpoint method (2nd-order): evaluate at half-step
+                t_cur = torch.full((num_samples,), t_i, device=device)
+                v1 = self.velocity_net(z, t_cur, c_exp)
+                z_mid = z + v1 * (dt / 2)
+                t_mid = torch.full((num_samples,), t_i + dt / 2, device=device)
+                v_mid = self.velocity_net(z_mid, t_mid, c_exp)
+                z = z + v_mid * dt
+
+            elif solver == 'rk4':
+                # Runge-Kutta 4th order
+                t_cur = torch.full((num_samples,), t_i, device=device)
+                t_half = torch.full((num_samples,), t_i + dt / 2, device=device)
+                t_end = torch.full((num_samples,), t_i + dt, device=device)
+
+                k1 = self.velocity_net(z, t_cur, c_exp)
+                k2 = self.velocity_net(z + k1 * (dt / 2), t_half, c_exp)
+                k3 = self.velocity_net(z + k2 * (dt / 2), t_half, c_exp)
+                k4 = self.velocity_net(z + k3 * dt, t_end, c_exp)
+                z = z + (k1 + 2 * k2 + 2 * k3 + k4) * (dt / 6)
+
+            else:  # 'euler'
+                t_cur = torch.full((num_samples,), t_i, device=device)
+                v = self.velocity_net(z, t_cur, c_exp)
+                z = z + v * dt
 
         # Decode: latent → elevation image
         z_fused = self.fuse(z, c_exp)
