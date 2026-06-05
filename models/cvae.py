@@ -38,6 +38,7 @@ class CVAE(nn.Module):
         self.z_dim         = int(config.get('z_dim', 64))
         self.c_dim         = int(config.get('c_dim', 64))
         self.fusion_method = str(config.get('fusion_method', 'film'))
+        self.aux_weight    = float(config.get('aux_weight', 0.0))
 
         # Encoders
         self.design_encoder    = DesignEncoder(config)
@@ -118,7 +119,7 @@ class CVAE(nn.Module):
         elevation: torch.Tensor,
         design: torch.Tensor,
         hand_features: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
         """Full CVAE forward pass for training.
 
         Args:
@@ -127,15 +128,24 @@ class CVAE(nn.Module):
             hand_features: (B, HAND_FEATURE_DIM)
 
         Returns:
-            x_recon : (B, 1, H, W)  — reconstructed elevation
-            mu      : (B, z_dim)
-            logvar  : (B, z_dim)
+            x_recon     : (B, 1, H, W)  — reconstructed elevation
+            mu          : (B, z_dim)
+            logvar      : (B, z_dim)
+            x_recon_aux : (B, 1, H, W)  — z1-only reconstruction (None if aux disabled)
         """
         mu, logvar, c = self.encode(elevation, design, hand_features)
         z1            = ElevationEncoder.reparameterize(mu, logvar)
         z_fused       = self.fuse(z1, c)
         x_recon       = self.decoder(z_fused, c)
-        return x_recon, mu, logvar
+
+        # z1-only auxiliary reconstruction: decode with c=0 to force z1
+        # to carry meaningful image structure independently of condition
+        x_recon_aux = None
+        if self.aux_weight > 0.0:
+            c_zero      = torch.zeros_like(c)
+            x_recon_aux = self.decoder(z_fused, c_zero)
+
+        return x_recon, mu, logvar, x_recon_aux
 
     # ------------------------------------------------------------------
     # Inference

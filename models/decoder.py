@@ -3,14 +3,15 @@
 
 Architecture:
   z_fused → MLP → reshape (256, 8, 8)
-  → FiLMBlock(256→128, c)   8  → 16
-  → FiLMBlock(128→64,  c)  16  → 32
-  → FiLMBlock(64→32,   c)  32  → 64
-  → FiLMBlock(32→16,   c)  64  → 128
+  → PlainBlock(256→128)       8  → 16   (z1-driven, no condition)
+  → PlainBlock(128→64)       16  → 32   (z1-driven, no condition)
+  → FiLMBlock(64→32,   c)   32  → 64   (fine detail, c-conditioned)
+  → FiLMBlock(32→16,   c)   64  → 128  (fine detail, c-conditioned)
   → Upsample + Conv(16→1) + Sigmoid   128 → 256
 
-FiLM conditioning at every upsample block keeps the design condition active
-throughout the decoding process.
+Coarse layers (block1-2) rely solely on z1 so the latent code must carry
+the overall elevation structure.  FiLM conditioning is applied only at
+fine-resolution layers (block3-4) for design-specific detail adjustment.
 """
 
 import torch
@@ -39,6 +40,21 @@ class FiLMLayer(nn.Module):
         return gamma * x + beta
 
 
+class PlainBlock(nn.Module):
+    """Upsample → Conv → BN → ReLU  (no condition dependency)."""
+
+    def __init__(self, in_ch: int, out_ch: int):
+        super().__init__()
+        self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
+        self.conv = nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1, bias=False)
+        self.bn   = nn.BatchNorm2d(out_ch)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.upsample(x)
+        x = F.relu(self.bn(self.conv(x)), inplace=True)
+        return x
+
+
 class FiLMBlock(nn.Module):
     """Upsample → Conv → BN → ReLU → FiLM."""
 
@@ -57,12 +73,16 @@ class FiLMBlock(nn.Module):
 
 
 class Decoder(nn.Module):
-    """Transposed-CNN decoder conditioned via FiLM at every upsampling block.
+    """Transposed-CNN decoder with FiLM conditioning only at fine-resolution layers.
+
+    Coarse layers (block1-2) use no condition — forcing z1 to carry the
+    overall elevation structure.  Fine layers (block3-4) apply FiLM so
+    the design condition can adjust spatial details.
 
     Args:
         config      : dict from load_config() — reads c_dim.
         z_fused_dim : dimensionality of the fused latent code input
-                      (64 for film/cross_attention, 128 for concat).
+                      (z_dim for film/cross_attention, z_dim+c_dim for concat).
     """
 
     def __init__(self, config: dict, z_fused_dim: int):
@@ -72,9 +92,11 @@ class Decoder(nn.Module):
         # Project fused latent to initial feature map
         self.fc = nn.Linear(z_fused_dim, 256 * 8 * 8)
 
-        # Upsampling blocks (each doubles spatial resolution)
-        self.block1 = FiLMBlock(256, 128, c_dim)   # 8  → 16
-        self.block2 = FiLMBlock(128,  64, c_dim)   # 16 → 32
+        # --- Coarse layers: no FiLM (z1-driven) ---
+        self.block1 = PlainBlock(256, 128)   # 8  → 16
+        self.block2 = PlainBlock(128,  64)   # 16 → 32
+
+        # --- Fine layers: FiLM-conditioned ---
         self.block3 = FiLMBlock( 64,  32, c_dim)   # 32 → 64
         self.block4 = FiLMBlock( 32,  16, c_dim)   # 64 → 128
 
@@ -86,7 +108,7 @@ class Decoder(nn.Module):
         """
         Args:
             z_fused : (B, z_fused_dim)
-            c       : (B, c_dim)  — condition for FiLM blocks
+            c       : (B, c_dim)  — condition for FiLM blocks (block3-4 only)
 
         Returns:
             x_recon : (B, 1, 256, 256)  values in [0, 1]
@@ -94,8 +116,8 @@ class Decoder(nn.Module):
         x = self.fc(z_fused)
         x = x.view(-1, 256, 8, 8)          # (B, 256, 8, 8)
 
-        x = self.block1(x, c)               # (B, 128, 16, 16)
-        x = self.block2(x, c)               # (B,  64, 32, 32)
+        x = self.block1(x)                  # (B, 128, 16, 16)
+        x = self.block2(x)                  # (B,  64, 32, 32)
         x = self.block3(x, c)               # (B,  32, 64, 64)
         x = self.block4(x, c)               # (B,  16, 128,128)
 

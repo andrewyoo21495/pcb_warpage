@@ -102,7 +102,7 @@ def _count_active_kl_dims(
 
 
 def train_one_epoch_cvae(model, loader, optimizer, scaler, device, use_amp, beta,
-                         free_bits, spectral_weight):
+                         free_bits, spectral_weight, aux_weight):
     model.train()
     total_loss = recon_sum = kl_sum = 0.0
     kl_per_dim_acc = None
@@ -115,10 +115,11 @@ def train_one_epoch_cvae(model, loader, optimizer, scaler, device, use_amp, beta
 
         optimizer.zero_grad(set_to_none=True)
         with torch.amp.autocast(device_type=device.type, enabled=use_amp):
-            x_recon, mu, logvar = model(elevation, design, hand_features)
+            x_recon, mu, logvar, x_recon_aux = model(elevation, design, hand_features)
             loss, recon, kl = cvae_loss(
                 x_recon, elevation, mu, logvar, beta,
-                free_bits=free_bits, spectral_weight=spectral_weight)
+                free_bits=free_bits, spectral_weight=spectral_weight,
+                x_recon_aux=x_recon_aux, aux_weight=aux_weight)
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
@@ -145,7 +146,8 @@ def train_one_epoch_cvae(model, loader, optimizer, scaler, device, use_amp, beta
 
 
 @torch.no_grad()
-def validate_cvae(model, loader, device, use_amp, beta, free_bits, spectral_weight):
+def validate_cvae(model, loader, device, use_amp, beta, free_bits, spectral_weight,
+                  aux_weight):
     model.eval()
     total_loss = recon_sum = kl_sum = 0.0
     kl_per_dim_acc = None
@@ -157,10 +159,11 @@ def validate_cvae(model, loader, device, use_amp, beta, free_bits, spectral_weig
         hand_features = hand_features.to(device, non_blocking=True)
 
         with torch.amp.autocast(device_type=device.type, enabled=use_amp):
-            x_recon, mu, logvar = model(elevation, design, hand_features)
+            x_recon, mu, logvar, x_recon_aux = model(elevation, design, hand_features)
             loss, recon, kl = cvae_loss(
                 x_recon, elevation, mu, logvar, beta,
-                free_bits=free_bits, spectral_weight=spectral_weight)
+                free_bits=free_bits, spectral_weight=spectral_weight,
+                x_recon_aux=x_recon_aux, aux_weight=aux_weight)
 
         total_loss += loss.item()
         recon_sum  += recon.item()
@@ -340,13 +343,15 @@ def main():
         beta_cycles     = int(config.get('beta_cycles',       4))
         free_bits       = float(config.get('free_bits',       0.5))
         spectral_weight = float(config.get('spectral_weight', 0.1))
+        aux_weight      = float(config.get('aux_weight',      0.0))
         z_dim           = int(config.get('z_dim', 64))
 
         logger.info("=" * 60)
         logger.info(f"Training CVAE  |  fusion={config.get('fusion_method')}  "
                     f"|  val_fold={config.get('val_fold')}  "
                     f"|  epochs={total_epochs}  "
-                    f"|  free_bits={free_bits}  spectral_weight={spectral_weight}{stop_info}")
+                    f"|  free_bits={free_bits}  spectral_weight={spectral_weight}  "
+                    f"aux_weight={aux_weight}{stop_info}")
         logger.info("=" * 60)
 
         for epoch in range(total_epochs):
@@ -354,9 +359,11 @@ def main():
 
             t0 = time.time()
             train_loss, train_recon, train_kl, train_active = train_one_epoch_cvae(
-                model, train_loader, optimizer, scaler, device, use_amp, beta, free_bits, spectral_weight)
+                model, train_loader, optimizer, scaler, device, use_amp, beta,
+                free_bits, spectral_weight, aux_weight)
             val_loss, val_recon, val_kl, val_active = validate_cvae(
-                model, val_loader, device, use_amp, beta, free_bits, spectral_weight)
+                model, val_loader, device, use_amp, beta, free_bits, spectral_weight,
+                aux_weight)
             scheduler.step()
             elapsed = time.time() - t0
 

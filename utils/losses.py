@@ -92,6 +92,28 @@ def kl_divergence_free_bits(
     return kl_free.sum()
 
 
+def aux_reconstruction_loss(
+    x_recon_aux: torch.Tensor,
+    x: torch.Tensor,
+) -> torch.Tensor:
+    """MSE between z1-only reconstruction (no condition) and target.
+
+    Forces the stochastic latent z1 to encode meaningful image structure
+    independently of the design condition c.
+
+    Args:
+        x_recon_aux : (B, 1, H, W) — reconstruction from decoder with c=0
+        x           : (B, 1, H, W) — target elevation image
+
+    Returns:
+        scalar loss
+    """
+    if x_recon_aux.shape != x.shape:
+        x_recon_aux = F.interpolate(x_recon_aux, size=x.shape[-2:],
+                                    mode='bilinear', align_corners=False)
+    return F.mse_loss(x_recon_aux, x, reduction='mean')
+
+
 def cvae_loss(
     x_recon: torch.Tensor,
     x: torch.Tensor,
@@ -100,8 +122,10 @@ def cvae_loss(
     beta: float = 1.0,
     free_bits: float = 0.0,
     spectral_weight: float = 0.0,
+    x_recon_aux: torch.Tensor | None = None,
+    aux_weight: float = 0.0,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Combined CVAE loss with optional free-bits KL and spectral reconstruction.
+    """Combined CVAE loss with optional free-bits KL, spectral, and aux reconstruction.
 
     Args:
         x_recon        : Reconstructed elevation image  (B, 1, H, W)
@@ -111,6 +135,8 @@ def cvae_loss(
         beta           : KL weight (annealed during training)
         free_bits      : Minimum KL per latent dim (nats). 0 = disabled.
         spectral_weight: Weight for FFT magnitude loss.  0 = disabled.
+        x_recon_aux    : z1-only reconstruction (no c). None = disabled.
+        aux_weight     : Weight for z1-only aux loss.  0 = disabled.
 
     Returns:
         (total_loss, recon_loss, kl_raw)
@@ -128,6 +154,11 @@ def cvae_loss(
                     if free_bits > 0.0 else kl_raw)
 
     total = recon + beta * kl_penalised
+
+    # z1-only auxiliary reconstruction loss
+    if x_recon_aux is not None and aux_weight > 0.0:
+        total = total + aux_weight * aux_reconstruction_loss(x_recon_aux, x)
+
     return total, recon, kl_raw
 
 

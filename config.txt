@@ -20,7 +20,7 @@ num_samples_per_design  200
 image_size  128
 
 %   CVAE network parameters
-z_dim       16      # latent dimension for z1 (stochastic)
+z_dim       32      # latent dimension for z1 (stochastic)
 c_dim       4      # condition vector dimension (design encoder output)
 c_cnn_dim   8       # design encoder CNN branch output dim
 c_hand_dim  4       # handcrafted feature branch output dim
@@ -44,6 +44,7 @@ beta_cycles 8
 %   Diversity / anti-collapse settings  (CVAE only)
 free_bits       1.0     # min KL per latent dim (nats); 0 = disabled
 spectral_weight 0.1     # FFT magnitude loss weight; 0 = disabled
+aux_weight      0.2     # z1-only reconstruction loss weight; 0 = disabled
 logvar_clamp_min -6.0   # lower bound on logvar (wider = more expressive posterior)
 logvar_clamp_max  4.0   # upper bound on logvar
 

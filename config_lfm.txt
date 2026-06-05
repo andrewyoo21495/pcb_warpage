@@ -23,7 +23,7 @@ num_samples_per_design  200
 image_size  128
 
 %   CVAE network parameters (must match pretrained CVAE)
-z_dim       16
+z_dim       32
 c_dim       4
 c_cnn_dim   8
 c_hand_dim  4

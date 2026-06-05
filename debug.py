@@ -182,7 +182,7 @@ def check_posterior_stats(model, config, fold):
 
     with torch.no_grad():
         for design_b, elevation_b, hand_b in loader:
-            _, mu, logvar = model(elevation_b, design_b, hand_b)
+            _, mu, logvar, _ = model(elevation_b, design_b, hand_b)
             mu_list.append(mu)
             logvar_list.append(logvar)
 

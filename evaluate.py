@@ -102,7 +102,7 @@ def active_kl_dims(model, loader, device, use_amp: bool,
         hand_features = hand_features.to(device, non_blocking=True)
 
         with torch.amp.autocast(device_type=device.type, enabled=use_amp):
-            _, mu, logvar = model(elevation, design, hand_features)
+            _, mu, logvar, _ = model(elevation, design, hand_features)
         mu, logvar = mu.float(), logvar.float()
         kl_dims = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp()).mean(dim=0)
         kl_per_dim_acc = kl_dims if kl_per_dim_acc is None else kl_per_dim_acc + kl_dims
