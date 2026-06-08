@@ -1,0 +1,1894 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PCB Warpage — 전체 아키텍처 문서</title>
+<style>
+  :root {
+    --bg: #f8fafc;
+    --card: #ffffff;
+    --primary: #1e40af;
+    --primary-light: #3b82f6;
+    --accent: #0d9488;
+    --accent-light: #14b8a6;
+    --orange: #ea580c;
+    --orange-light: #fb923c;
+    --purple: #7c3aed;
+    --purple-light: #a78bfa;
+    --text: #1e293b;
+    --text-muted: #64748b;
+    --border: #e2e8f0;
+    --code-bg: #f1f5f9;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+    --shadow-lg: 0 4px 14px rgba(0,0,0,0.1);
+
+    /* SVG colors */
+    --svg-encoder: #dbeafe;
+    --svg-encoder-stroke: #3b82f6;
+    --svg-decoder: #d1fae5;
+    --svg-decoder-stroke: #10b981;
+    --svg-latent: #ffedd5;
+    --svg-latent-stroke: #f97316;
+    --svg-loss: #ede9fe;
+    --svg-loss-stroke: #8b5cf6;
+    --svg-frozen: #f1f5f9;
+    --svg-frozen-stroke: #94a3b8;
+    --svg-train: #fef3c7;
+    --svg-train-stroke: #f59e0b;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 16px;
+  }
+
+  /* ── Header ── */
+  header {
+    background: linear-gradient(135deg, var(--primary) 0%, #1e3a8a 100%);
+    color: white;
+    padding: 3rem 2rem;
+    text-align: center;
+  }
+  header h1 { font-size: 2.2rem; font-weight: 800; letter-spacing: -0.02em; }
+  header p { margin-top: 0.6rem; font-size: 1.1rem; opacity: 0.85; }
+
+  /* ── Layout ── */
+  .container { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+  /* ── TOC ── */
+  nav.toc {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.8rem 2rem;
+    margin-bottom: 2.5rem;
+    box-shadow: var(--shadow);
+  }
+  nav.toc h2 { font-size: 1.2rem; color: var(--primary); margin-bottom: 1rem; }
+  nav.toc ol { padding-left: 1.4rem; }
+  nav.toc li { margin-bottom: 0.35rem; }
+  nav.toc a {
+    color: var(--primary-light);
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.2s;
+  }
+  nav.toc a:hover { color: var(--orange); text-decoration: underline; }
+
+  /* ── Section ── */
+  section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2rem 2.2rem;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow);
+  }
+  section h2 {
+    font-size: 1.5rem;
+    color: var(--primary);
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 0.6rem;
+    margin-bottom: 1.4rem;
+  }
+  section h3 {
+    font-size: 1.15rem;
+    color: var(--accent);
+    margin: 1.4rem 0 0.7rem;
+  }
+  section h4 {
+    font-size: 1rem;
+    color: var(--text);
+    margin: 1rem 0 0.5rem;
+    font-weight: 600;
+  }
+
+  p { margin-bottom: 0.8rem; }
+  ul, ol { padding-left: 1.4rem; margin-bottom: 0.8rem; }
+  li { margin-bottom: 0.3rem; }
+  strong { color: var(--primary); }
+
+  code {
+    background: var(--code-bg);
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    font-size: 0.9em;
+    font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  }
+  pre {
+    background: #1e293b;
+    color: #e2e8f0;
+    padding: 1.2rem 1.4rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    margin: 0.8rem 0 1.2rem;
+  }
+  pre code { background: none; padding: 0; color: inherit; }
+
+  /* ── Table ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.92rem;
+  }
+  th {
+    background: var(--primary);
+    color: white;
+    padding: 0.6rem 0.8rem;
+    text-align: left;
+    font-weight: 600;
+  }
+  td {
+    padding: 0.55rem 0.8rem;
+    border-bottom: 1px solid var(--border);
+  }
+  tr:nth-child(even) td { background: var(--code-bg); }
+  tr:hover td { background: #e0f2fe; }
+
+  /* ── SVG diagrams ── */
+  .diagram-wrap {
+    overflow-x: auto;
+    margin: 1.2rem 0;
+    text-align: center;
+  }
+  .diagram-wrap svg {
+    max-width: 100%;
+    height: auto;
+  }
+  .diagram-caption {
+    text-align: center;
+    font-size: 0.88rem;
+    color: var(--text-muted);
+    margin-top: 0.4rem;
+    font-style: italic;
+  }
+
+  /* ── Badge ── */
+  .badge {
+    display: inline-block;
+    padding: 0.15em 0.6em;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    margin-right: 0.3rem;
+  }
+  .badge-blue   { background: #dbeafe; color: #1e40af; }
+  .badge-green  { background: #d1fae5; color: #065f46; }
+  .badge-orange { background: #ffedd5; color: #9a3412; }
+  .badge-purple { background: #ede9fe; color: #5b21b6; }
+  .badge-gray   { background: #f1f5f9; color: #475569; }
+
+  /* ── Callout ── */
+  .callout {
+    border-left: 4px solid var(--primary-light);
+    background: #eff6ff;
+    padding: 1rem 1.2rem;
+    border-radius: 0 8px 8px 0;
+    margin: 1rem 0;
+  }
+  .callout.tip   { border-left-color: var(--accent); background: #f0fdfa; }
+  .callout.warn  { border-left-color: var(--orange); background: #fff7ed; }
+
+  /* ── Color legend ── */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin: 1rem 0;
+    font-size: 0.88rem;
+  }
+  .legend-item { display: flex; align-items: center; gap: 0.4rem; }
+  .legend-swatch {
+    width: 18px; height: 18px;
+    border-radius: 4px;
+    border: 1.5px solid #94a3b8;
+  }
+
+  /* ── Smooth scroll ── */
+  html { scroll-behavior: smooth; }
+
+  /* ── Responsive ── */
+  @media (max-width: 700px) {
+    header h1 { font-size: 1.5rem; }
+    section { padding: 1.2rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>PCB Warpage &mdash; Conditional Generative Model Architecture</h1>
+  <p>CVAE &middot; LDM &middot; LFM &nbsp;|&nbsp; 통합 프레임워크 기술 문서</p>
+</header>
+
+<div class="container">
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- 목차                                           -->
+<!-- ══════════════════════════════════════════════ -->
+<nav class="toc">
+  <h2>목차</h2>
+  <ol>
+    <li><a href="#sec-overview">프로젝트 개요</a></li>
+    <li><a href="#sec-system">전체 시스템 아키텍처</a></li>
+    <li><a href="#sec-design-enc">공유 컴포넌트 ① &mdash; Design Encoder</a></li>
+    <li><a href="#sec-elev-enc">공유 컴포넌트 ② &mdash; Elevation Encoder</a></li>
+    <li><a href="#sec-decoder">공유 컴포넌트 ③ &mdash; Decoder (FiLM)</a></li>
+    <li><a href="#sec-denoiser">공유 컴포넌트 ④ &mdash; Latent Denoiser / Velocity Net</a></li>
+    <li><a href="#sec-cvae">모델 A &mdash; CVAE (Conditional VAE)</a></li>
+    <li><a href="#sec-ldm">모델 B &mdash; LDM (Latent Diffusion Model)</a></li>
+    <li><a href="#sec-lfm">모델 C &mdash; LFM (Latent Flow Matching)</a></li>
+    <li><a href="#sec-data">데이터 파이프라인</a></li>
+    <li><a href="#sec-train">학습 전략</a></li>
+    <li><a href="#sec-eval">평가 프로토콜</a></li>
+    <li><a href="#sec-compare">모델 비교</a></li>
+  </ol>
+</nav>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- 1. 프로젝트 개요                                -->
+<!-- ══════════════════════════════════════════════ -->
+<section id="sec-overview">
+  <h2>1. 프로젝트 개요</h2>
+  <p>
+    본 프로젝트는 <strong>PCB(인쇄회로기판) 설계 이미지</strong>로부터
+    <strong>워피지(warpage)/높이(elevation) 패턴</strong>을 조건부로 생성하는
+    딥러닝 프레임워크입니다. 하나의 설계 이미지가 주어지면, 모델은
+    해당 설계에서 나타날 수 있는 다양한 변형(elevation) 패턴을 확률적으로 생성합니다.
+  </p>
+
+  <h3>핵심 특징</h3>
+  <ul>
+    <li><strong>3가지 생성 모델</strong>을 통합된 인터페이스로 지원: CVAE, LDM, LFM</li>
+    <li><strong>Leave-one-out 검증</strong>: 10개 설계(A~J) 중 1개를 테스트, 9개로 학습</li>
+    <li><strong>Config-driven</strong>: 모든 하이퍼파라미터를 텍스트 설정 파일로 관리</li>
+    <li><strong>2단계 구조</strong>: LDM과 LFM은 사전 학습된 CVAE를 동결(freeze)하고,
+        64차원 잠재 공간에서 새로운 네트워크만 학습</li>
+  </ul>
+
+  <h3>모델 관계도</h3>
+  <div class="diagram-wrap">
+    <svg width="780" height="270" viewBox="0 0 780 270" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <!-- CVAE box -->
+      <rect x="30" y="30" width="220" height="210" rx="14" fill="#dbeafe" stroke="#3b82f6" stroke-width="2"/>
+      <text x="140" y="60" text-anchor="middle" font-size="16" font-weight="700" fill="#1e40af">CVAE</text>
+      <text x="140" y="82" text-anchor="middle" font-size="11" fill="#475569">독립 학습 (baseline)</text>
+      <rect x="55" y="98" width="170" height="28" rx="6" fill="#fff" stroke="#93c5fd" stroke-width="1.2"/>
+      <text x="140" y="117" text-anchor="middle" font-size="11" fill="#1e293b">DesignEncoder + ElevEncoder</text>
+      <rect x="55" y="134" width="170" height="28" rx="6" fill="#fff" stroke="#93c5fd" stroke-width="1.2"/>
+      <text x="140" y="153" text-anchor="middle" font-size="11" fill="#1e293b">Fusion (concat/FiLM/attn)</text>
+      <rect x="55" y="170" width="170" height="28" rx="6" fill="#d1fae5" stroke="#10b981" stroke-width="1.2"/>
+      <text x="140" y="189" text-anchor="middle" font-size="11" fill="#065f46">Decoder (FiLM)</text>
+      <text x="140" y="225" text-anchor="middle" font-size="10" fill="#64748b">MSE + β·KL + Spectral</text>
+
+      <!-- Arrow CVAE → LDM -->
+      <line x1="250" y1="135" x2="290" y2="135" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowGray)"/>
+      <text x="270" y="122" text-anchor="middle" font-size="9" fill="#64748b">freeze</text>
+
+      <!-- LDM box -->
+      <rect x="290" y="30" width="220" height="210" rx="14" fill="#ffedd5" stroke="#f97316" stroke-width="2"/>
+      <text x="400" y="60" text-anchor="middle" font-size="16" font-weight="700" fill="#9a3412">LDM</text>
+      <text x="400" y="82" text-anchor="middle" font-size="11" fill="#475569">잠재 확산 (Latent Diffusion)</text>
+      <rect x="315" y="98" width="170" height="28" rx="6" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4,3"/>
+      <text x="400" y="117" text-anchor="middle" font-size="11" fill="#64748b">Frozen CVAE</text>
+      <rect x="315" y="134" width="170" height="28" rx="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="400" y="153" text-anchor="middle" font-size="11" fill="#92400e">LatentDenoiser (학습)</text>
+      <rect x="315" y="170" width="170" height="28" rx="6" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4,3"/>
+      <text x="400" y="189" text-anchor="middle" font-size="11" fill="#64748b">Frozen Decoder</text>
+      <text x="400" y="225" text-anchor="middle" font-size="10" fill="#64748b">DDIM Sampling (50 steps)</text>
+
+      <!-- Arrow CVAE → LFM -->
+      <line x1="250" y1="165" x2="290" y2="165" stroke="#94a3b8" stroke-width="0" />
+      <path d="M250,165 Q270,165 270,175 L270,195 Q270,205 290,205" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+      <!-- LFM box -->
+      <rect x="540" y="30" width="220" height="210" rx="14" fill="#ede9fe" stroke="#8b5cf6" stroke-width="2"/>
+      <text x="650" y="60" text-anchor="middle" font-size="16" font-weight="700" fill="#5b21b6">LFM</text>
+      <text x="650" y="82" text-anchor="middle" font-size="11" fill="#475569">잠재 흐름 매칭 (Flow Matching)</text>
+      <rect x="565" y="98" width="170" height="28" rx="6" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4,3"/>
+      <text x="650" y="117" text-anchor="middle" font-size="11" fill="#64748b">Frozen CVAE</text>
+      <rect x="565" y="134" width="170" height="28" rx="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="650" y="153" text-anchor="middle" font-size="11" fill="#92400e">VelocityNet (학습)</text>
+      <rect x="565" y="170" width="170" height="28" rx="6" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4,3"/>
+      <text x="650" y="189" text-anchor="middle" font-size="11" fill="#64748b">Frozen Decoder</text>
+      <text x="650" y="225" text-anchor="middle" font-size="10" fill="#64748b">ODE Integration (30 steps)</text>
+
+      <!-- Arrow LDM → LFM -->
+      <line x1="510" y1="135" x2="540" y2="135" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <text x="525" y="122" text-anchor="middle" font-size="8" fill="#64748b">same</text>
+      <text x="525" y="131" text-anchor="middle" font-size="8" fill="#64748b">CVAE</text>
+
+      <!-- Arrow defs -->
+      <defs>
+        <marker id="arrowGray" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <path d="M0,0 L8,3 L0,6 Z" fill="#94a3b8"/>
+        </marker>
+      </defs>
+    </svg>
+  </div>
+  <p class="diagram-caption">그림 1-1. 세 모델의 관계 — LDM과 LFM은 사전 학습된 CVAE를 동결하고, 잠재 공간에서 각각 Denoiser/VelocityNet만 학습</p>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-swatch" style="background:#dbeafe;border-color:#3b82f6"></div> Encoder 계열</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#d1fae5;border-color:#10b981"></div> Decoder</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#ffedd5;border-color:#f97316"></div> 잠재 공간 연산</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#fef3c7;border-color:#f59e0b"></div> 학습 대상</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#f1f5f9;border-color:#94a3b8"></div> 동결(Frozen)</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#ede9fe;border-color:#8b5cf6"></div> 손실 함수</div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- 2. 전체 시스템 아키텍처                          -->
+<!-- ══════════════════════════════════════════════ -->
+<section id="sec-system">
+  <h2>2. 전체 시스템 아키텍처</h2>
+  <p>
+    세 모델 모두 동일한 <strong>통합 API</strong>를 노출합니다.
+    <code>build_model(config)</code> 팩토리 함수가 설정 파일의 <code>model_type</code>에 따라
+    적절한 클래스를 인스턴스화합니다.
+  </p>
+
+  <pre><code># 팩토리 패턴 (models/__init__.py)
+model = build_model(config)          # 'cvae' | 'ldm' | 'lfm'
+
+# 학습
+loss = model(elevation, design, hand_features)
+
+# 추론 (공통 인터페이스)
+samples = model.sample(design, hand_features, num_samples=K, temperature=1.0)
+# → (K, 1, 256, 256)  ∈ [0, 1]</code></pre>
+
+  <div class="diagram-wrap">
+    <svg width="850" height="400" viewBox="0 0 850 400" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs>
+        <marker id="arrowBlue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <path d="M0,0 L8,3 L0,6 Z" fill="#3b82f6"/>
+        </marker>
+        <marker id="arrowGreen" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <path d="M0,0 L8,3 L0,6 Z" fill="#10b981"/>
+        </marker>
+        <marker id="arrowOrange" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <path d="M0,0 L8,3 L0,6 Z" fill="#f97316"/>
+        </marker>
+      </defs>
+
+      <!-- Title -->
+      <text x="425" y="24" text-anchor="middle" font-size="14" font-weight="700" fill="#1e293b">통합 추론 파이프라인 (Inference)</text>
+
+      <!-- Input: Design image -->
+      <rect x="20" y="50" width="140" height="60" rx="8" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.5"/>
+      <text x="90" y="75" text-anchor="middle" font-size="11" font-weight="600" fill="#0c4a6e">Design 이미지</text>
+      <text x="90" y="92" text-anchor="middle" font-size="10" fill="#475569">(1, 1, 256, 256)</text>
+
+      <!-- Input: Hand features -->
+      <rect x="20" y="130" width="140" height="50" rx="8" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.5"/>
+      <text x="90" y="152" text-anchor="middle" font-size="11" font-weight="600" fill="#0c4a6e">수공 특징 24차원</text>
+      <text x="90" y="168" text-anchor="middle" font-size="10" fill="#475569">(1, 24)</text>
+
+      <!-- DesignEncoder -->
+      <rect x="210" y="65" width="150" height="100" rx="10" fill="#dbeafe" stroke="#3b82f6" stroke-width="2"/>
+      <text x="285" y="100" text-anchor="middle" font-size="12" font-weight="700" fill="#1e40af">Design</text>
+      <text x="285" y="116" text-anchor="middle" font-size="12" font-weight="700" fill="#1e40af">Encoder</text>
+      <text x="285" y="140" text-anchor="middle" font-size="10" fill="#475569">CNN + Hand → c</text>
+      <text x="285" y="155" text-anchor="middle" font-size="10" fill="#64748b">(B, 64)</text>
+
+      <!-- arrows to DesignEncoder -->
+      <line x1="160" y1="80" x2="202" y2="95" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arrowBlue)"/>
+      <line x1="160" y1="150" x2="202" y2="135" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arrowBlue)"/>
+
+      <!-- c output -->
+      <line x1="360" y1="115" x2="418" y2="115" stroke="#3b82f6" stroke-width="2" marker-end="url(#arrowBlue)"/>
+      <text x="389" y="107" text-anchor="middle" font-size="10" font-weight="600" fill="#3b82f6">c</text>
+
+      <!-- Latent space box (model-dependent) -->
+      <rect x="420" y="50" width="200" height="200" rx="12" fill="#fff7ed" stroke="#f97316" stroke-width="2"/>
+      <text x="520" y="78" text-anchor="middle" font-size="13" font-weight="700" fill="#9a3412">잠재 공간 생성</text>
+
+      <!-- CVAE path -->
+      <rect x="440" y="92" width="160" height="30" rx="6" fill="#dbeafe" stroke="#93c5fd" stroke-width="1"/>
+      <text x="520" y="112" text-anchor="middle" font-size="10" fill="#1e40af">CVAE: z ~ N(0,I) → Fuse(z,c)</text>
+
+      <!-- LDM path -->
+      <rect x="440" y="132" width="160" height="30" rx="6" fill="#ffedd5" stroke="#fdba74" stroke-width="1"/>
+      <text x="520" y="152" text-anchor="middle" font-size="10" fill="#9a3412">LDM: DDIM 역확산 (50 steps)</text>
+
+      <!-- LFM path -->
+      <rect x="440" y="172" width="160" height="30" rx="6" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+      <text x="520" y="192" text-anchor="middle" font-size="10" fill="#5b21b6">LFM: ODE 적분 (30 steps)</text>
+
+      <text x="520" y="234" text-anchor="middle" font-size="10" fill="#64748b">→ z_fused (B, 64)</text>
+
+      <!-- Arrow to Decoder -->
+      <line x1="620" y1="150" x2="668" y2="150" stroke="#10b981" stroke-width="2" marker-end="url(#arrowGreen)"/>
+
+      <!-- Decoder -->
+      <rect x="670" y="80" width="140" height="120" rx="10" fill="#d1fae5" stroke="#10b981" stroke-width="2"/>
+      <text x="740" y="115" text-anchor="middle" font-size="12" font-weight="700" fill="#065f46">Decoder</text>
+      <text x="740" y="133" text-anchor="middle" font-size="11" fill="#065f46">(FiLM)</text>
+      <text x="740" y="155" text-anchor="middle" font-size="10" fill="#475569">Plain + FiLM Blocks</text>
+      <text x="740" y="170" text-anchor="middle" font-size="10" fill="#475569">→ Sigmoid</text>
+      <text x="740" y="188" text-anchor="middle" font-size="10" fill="#64748b">(K, 1, 256, 256)</text>
+
+      <!-- c to Decoder -->
+      <path d="M360,130 Q390,130 390,250 Q390,280 670,210" fill="none" stroke="#3b82f6" stroke-width="1.2" stroke-dasharray="5,3"/>
+      <text x="400" y="274" font-size="9" fill="#3b82f6">c (condition)</text>
+
+      <!-- Output arrow -->
+      <line x1="740" y1="200" x2="740" y2="250" stroke="#10b981" stroke-width="2" marker-end="url(#arrowGreen)"/>
+
+      <!-- Output -->
+      <rect x="660" y="255" width="160" height="50" rx="8" fill="#ecfdf5" stroke="#10b981" stroke-width="1.5"/>
+      <text x="740" y="277" text-anchor="middle" font-size="11" font-weight="600" fill="#065f46">생성된 Elevation</text>
+      <text x="740" y="295" text-anchor="middle" font-size="10" fill="#475569">(K, 1, 256, 256) ∈ [0,1]</text>
+
+      <!-- Random noise input -->
+      <rect x="420" y="290" width="200" height="45" rx="8" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.2"/>
+      <text x="520" y="310" text-anchor="middle" font-size="11" font-weight="600" fill="#92400e">z₀ ~ N(0, I)</text>
+      <text x="520" y="326" text-anchor="middle" font-size="10" fill="#78716c">(K, 64) × temperature</text>
+      <line x1="520" y1="290" x2="520" y2="258" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arrowOrange)"/>
+    </svg>
+  </div>
+  <p class="diagram-caption">그림 2-1. 통합 추론 파이프라인 — 모델 종류에 관계없이 Design → c, 잠재 공간 생성 → Decoder → Elevation 이미지</p>
+</section>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- 3. Design Encoder                             -->
+<!-- ══════════════════════════════════════════════ -->
+<section id="sec-design-enc">
+  <h2>3. 공유 컴포넌트 ① &mdash; Design Encoder</h2>
+  <p>
+    <code>DesignEncoder</code>는 설계 이미지와 수공 특징(handcrafted features)을 결합하여
+    64차원 조건 벡터 <strong>c</strong>를 생성합니다. 세 모델 모두 동일한 인코더를 사용합니다.
+  </p>
+
+  <div class="diagram-wrap">
+    <svg width="820" height="440" viewBox="0 0 820 440" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs>
+        <marker id="aB2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#3b82f6"/></marker>
+        <marker id="aG2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#10b981"/></marker>
+        <marker id="aP2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#7c3aed"/></marker>
+      </defs>
+
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1e293b">Design Encoder 아키텍처</text>
+
+      <!-- ── CNN Branch ── -->
+      <rect x="20" y="40" width="480" height="260" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.2"/>
+      <text x="260" y="62" text-anchor="middle" font-size="12" font-weight="700" fill="#1e40af">CNN Branch</text>
+
+      <!-- Input -->
+      <rect x="40" y="80" width="100" height="44" rx="6" fill="#bfdbfe" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="90" y="99" text-anchor="middle" font-size="10" font-weight="600" fill="#1e3a8a">Design</text>
+      <text x="90" y="114" text-anchor="middle" font-size="9" fill="#475569">(B, 1, 256, 256)</text>
+
+      <!-- Conv1 -->
+      <rect x="165" y="80" width="80" height="44" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="205" y="98" text-anchor="middle" font-size="9" font-weight="600" fill="#1e40af">Conv s=2</text>
+      <text x="205" y="112" text-anchor="middle" font-size="8" fill="#475569">1→32, BN, ReLU</text>
+      <line x1="140" y1="102" x2="157" y2="102" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aB2)"/>
+
+      <!-- Conv2 -->
+      <rect x="270" y="80" width="80" height="44" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="310" y="98" text-anchor="middle" font-size="9" font-weight="600" fill="#1e40af">Conv s=2</text>
+      <text x="310" y="112" text-anchor="middle" font-size="8" fill="#475569">32→64, BN, ReLU</text>
+      <line x1="245" y1="102" x2="262" y2="102" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aB2)"/>
+
+      <!-- Conv3 -->
+      <rect x="375" y="80" width="80" height="44" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="415" y="98" text-anchor="middle" font-size="9" font-weight="600" fill="#1e40af">Conv s=2</text>
+      <text x="415" y="112" text-anchor="middle" font-size="8" fill="#475569">64→128, BN, ReLU</text>
+      <line x1="350" y1="102" x2="367" y2="102" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aB2)"/>
+
+      <!-- Resolution labels -->
+      <text x="90"  y="136" text-anchor="middle" font-size="8" fill="#94a3b8">256×256</text>
+      <text x="205" y="136" text-anchor="middle" font-size="8" fill="#94a3b8">128×128</text>
+      <text x="310" y="136" text-anchor="middle" font-size="8" fill="#94a3b8">64×64</text>
+      <text x="415" y="136" text-anchor="middle" font-size="8" fill="#94a3b8">32×32</text>
+
+      <!-- 1x1 conv -->
+      <rect x="165" y="155" width="100" height="36" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="215" y="172" text-anchor="middle" font-size="9" font-weight="600" fill="#1e40af">Conv 1×1</text>
+      <text x="215" y="184" text-anchor="middle" font-size="8" fill="#475569">128→64, ReLU</text>
+      <line x1="415" y1="124" x2="415" y2="145" stroke="#3b82f6" stroke-width="1"/>
+      <line x1="415" y1="145" x2="265" y2="145" stroke="#3b82f6" stroke-width="1"/>
+      <line x1="265" y1="145" x2="265" y2="150" stroke="#3b82f6" stroke-width="1" marker-end="url(#aB2)"/>
+
+      <!-- AdaptiveAvgPool -->
+      <rect x="290" y="155" width="100" height="36" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="340" y="172" text-anchor="middle" font-size="9" font-weight="600" fill="#1e40af">AdaptiveAvgPool</text>
+      <text x="340" y="184" text-anchor="middle" font-size="8" fill="#475569">→ 4×4</text>
+      <line x1="265" y1="173" x2="282" y2="173" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aB2)"/>
+
+      <!-- Flatten + Linear -->
+      <rect x="110" y="210" width="130" height="36" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="175" y="227" text-anchor="middle" font-size="9" font-weight="600" fill="#1e40af">Flatten → Linear</text>
+      <text x="175" y="240" text-anchor="middle" font-size="8" fill="#475569">64×4×4 = 1024 → 64</text>
+      <line x1="340" y1="191" x2="340" y2="200" stroke="#3b82f6" stroke-width="1"/>
+      <line x1="340" y1="200" x2="240" y2="200" stroke="#3b82f6" stroke-width="1"/>
+      <line x1="240" y1="200" x2="240" y2="205" stroke="#3b82f6" stroke-width="1" marker-end="url(#aB2)"/>
+
+      <!-- Dropout -->
+      <rect x="270" y="210" width="100" height="36" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="320" y="227" text-anchor="middle" font-size="9" font-weight="600" fill="#1e40af">ReLU + Dropout</text>
+      <text x="320" y="240" text-anchor="middle" font-size="8" fill="#475569">p=0.3</text>
+      <line x1="240" y1="228" x2="262" y2="228" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aB2)"/>
+
+      <!-- c_cnn output -->
+      <rect x="400" y="210" width="80" height="36" rx="6" fill="#93c5fd" stroke="#2563eb" stroke-width="1.5"/>
+      <text x="440" y="228" text-anchor="middle" font-size="10" font-weight="700" fill="#1e3a8a">c_cnn</text>
+      <text x="440" y="240" text-anchor="middle" font-size="8" fill="#1e3a8a">(B, 64)</text>
+      <line x1="370" y1="228" x2="392" y2="228" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aB2)"/>
+
+      <!-- ── Hand Features Branch ── -->
+      <rect x="520" y="40" width="280" height="160" rx="10" fill="#f0fdf4" stroke="#86efac" stroke-width="1.2"/>
+      <text x="660" y="62" text-anchor="middle" font-size="12" font-weight="700" fill="#065f46">Hand Features Branch</text>
+
+      <rect x="540" y="80" width="100" height="44" rx="6" fill="#bbf7d0" stroke="#10b981" stroke-width="1.5"/>
+      <text x="590" y="99" text-anchor="middle" font-size="10" font-weight="600" fill="#065f46">수공 특징</text>
+      <text x="590" y="114" text-anchor="middle" font-size="9" fill="#475569">(B, 24)</text>
+
+      <rect x="665" y="80" width="115" height="44" rx="6" fill="#d1fae5" stroke="#10b981" stroke-width="1.2"/>
+      <text x="722" y="97" text-anchor="middle" font-size="9" font-weight="600" fill="#065f46">Linear → ReLU</text>
+      <text x="722" y="113" text-anchor="middle" font-size="8" fill="#475569">N → hidden → 32</text>
+      <line x1="640" y1="102" x2="657" y2="102" stroke="#10b981" stroke-width="1.5" marker-end="url(#aG2)"/>
+
+      <!-- feature selection note -->
+      <rect x="545" y="140" width="230" height="30" rx="5" fill="#ecfdf5" stroke="#86efac" stroke-width="1"/>
+      <text x="660" y="160" text-anchor="middle" font-size="9" fill="#475569">selected_features 설정으로 24개 중 부분 선택 가능</text>
+
+      <rect x="640" y="178" width="80" height="36" rx="6" fill="#6ee7b7" stroke="#059669" stroke-width="1.5"/>
+      <text x="680" y="196" text-anchor="middle" font-size="10" font-weight="700" fill="#064e3b">c_hand</text>
+      <text x="680" y="208" text-anchor="middle" font-size="8" fill="#064e3b">(B, 32)</text>
+      <line x1="722" y1="124" x2="722" y2="168" stroke="#10b981" stroke-width="1"/>
+      <line x1="722" y1="168" x2="720" y2="174" stroke="#10b981" stroke-width="1" marker-end="url(#aG2)"/>
+
+      <!-- ── Fusion MLP ── -->
+      <rect x="310" y="310" width="300" height="80" rx="10" fill="#ede9fe" stroke="#8b5cf6" stroke-width="1.5"/>
+      <text x="460" y="335" text-anchor="middle" font-size="12" font-weight="700" fill="#5b21b6">Fusion MLP</text>
+      <text x="460" y="355" text-anchor="middle" font-size="10" fill="#475569">concat(c_cnn, c_hand) = (B, 96)</text>
+      <text x="460" y="372" text-anchor="middle" font-size="10" fill="#475569">→ Linear(96→64) + ReLU + Dropout + Linear(64→64)</text>
+
+      <!-- Arrows to Fusion -->
+      <line x1="440" y1="246" x2="440" y2="302" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aB2)"/>
+      <line x1="680" y1="214" x2="680" y2="280" stroke="#10b981" stroke-width="1"/>
+      <line x1="680" y1="280" x2="560" y2="280" stroke="#10b981" stroke-width="1"/>
+      <line x1="560" y1="280" x2="560" y2="302" stroke="#10b981" stroke-width="1.5" marker-end="url(#aG2)"/>
+
+      <!-- Output c -->
+      <rect x="410" y="405" width="100" height="30" rx="8" fill="#7c3aed" stroke="#6d28d9" stroke-width="1.5"/>
+      <text x="460" y="425" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">c (B, 64)</text>
+      <line x1="460" y1="390" x2="460" y2="400" stroke="#7c3aed" stroke-width="2" marker-end="url(#aP2)"/>
+    </svg>
+  </div>
+  <p class="diagram-caption">그림 3-1. Design Encoder — CNN 브랜치(이미지)와 Hand Features 브랜치를 Fusion MLP로 결합하여 조건 벡터 c 생성</p>
+
+  <h3>핵심 설계 결정</h3>
+  <ul>
+    <li><strong>4×4 Spatial Pooling</strong>: 1×1이 아닌 4×4로 풀링하여 설계 이미지의 공간적 레이아웃 정보를 보존</li>
+    <li><strong>Feature Selection</strong>: <code>selected_features</code> 설정으로 24개 수공 특징 중 유의미한 부분집합만 선택 가능</li>
+    <li><strong>Dropout (p=0.3)</strong>: 10개 설계만으로 학습하므로 과적합 방지를 위해 적극적인 정규화 적용</li>
+    <li><strong>소형 설계</strong>: 소수의 학습 설계를 암기하지 않도록 의도적으로 작은 네트워크 사용</li>
+  </ul>
+</section>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- 4. Elevation Encoder                           -->
+<!-- ══════════════════════════════════════════════ -->
+<section id="sec-elev-enc">
+  <h2>4. 공유 컴포넌트 ② &mdash; Elevation Encoder</h2>
+  <p>
+    <code>ElevationEncoder</code>는 실제 elevation 이미지를 받아 확률적 잠재 벡터 <strong>z₁</strong>을
+    생성합니다. VAE의 인코더 역할을 하며, 평균(μ)과 로그 분산(logvar)을 출력합니다.
+    <strong>학습 시에만</strong> 사용되며, LDM/LFM에서는 동결 상태로 잠재 표현 z₀ = μ를 추출하는 데 쓰입니다.
+  </p>
+
+  <div class="diagram-wrap">
+    <svg width="800" height="340" viewBox="0 0 800 340" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs>
+        <marker id="aB3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#3b82f6"/></marker>
+        <marker id="aO3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#f97316"/></marker>
+      </defs>
+
+      <text x="400" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1e293b">Elevation Encoder 아키텍처</text>
+
+      <!-- Input -->
+      <rect x="15" y="55" width="100" height="50" rx="7" fill="#bfdbfe" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="65" y="77" text-anchor="middle" font-size="10" font-weight="600" fill="#1e3a8a">Elevation</text>
+      <text x="65" y="93" text-anchor="middle" font-size="9" fill="#475569">(B,1,256,256)</text>
+
+      <!-- Conv blocks -->
+      <rect x="140" y="55" width="75" height="50" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="177" y="74" text-anchor="middle" font-size="9" font-weight="600" fill="#1e40af">Conv s=2</text>
+      <text x="177" y="88" text-anchor="middle" font-size="8" fill="#475569">1→32</text>
+      <text x="177" y="115" text-anchor="middle" font-size="7" fill="#94a3b8">128×128</text>
+      <line x1="115" y1="80" x2="132" y2="80" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aB3)"/>
+
+      <rect x="235" y="55" width="75" height="50" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="272" y="74" text-anchor="middle" font-size="9" font-weight="600" fill="#1e40af">Conv s=2</text>
+      <text x="272" y="88" text-anchor="middle" font-size="8" fill="#475569">32→64</text>
+      <text x="272" y="115" text-anchor="middle" font-size="7" fill="#94a3b8">64×64</text>
+      <line x1="215" y1="80" x2="227" y2="80" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aB3)"/>
+
+      <rect x="330" y="55" width="75" height="50" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="367" y="74" text-anchor="middle" font-size="9" font-weight="600" fill="#1e40af">Conv s=2</text>
+      <text x="367" y="88" text-anchor="middle" font-size="8" fill="#475569">64→128</text>
+      <text x="367" y="115" text-anchor="middle" font-size="7" fill="#94a3b8">32×32</text>
+      <line x1="310" y1="80" x2="322" y2="80" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aB3)"/>
+
+      <rect x="425" y="55" width="75" height="50" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="462" y="74" text-anchor="middle" font-size="9" font-weight="600" fill="#1e40af">Conv s=2</text>
+      <text x="462" y="88" text-anchor="middle" font-size="8" fill="#475569">128→256</text>
+      <text x="462" y="115" text-anchor="middle" font-size="7" fill="#94a3b8">16×16</text>
+      <line x1="405" y1="80" x2="417" y2="80" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aB3)"/>
+
+      <!-- BN + LeakyReLU note -->
+      <text x="310" y="42" text-anchor="middle" font-size="9" fill="#64748b">각 Conv 뒤: BatchNorm + LeakyReLU(0.2)</text>
+
+      <!-- Pool + Flatten -->
+      <rect x="525" y="55" width="100" height="50" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="575" y="74" text-anchor="middle" font-size="9" font-weight="600" fill="#1e40af">AvgPool 4×4</text>
+      <text x="575" y="88" text-anchor="middle" font-size="8" fill="#475569">Flatten: 4096</text>
+      <line x1="500" y1="80" x2="517" y2="80" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aB3)"/>
+
+      <!-- MLP -->
+      <rect x="650" y="55" width="100" height="50" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="700" y="74" text-anchor="middle" font-size="9" font-weight="600" fill="#1e40af">Linear</text>
+      <text x="700" y="88" text-anchor="middle" font-size="8" fill="#475569">4096→512, LReLU</text>
+      <line x1="625" y1="80" x2="642" y2="80" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aB3)"/>
+
+      <!-- μ head -->
+      <rect x="560" y="150" width="120" height="44" rx="7" fill="#ffedd5" stroke="#f97316" stroke-width="1.5"/>
+      <text x="620" y="170" text-anchor="middle" font-size="11" font-weight="700" fill="#9a3412">μ = Linear(512→64)</text>
+      <text x="620" y="186" text-anchor="middle" font-size="9" fill="#78716c">(B, z_dim)</text>
+
+      <!-- logvar head -->
+      <rect x="560" y="210" width="120" height="44" rx="7" fill="#ffedd5" stroke="#f97316" stroke-width="1.5"/>
+      <text x="620" y="228" text-anchor="middle" font-size="10" font-weight="700" fill="#9a3412">logvar = Linear(512→64)</text>
+      <text x="620" y="244" text-anchor="middle" font-size="9" fill="#78716c">clamp [−6, 4]</text>
+
+      <!-- Arrows from MLP -->
+      <line x1="700" y1="105" x2="700" y2="135" stroke="#475569" stroke-width="1"/>
+      <line x1="700" y1="135" x2="620" y2="135" stroke="#475569" stroke-width="1"/>
+      <line x1="620" y1="135" x2="620" y2="144" stroke="#f97316" stroke-width="1.5" marker-end="url(#aO3)"/>
+      <line x1="620" y1="194" x2="620" y2="204" stroke="#f97316" stroke-width="1.5" marker-end="url(#aO3)"/>
+
+      <!-- Reparameterization -->
+      <rect x="350" y="170" width="170" height="80" rx="10" fill="#fff7ed" stroke="#f97316" stroke-width="2"/>
+      <text x="435" y="193" text-anchor="middle" font-size="11" font-weight="700" fill="#9a3412">Reparameterization</text>
+      <text x="435" y="212" text-anchor="middle" font-size="10" fill="#78716c">std = exp(0.5 × logvar)</text>
+      <text x="435" y="228" text-anchor="middle" font-size="10" fill="#78716c">ε ~ N(0, I)</text>
+      <text x="435" y="244" text-anchor="middle" font-size="10" font-weight="600" fill="#9a3412">z₁ = μ + std × ε</text>
+
+      <line x1="555" y1="172" x2="528" y2="195" stroke="#f97316" stroke-width="1.5" marker-end="url(#aO3)"/>
+      <line x1="555" y1="232" x2="528" y2="220" stroke="#f97316" stroke-width="1.5" marker-end="url(#aO3)"/>
+
+      <!-- Output z1 -->
+      <rect x="380" y="280" width="110" height="36" rx="8" fill="#f97316" stroke="#ea580c" stroke-width="1.5"/>
+      <text x="435" y="303" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">z₁ (B, 64)</text>
+      <line x1="435" y1="250" x2="435" y2="274" stroke="#f97316" stroke-width="2" marker-end="url(#aO3)"/>
+
+      <!-- Note for LDM/LFM -->
+      <rect x="50" y="170" width="260" height="65" rx="8" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.2"/>
+      <text x="180" y="192" text-anchor="middle" font-size="10" font-weight="600" fill="#92400e">LDM/LFM에서의 사용</text>
+      <text x="180" y="208" text-anchor="middle" font-size="9" fill="#78716c">z₀ = μ (reparameterization 없이 평균만 사용)</text>
+      <text x="180" y="224" text-anchor="middle" font-size="9" fill="#78716c">전체 인코더가 동결(frozen) 상태</text>
+    </svg>
+  </div>
+  <p class="diagram-caption">그림 4-1. Elevation Encoder — CNN으로 이미지를 압축 후, μ/logvar 두 헤드로 분리하여 Reparameterization Trick 적용</p>
+
+  <h3>Logvar Clamping</h3>
+  <p>
+    <code>logvar</code>는 <code>[logvar_clamp_min, logvar_clamp_max]</code> 범위로 클램핑됩니다
+    (기본값: [&minus;6.0, 4.0]). 넓은 범위를 허용함으로써 posterior collapse를 방지하고,
+    더 표현력 있는 사후 분포를 학습할 수 있습니다.
+  </p>
+</section>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- 5. Decoder                                     -->
+<!-- ══════════════════════════════════════════════ -->
+<section id="sec-decoder">
+  <h2>5. 공유 컴포넌트 ③ &mdash; Decoder (FiLM)</h2>
+  <p>
+    <code>Decoder</code>는 융합된 잠재 벡터 <code>z_fused</code>를 256×256 elevation 이미지로 복원합니다.
+    초반 레이어는 조건 없이(PlainBlock), 후반 레이어는 조건 벡터 c로 변조하여(FiLMBlock)
+    coarse-to-fine 생성을 구현합니다.
+  </p>
+
+  <div class="diagram-wrap">
+    <svg width="820" height="390" viewBox="0 0 820 390" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs>
+        <marker id="aG4" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#10b981"/></marker>
+        <marker id="aP4" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#7c3aed"/></marker>
+      </defs>
+
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1e293b">Decoder 아키텍처 (Coarse-to-Fine)</text>
+
+      <!-- Input z_fused -->
+      <rect x="20" y="55" width="110" height="40" rx="7" fill="#f97316" stroke="#ea580c" stroke-width="1.5"/>
+      <text x="75" y="80" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">z_fused (B, 64)</text>
+
+      <!-- Linear projection -->
+      <rect x="160" y="50" width="115" height="50" rx="7" fill="#d1fae5" stroke="#10b981" stroke-width="1.5"/>
+      <text x="217" y="72" text-anchor="middle" font-size="10" font-weight="600" fill="#065f46">Linear</text>
+      <text x="217" y="87" text-anchor="middle" font-size="9" fill="#475569">64 → 256×8×8</text>
+      <line x1="130" y1="75" x2="152" y2="75" stroke="#10b981" stroke-width="1.5" marker-end="url(#aG4)"/>
+
+      <!-- Reshape -->
+      <rect x="305" y="50" width="90" height="50" rx="7" fill="#d1fae5" stroke="#10b981" stroke-width="1.2"/>
+      <text x="350" y="72" text-anchor="middle" font-size="10" font-weight="600" fill="#065f46">Reshape</text>
+      <text x="350" y="87" text-anchor="middle" font-size="9" fill="#475569">(B,256,8,8)</text>
+      <line x1="275" y1="75" x2="297" y2="75" stroke="#10b981" stroke-width="1.5" marker-end="url(#aG4)"/>
+
+      <!-- PlainBlock 1 -->
+      <rect x="80" y="140" width="155" height="70" rx="8" fill="#ecfdf5" stroke="#10b981" stroke-width="2"/>
+      <text x="157" y="162" text-anchor="middle" font-size="11" font-weight="700" fill="#065f46">PlainBlock</text>
+      <text x="157" y="178" text-anchor="middle" font-size="9" fill="#475569">Upsample(×2) → Conv3×3</text>
+      <text x="157" y="192" text-anchor="middle" font-size="9" fill="#475569">256→128, BN, ReLU</text>
+      <text x="157" y="220" text-anchor="middle" font-size="8" fill="#94a3b8">8→16</text>
+
+      <!-- PlainBlock 2 -->
+      <rect x="270" y="140" width="155" height="70" rx="8" fill="#ecfdf5" stroke="#10b981" stroke-width="2"/>
+      <text x="347" y="162" text-anchor="middle" font-size="11" font-weight="700" fill="#065f46">PlainBlock</text>
+      <text x="347" y="178" text-anchor="middle" font-size="9" fill="#475569">Upsample(×2) → Conv3×3</text>
+      <text x="347" y="192" text-anchor="middle" font-size="9" fill="#475569">128→64, BN, ReLU</text>
+      <text x="347" y="220" text-anchor="middle" font-size="8" fill="#94a3b8">16→32</text>
+
+      <!-- Arrows -->
+      <line x1="350" y1="100" x2="350" y2="115" stroke="#10b981" stroke-width="1"/>
+      <line x1="350" y1="115" x2="157" y2="115" stroke="#10b981" stroke-width="1"/>
+      <line x1="157" y1="115" x2="157" y2="133" stroke="#10b981" stroke-width="1.5" marker-end="url(#aG4)"/>
+      <line x1="235" y1="175" x2="262" y2="175" stroke="#10b981" stroke-width="1.5" marker-end="url(#aG4)"/>
+
+      <!-- Condition c input -->
+      <rect x="630" y="38" width="90" height="32" rx="7" fill="#7c3aed" stroke="#6d28d9" stroke-width="1.5"/>
+      <text x="675" y="59" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">c (B, 64)</text>
+
+      <!-- FiLMBlock 1 -->
+      <rect x="460" y="140" width="155" height="70" rx="8" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+      <text x="537" y="162" text-anchor="middle" font-size="11" font-weight="700" fill="#92400e">FiLMBlock</text>
+      <text x="537" y="178" text-anchor="middle" font-size="9" fill="#475569">Upsample → Conv → BN → ReLU</text>
+      <text x="537" y="192" text-anchor="middle" font-size="9" fill="#475569">64→32 + γ(c)·x + β(c)</text>
+      <text x="537" y="220" text-anchor="middle" font-size="8" fill="#94a3b8">32→64</text>
+      <line x1="425" y1="175" x2="452" y2="175" stroke="#10b981" stroke-width="1.5" marker-end="url(#aG4)"/>
+
+      <!-- FiLMBlock 2 -->
+      <rect x="650" y="140" width="155" height="70" rx="8" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+      <text x="727" y="162" text-anchor="middle" font-size="11" font-weight="700" fill="#92400e">FiLMBlock</text>
+      <text x="727" y="178" text-anchor="middle" font-size="9" fill="#475569">Upsample → Conv → BN → ReLU</text>
+      <text x="727" y="192" text-anchor="middle" font-size="9" fill="#475569">32→16 + γ(c)·x + β(c)</text>
+      <text x="727" y="220" text-anchor="middle" font-size="8" fill="#94a3b8">64→128</text>
+      <line x1="615" y1="175" x2="642" y2="175" stroke="#10b981" stroke-width="1.5" marker-end="url(#aG4)"/>
+
+      <!-- c arrows to FiLM blocks -->
+      <line x1="675" y1="70" x2="675" y2="90" stroke="#7c3aed" stroke-width="1.2"/>
+      <line x1="675" y1="90" x2="537" y2="90" stroke="#7c3aed" stroke-width="1" stroke-dasharray="4,3"/>
+      <line x1="537" y1="90" x2="537" y2="133" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#aP4)"/>
+      <line x1="675" y1="90" x2="727" y2="90" stroke="#7c3aed" stroke-width="1" stroke-dasharray="4,3"/>
+      <line x1="727" y1="90" x2="727" y2="133" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#aP4)"/>
+
+      <!-- Coarse/Fine labels -->
+      <rect x="100" y="120" width="310" height="15" rx="3" fill="#d1fae5" opacity="0.5"/>
+      <text x="255" y="131" text-anchor="middle" font-size="9" font-weight="600" fill="#065f46">Coarse (조건 독립) — z₁이 전체 구조 결정</text>
+      <rect x="480" y="120" width="310" height="15" rx="3" fill="#fef3c7" opacity="0.5"/>
+      <text x="635" y="131" text-anchor="middle" font-size="9" font-weight="600" fill="#92400e">Fine (조건 의존) — c가 세부 패턴 변조</text>
+
+      <!-- Final layers -->
+      <rect x="280" y="270" width="130" height="46" rx="7" fill="#d1fae5" stroke="#10b981" stroke-width="1.5"/>
+      <text x="345" y="290" text-anchor="middle" font-size="10" font-weight="600" fill="#065f46">Upsample ×2</text>
+      <text x="345" y="305" text-anchor="middle" font-size="9" fill="#475569">128 → 256</text>
+      <line x1="727" y1="210" x2="727" y2="248" stroke="#10b981" stroke-width="1"/>
+      <line x1="727" y1="248" x2="345" y2="248" stroke="#10b981" stroke-width="1"/>
+      <line x1="345" y1="248" x2="345" y2="264" stroke="#10b981" stroke-width="1.5" marker-end="url(#aG4)"/>
+
+      <rect x="450" y="270" width="130" height="46" rx="7" fill="#d1fae5" stroke="#10b981" stroke-width="1.5"/>
+      <text x="515" y="290" text-anchor="middle" font-size="10" font-weight="600" fill="#065f46">Conv 3×3</text>
+      <text x="515" y="305" text-anchor="middle" font-size="9" fill="#475569">16→1 + Sigmoid</text>
+      <line x1="410" y1="293" x2="442" y2="293" stroke="#10b981" stroke-width="1.5" marker-end="url(#aG4)"/>
+
+      <!-- Output -->
+      <rect x="370" y="345" width="160" height="36" rx="8" fill="#10b981" stroke="#059669" stroke-width="1.5"/>
+      <text x="450" y="368" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">Output (B, 1, 256, 256)</text>
+      <line x1="515" y1="316" x2="515" y2="330" stroke="#10b981" stroke-width="1"/>
+      <line x1="515" y1="330" x2="450" y2="330" stroke="#10b981" stroke-width="1"/>
+      <line x1="450" y1="330" x2="450" y2="340" stroke="#10b981" stroke-width="1.5" marker-end="url(#aG4)"/>
+    </svg>
+  </div>
+  <p class="diagram-caption">그림 5-1. Decoder — 초반 PlainBlock(조건 독립)으로 전체 구조, 후반 FiLMBlock(조건 의존)으로 세부 패턴 생성</p>
+
+  <h3>FiLM Layer 작동 원리</h3>
+  <p>Feature-wise Linear Modulation은 조건 벡터 <strong>c</strong>로부터 채널별 scale(γ)과 shift(β)를 생성하여
+     특징 맵을 변조합니다:</p>
+  <pre><code>γ = linear_γ(c).unsqueeze(-1).unsqueeze(-1)  # (B, C, 1, 1)
+β = linear_β(c).unsqueeze(-1).unsqueeze(-1)  # (B, C, 1, 1)
+output = γ * x + β                           # 채널별 아핀 변환</code></pre>
+
+  <h3>Coarse-to-Fine 설계 이유</h3>
+  <ul>
+    <li><strong>PlainBlock (초반)</strong>: z₁만으로 전체적인 elevation 구조를 생성하도록 강제 &rarr; 잠재 공간이 의미 있는 정보를 인코딩</li>
+    <li><strong>FiLMBlock (후반)</strong>: 설계 조건 c가 고해상도 세부 패턴만 조절 &rarr; 모델이 설계-의존적 미세 변형을 학습</li>
+  </ul>
+</section>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- 6. Latent Denoiser / Velocity Net              -->
+<!-- ══════════════════════════════════════════════ -->
+<section id="sec-denoiser">
+  <h2>6. 공유 컴포넌트 ④ &mdash; Latent Denoiser / Velocity Net</h2>
+  <p>
+    <code>LatentDenoiser</code>는 LDM과 LFM 모두에서 사용되는 MLP 기반 네트워크입니다.
+    LDM에서는 노이즈 예측기(ε̂), LFM에서는 속도장 예측기(v̂)로 작동하며,
+    동일한 <strong>AdaLN(Adaptive Layer Norm) ResBlock</strong> 아키텍처를 공유합니다.
+  </p>
+
+  <div class="diagram-wrap">
+    <svg width="750" height="480" viewBox="0 0 750 480" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs>
+        <marker id="aO5" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#f97316"/></marker>
+        <marker id="aB5" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#3b82f6"/></marker>
+      </defs>
+
+      <text x="375" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1e293b">Latent Denoiser / Velocity Net 아키텍처</text>
+
+      <!-- Inputs -->
+      <rect x="30" y="50" width="100" height="38" rx="7" fill="#ffedd5" stroke="#f97316" stroke-width="1.5"/>
+      <text x="80" y="74" text-anchor="middle" font-size="10" font-weight="600" fill="#9a3412">z_t (B, 64)</text>
+
+      <rect x="155" y="50" width="100" height="38" rx="7" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="205" y="74" text-anchor="middle" font-size="10" font-weight="600" fill="#1e40af">c (B, 64)</text>
+
+      <rect x="280" y="50" width="100" height="38" rx="7" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="330" y="74" text-anchor="middle" font-size="10" font-weight="600" fill="#92400e">t (B,)</text>
+
+      <!-- Sinusoidal Embedding -->
+      <rect x="440" y="42" width="260" height="80" rx="8" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="570" y="62" text-anchor="middle" font-size="11" font-weight="700" fill="#92400e">Sinusoidal Positional Embedding</text>
+      <text x="570" y="80" text-anchor="middle" font-size="9" fill="#78716c">freqs = 10000^(−i/(dim/2))</text>
+      <text x="570" y="95" text-anchor="middle" font-size="9" fill="#78716c">[sin(t·freqs), cos(t·freqs)] → (B, 128)</text>
+      <text x="570" y="112" text-anchor="middle" font-size="9" fill="#78716c">→ Linear(128→H) → SiLU → Linear(H→H)</text>
+      <line x1="380" y1="69" x2="432" y2="69" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#aO5)"/>
+
+      <!-- t_emb output -->
+      <rect x="490" y="140" width="100" height="30" rx="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.2"/>
+      <text x="540" y="160" text-anchor="middle" font-size="10" font-weight="600" fill="#92400e">t_emb (B, H)</text>
+      <line x1="540" y1="122" x2="540" y2="134" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#aO5)"/>
+
+      <!-- Concat z_t, c -->
+      <rect x="60" y="115" width="150" height="36" rx="7" fill="#e0f2fe" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="135" y="138" text-anchor="middle" font-size="10" fill="#1e40af">concat(z_t, c) → (B, 128)</text>
+      <line x1="80" y1="88" x2="80" y2="108" stroke="#f97316" stroke-width="1" marker-end="url(#aO5)"/>
+      <line x1="205" y1="88" x2="205" y2="105" stroke="#3b82f6" stroke-width="1"/>
+      <line x1="205" y1="105" x2="160" y2="105" stroke="#3b82f6" stroke-width="1"/>
+      <line x1="160" y1="105" x2="160" y2="109" stroke="#3b82f6" stroke-width="1" marker-end="url(#aB5)"/>
+
+      <!-- Input Projection -->
+      <rect x="60" y="175" width="150" height="36" rx="7" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="135" y="198" text-anchor="middle" font-size="10" font-weight="600" fill="#1e40af">Linear(128 → H)</text>
+      <line x1="135" y1="151" x2="135" y2="169" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aB5)"/>
+
+      <!-- h label -->
+      <text x="135" y="228" text-anchor="middle" font-size="10" font-weight="600" fill="#475569">h (B, H)</text>
+      <line x1="135" y1="211" x2="135" y2="220" stroke="#475569" stroke-width="1"/>
+
+      <!-- AdaLN ResBlocks (stacked) -->
+      <rect x="40" y="240" width="620" height="145" rx="10" fill="#fff7ed" stroke="#f97316" stroke-width="1.5"/>
+      <text x="350" y="262" text-anchor="middle" font-size="12" font-weight="700" fill="#9a3412">AdaLN ResBlock × N (기본 8개)</text>
+
+      <!-- Single block detail -->
+      <rect x="60" y="275" width="580" height="95" rx="8" fill="#fff" stroke="#fdba74" stroke-width="1.2"/>
+
+      <!-- LN1 -->
+      <rect x="75" y="290" width="62" height="28" rx="5" fill="#fef3c7" stroke="#f59e0b" stroke-width="1"/>
+      <text x="106" y="309" text-anchor="middle" font-size="8" font-weight="600" fill="#92400e">LayerNorm₁</text>
+
+      <!-- Scale/Shift 1 -->
+      <rect x="150" y="285" width="85" height="38" rx="5" fill="#ffedd5" stroke="#f97316" stroke-width="1"/>
+      <text x="192" y="302" text-anchor="middle" font-size="8" fill="#9a3412">×(1+s₁) + b₁</text>
+      <text x="192" y="316" text-anchor="middle" font-size="7" fill="#78716c">from t_emb</text>
+      <line x1="137" y1="304" x2="142" y2="304" stroke="#f97316" stroke-width="1" marker-end="url(#aO5)"/>
+
+      <!-- SiLU + FC1 -->
+      <rect x="248" y="290" width="70" height="28" rx="5" fill="#d1fae5" stroke="#10b981" stroke-width="1"/>
+      <text x="283" y="308" text-anchor="middle" font-size="8" font-weight="600" fill="#065f46">SiLU → FC₁</text>
+      <line x1="235" y1="304" x2="240" y2="304" stroke="#10b981" stroke-width="1"/>
+
+      <!-- LN2 -->
+      <rect x="332" y="290" width="62" height="28" rx="5" fill="#fef3c7" stroke="#f59e0b" stroke-width="1"/>
+      <text x="363" y="309" text-anchor="middle" font-size="8" font-weight="600" fill="#92400e">LayerNorm₂</text>
+      <line x1="318" y1="304" x2="324" y2="304" stroke="#f97316" stroke-width="1"/>
+
+      <!-- Scale/Shift 2 -->
+      <rect x="408" y="285" width="85" height="38" rx="5" fill="#ffedd5" stroke="#f97316" stroke-width="1"/>
+      <text x="450" y="302" text-anchor="middle" font-size="8" fill="#9a3412">×(1+s₂) + b₂</text>
+      <text x="450" y="316" text-anchor="middle" font-size="7" fill="#78716c">from t_emb</text>
+      <line x1="394" y1="304" x2="400" y2="304" stroke="#f97316" stroke-width="1"/>
+
+      <!-- SiLU + FC2 -->
+      <rect x="506" y="290" width="70" height="28" rx="5" fill="#d1fae5" stroke="#10b981" stroke-width="1"/>
+      <text x="541" y="308" text-anchor="middle" font-size="8" font-weight="600" fill="#065f46">SiLU → FC₂</text>
+      <line x1="493" y1="304" x2="498" y2="304" stroke="#10b981" stroke-width="1"/>
+
+      <!-- Residual + -->
+      <circle cx="600" cy="340" r="12" fill="#fff" stroke="#f97316" stroke-width="1.5"/>
+      <text x="600" y="345" text-anchor="middle" font-size="14" font-weight="700" fill="#f97316">+</text>
+      <text x="620" y="350" font-size="8" fill="#78716c">residual</text>
+      <line x1="576" y1="304" x2="588" y2="304" stroke="#10b981" stroke-width="1"/>
+      <line x1="588" y1="304" x2="600" y2="328" stroke="#475569" stroke-width="1"/>
+
+      <!-- AdaLN condition arrow -->
+      <line x1="540" y1="170" x2="540" y2="235" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <text x="555" y="208" font-size="8" fill="#f59e0b">t_emb → [s₁,b₁,s₂,b₂]</text>
+
+      <!-- Output -->
+      <rect x="110" y="410" width="120" height="32" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="170" y="431" text-anchor="middle" font-size="10" font-weight="600" fill="#1e40af">LayerNorm</text>
+
+      <rect x="260" y="410" width="165" height="32" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="342" y="431" text-anchor="middle" font-size="10" font-weight="600" fill="#1e40af">Linear(H → 64) [zero-init]</text>
+
+      <line x1="350" y1="385" x2="350" y2="394" stroke="#3b82f6" stroke-width="1"/>
+      <line x1="350" y1="394" x2="170" y2="394" stroke="#3b82f6" stroke-width="1"/>
+      <line x1="170" y1="394" x2="170" y2="404" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aB5)"/>
+      <line x1="230" y1="426" x2="252" y2="426" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aB5)"/>
+
+      <!-- Final output -->
+      <rect x="460" y="410" width="145" height="32" rx="8" fill="#f97316" stroke="#ea580c" stroke-width="1.5"/>
+      <text x="532" y="431" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">ε̂ 또는 v̂ (B, 64)</text>
+      <line x1="425" y1="426" x2="452" y2="426" stroke="#f97316" stroke-width="1.5" marker-end="url(#aO5)"/>
+
+      <!-- Dimension note -->
+      <text x="375" y="470" text-anchor="middle" font-size="10" fill="#64748b">H = hidden_dim: LDM(512) / LFM(256) &nbsp;|&nbsp; N = n_blocks: 8 &nbsp;|&nbsp; t_dim = 128</text>
+    </svg>
+  </div>
+  <p class="diagram-caption">그림 6-1. Latent Denoiser/VelocityNet — Sinusoidal 시간 임베딩 + AdaLN ResBlock 스택으로 노이즈(LDM) 또는 속도(LFM) 예측</p>
+
+  <h3>AdaLN (Adaptive Layer Normalization)</h3>
+  <p>
+    일반 Layer Normalization에 시간 조건(t_emb)에서 파생된 <strong>scale(s)</strong>과 <strong>shift(b)</strong>를 적용합니다.
+    DiT(Diffusion Transformer)에서 영감을 받은 기법으로, 시간 정보를 각 블록에 효과적으로 주입합니다.
+  </p>
+  <pre><code># AdaLN 조건 파라미터 생성 (4 × hidden_dim)
+params = adaLN_linear(t_emb)           # (B, 4H)
+s1, b1, s2, b2 = params.chunk(4, -1)  # 각 (B, H)
+
+# 첫 번째 sub-layer
+h = norm1(x) * (1 + s1) + b1
+h = fc1(SiLU(h))
+
+# 두 번째 sub-layer
+h = norm2(h) * (1 + s2) + b2
+h = fc2(SiLU(h))
+
+return x + h  # 잔차 연결</code></pre>
+
+  <div class="callout tip">
+    <strong>Zero Initialization</strong>: 최종 출력 Linear의 가중치를 0으로 초기화합니다.
+    학습 초기에 블록이 항등 함수처럼 작동하여 안정적인 학습 시작을 보장합니다.
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- 7. CVAE                                        -->
+<!-- ══════════════════════════════════════════════ -->
+<section id="sec-cvae">
+  <h2>7. 모델 A &mdash; CVAE (Conditional VAE)</h2>
+  <p>
+    <strong>CVAE</strong>는 독립적으로 학습되는 baseline 모델입니다. 동시에 LDM과 LFM의
+    <strong>사전 학습 백본</strong>으로도 사용됩니다. Elevation Encoder, Design Encoder, Fusion, Decoder를
+    모두 end-to-end로 학습합니다.
+  </p>
+
+  <h3>7.1 학습 흐름</h3>
+  <div class="diagram-wrap">
+    <svg width="820" height="420" viewBox="0 0 820 420" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs>
+        <marker id="aC1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#3b82f6"/></marker>
+        <marker id="aC2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#f97316"/></marker>
+        <marker id="aC3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#10b981"/></marker>
+        <marker id="aC4" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#8b5cf6"/></marker>
+      </defs>
+
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1e293b">CVAE 학습 Forward Pass</text>
+
+      <!-- Inputs -->
+      <rect x="15" y="50" width="120" height="45" rx="7" fill="#bfdbfe" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="75" y="70" text-anchor="middle" font-size="10" font-weight="600" fill="#1e3a8a">Design</text>
+      <text x="75" y="85" text-anchor="middle" font-size="9" fill="#475569">(B, 1, 256, 256)</text>
+
+      <rect x="15" y="110" width="120" height="38" rx="7" fill="#bbf7d0" stroke="#10b981" stroke-width="1.5"/>
+      <text x="75" y="134" text-anchor="middle" font-size="10" font-weight="600" fill="#065f46">Hand Features (B, 24)</text>
+
+      <rect x="15" y="200" width="120" height="45" rx="7" fill="#fecaca" stroke="#ef4444" stroke-width="1.5"/>
+      <text x="75" y="220" text-anchor="middle" font-size="10" font-weight="600" fill="#991b1b">Elevation</text>
+      <text x="75" y="235" text-anchor="middle" font-size="9" fill="#475569">(B, 1, 256, 256)</text>
+
+      <!-- DesignEncoder -->
+      <rect x="180" y="55" width="140" height="85" rx="9" fill="#dbeafe" stroke="#3b82f6" stroke-width="2"/>
+      <text x="250" y="82" text-anchor="middle" font-size="11" font-weight="700" fill="#1e40af">Design Encoder</text>
+      <text x="250" y="100" text-anchor="middle" font-size="9" fill="#475569">CNN + Hand → c</text>
+      <text x="250" y="116" text-anchor="middle" font-size="9" fill="#475569">→ (B, 64)</text>
+      <line x1="135" y1="72" x2="172" y2="85" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aC1)"/>
+      <line x1="135" y1="129" x2="172" y2="110" stroke="#10b981" stroke-width="1.5" marker-end="url(#aC3)"/>
+
+      <!-- ElevationEncoder -->
+      <rect x="180" y="190" width="140" height="85" rx="9" fill="#dbeafe" stroke="#3b82f6" stroke-width="2"/>
+      <text x="250" y="215" text-anchor="middle" font-size="11" font-weight="700" fill="#1e40af">Elevation Encoder</text>
+      <text x="250" y="233" text-anchor="middle" font-size="9" fill="#475569">CNN → (μ, logvar)</text>
+      <text x="250" y="249" text-anchor="middle" font-size="9" fill="#475569">→ z₁ (B, 64)</text>
+      <text x="250" y="263" text-anchor="middle" font-size="8" fill="#94a3b8">reparameterization</text>
+      <line x1="135" y1="222" x2="172" y2="222" stroke="#ef4444" stroke-width="1.5" marker-end="url(#aC1)"/>
+
+      <!-- c output -->
+      <rect x="365" y="76" width="60" height="28" rx="6" fill="#7c3aed" stroke="#6d28d9" stroke-width="1.5"/>
+      <text x="395" y="95" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">c</text>
+      <line x1="320" y1="90" x2="357" y2="90" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aC1)"/>
+
+      <!-- z₁ output -->
+      <rect x="365" y="216" width="60" height="28" rx="6" fill="#f97316" stroke="#ea580c" stroke-width="1.5"/>
+      <text x="395" y="235" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">z₁</text>
+      <line x1="320" y1="230" x2="357" y2="230" stroke="#f97316" stroke-width="1.5" marker-end="url(#aC2)"/>
+
+      <!-- Fusion -->
+      <rect x="470" y="130" width="130" height="70" rx="9" fill="#ffedd5" stroke="#f97316" stroke-width="2"/>
+      <text x="535" y="155" text-anchor="middle" font-size="11" font-weight="700" fill="#9a3412">Fusion</text>
+      <text x="535" y="172" text-anchor="middle" font-size="9" fill="#78716c">concat / FiLM / attn</text>
+      <text x="535" y="188" text-anchor="middle" font-size="9" fill="#78716c">→ z_fused (B, 64)</text>
+
+      <line x1="425" y1="90" x2="462" y2="145" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#aC4)"/>
+      <line x1="425" y1="230" x2="462" y2="185" stroke="#f97316" stroke-width="1.5" marker-end="url(#aC2)"/>
+
+      <!-- Decoder -->
+      <rect x="640" y="100" width="140" height="100" rx="9" fill="#d1fae5" stroke="#10b981" stroke-width="2"/>
+      <text x="710" y="130" text-anchor="middle" font-size="11" font-weight="700" fill="#065f46">Decoder</text>
+      <text x="710" y="148" text-anchor="middle" font-size="9" fill="#475569">Plain + FiLM Blocks</text>
+      <text x="710" y="164" text-anchor="middle" font-size="9" fill="#475569">→ x̂ (B, 1, 256, 256)</text>
+      <text x="710" y="180" text-anchor="middle" font-size="9" fill="#475569">∈ [0, 1]</text>
+      <line x1="600" y1="165" x2="632" y2="150" stroke="#10b981" stroke-width="1.5" marker-end="url(#aC3)"/>
+
+      <!-- c to Decoder -->
+      <path d="M425,90 Q445,90 445,60 Q445,45 640,120" fill="none" stroke="#7c3aed" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="540" y="55" font-size="8" fill="#7c3aed">c (FiLM 조건)</text>
+
+      <!-- Loss computation -->
+      <rect x="350" y="290" width="420" height="110" rx="10" fill="#ede9fe" stroke="#8b5cf6" stroke-width="2"/>
+      <text x="560" y="316" text-anchor="middle" font-size="12" font-weight="700" fill="#5b21b6">손실 함수 계산</text>
+
+      <text x="380" y="340" font-size="10" fill="#475569"><tspan font-weight="600" fill="#5b21b6">L_recon</tspan> = MSE(x̂, elevation)</text>
+      <text x="380" y="358" font-size="10" fill="#475569"><tspan font-weight="600" fill="#5b21b6">L_KL</tspan> = β · KL(q(z|x) ‖ p(z))  [cyclical annealing + free bits]</text>
+      <text x="380" y="376" font-size="10" fill="#475569"><tspan font-weight="600" fill="#5b21b6">L_spectral</tspan> = MSE(|FFT(x̂)|, |FFT(x)|)  [선택적]</text>
+      <text x="380" y="394" font-size="10" fill="#475569"><tspan font-weight="600" fill="#5b21b6">Total</tspan> = L_recon + L_KL + spectral_weight · L_spectral + aux_weight · L_aux</text>
+
+      <!-- Arrows to loss -->
+      <line x1="710" y1="200" x2="710" y2="260" stroke="#10b981" stroke-width="1"/>
+      <line x1="710" y1="260" x2="560" y2="260" stroke="#475569" stroke-width="1"/>
+      <line x1="560" y1="260" x2="560" y2="284" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#aC4)"/>
+      <text x="720" y="255" font-size="8" fill="#10b981">x̂</text>
+
+      <line x1="75" y1="245" x2="75" y2="345" stroke="#ef4444" stroke-width="1" stroke-dasharray="4,3"/>
+      <line x1="75" y1="345" x2="342" y2="345" stroke="#ef4444" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="105" y="340" font-size="8" fill="#ef4444">target</text>
+
+      <line x1="250" y1="275" x2="250" y2="370" stroke="#f97316" stroke-width="1" stroke-dasharray="4,3"/>
+      <line x1="250" y1="370" x2="342" y2="370" stroke="#f97316" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="270" y="366" font-size="8" fill="#f97316">μ, logvar</text>
+    </svg>
+  </div>
+  <p class="diagram-caption">그림 7-1. CVAE 학습 흐름 — Elevation Encoder와 Design Encoder가 각각 z₁, c를 생성하고, Fusion 후 Decoder가 복원</p>
+
+  <h3>7.2 Fusion 방식 비교</h3>
+  <table>
+    <thead>
+      <tr><th>방식</th><th>수식</th><th>출력 차원</th><th>특징</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="badge badge-blue">Concat</span></td>
+        <td><code>z_fused = [z₁; c]</code></td>
+        <td>z_dim + c_dim = 128</td>
+        <td>단순 연결; Decoder가 공동 표현 학습</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-orange">FiLM</span> (기본)</td>
+        <td><code>z_fused = γ(c) × z₁ + β(c)</code></td>
+        <td>z_dim = 64</td>
+        <td>조건이 잠재 벡터를 아핀 변환; 더 컴팩트</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-purple">Cross-Attention</span></td>
+        <td><code>z_fused = Attn(Q=c, K=z₁, V=z₁)</code></td>
+        <td>z_dim = 64</td>
+        <td>z₁을 4개 토큰으로 분리, 4-head attention</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>7.3 KL Annealing (순환 가열)</h3>
+  <p>
+    학습 초기에 β=0으로 시작하여 Decoder가 먼저 구조를 학습하고,
+    점진적으로 β를 증가시켜 Encoder가 정보를 압축하도록 유도합니다.
+    이 과정을 여러 주기(기본 8회)로 반복합니다.
+  </p>
+  <pre><code>def get_cyclical_beta(epoch, total_epochs, beta_max, n_cycles):
+    cycle_len = total_epochs / n_cycles
+    pos_in_cycle = epoch % cycle_len
+    return beta_max * (pos_in_cycle / cycle_len)</code></pre>
+
+  <h3>7.4 추론 흐름</h3>
+  <div class="diagram-wrap">
+    <svg width="700" height="150" viewBox="0 0 700 150" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs>
+        <marker id="aCi" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#10b981"/></marker>
+      </defs>
+
+      <rect x="10" y="30" width="100" height="40" rx="7" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="60" y="50" text-anchor="middle" font-size="10" font-weight="600" fill="#92400e">z₁ ~ N(0,I)</text>
+      <text x="60" y="64" text-anchor="middle" font-size="9" fill="#78716c">(K, 64)</text>
+
+      <rect x="10" y="85" width="100" height="35" rx="7" fill="#7c3aed" stroke="#6d28d9" stroke-width="1.2"/>
+      <text x="60" y="107" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">c = Enc(design)</text>
+
+      <rect x="150" y="40" width="120" height="50" rx="8" fill="#ffedd5" stroke="#f97316" stroke-width="1.5"/>
+      <text x="210" y="62" text-anchor="middle" font-size="11" font-weight="600" fill="#9a3412">Fusion</text>
+      <text x="210" y="78" text-anchor="middle" font-size="9" fill="#78716c">→ z_fused</text>
+      <line x1="110" y1="50" x2="142" y2="58" stroke="#f97316" stroke-width="1.5" marker-end="url(#aCi)"/>
+      <line x1="110" y1="100" x2="142" y2="78" stroke="#7c3aed" stroke-width="1.2"/>
+
+      <rect x="310" y="40" width="120" height="50" rx="8" fill="#d1fae5" stroke="#10b981" stroke-width="1.5"/>
+      <text x="370" y="62" text-anchor="middle" font-size="11" font-weight="600" fill="#065f46">Decoder</text>
+      <text x="370" y="78" text-anchor="middle" font-size="9" fill="#475569">FiLM(z_fused, c)</text>
+      <line x1="270" y1="65" x2="302" y2="65" stroke="#10b981" stroke-width="1.5" marker-end="url(#aCi)"/>
+
+      <rect x="470" y="40" width="160" height="50" rx="8" fill="#10b981" stroke="#059669" stroke-width="1.5"/>
+      <text x="550" y="62" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">생성 샘플</text>
+      <text x="550" y="78" text-anchor="middle" font-size="9" fill="#ecfdf5">(K, 1, 256, 256)</text>
+      <line x1="430" y1="65" x2="462" y2="65" stroke="#10b981" stroke-width="1.5" marker-end="url(#aCi)"/>
+    </svg>
+  </div>
+  <p class="diagram-caption">그림 7-2. CVAE 추론 — 가우시안 노이즈에서 샘플링하여 Decoder로 이미지 생성</p>
+</section>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- 8. LDM                                         -->
+<!-- ══════════════════════════════════════════════ -->
+<section id="sec-ldm">
+  <h2>8. 모델 B &mdash; LDM (Latent Diffusion Model)</h2>
+  <p>
+    <strong>LDM</strong>은 2단계 모델입니다. 1단계에서 사전 학습된 CVAE를 동결하고,
+    2단계에서 CVAE의 64차원 잠재 공간 내에서 <strong>확산(diffusion) 과정</strong>을 학습합니다.
+    픽셀 공간이 아닌 저차원 잠재 공간에서 확산을 수행하므로 계산 효율이 높습니다.
+  </p>
+
+  <h3>8.1 2단계 구조</h3>
+  <div class="diagram-wrap">
+    <svg width="820" height="480" viewBox="0 0 820 480" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs>
+        <marker id="aL1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#f97316"/></marker>
+        <marker id="aL2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#3b82f6"/></marker>
+        <marker id="aL3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#10b981"/></marker>
+        <marker id="aL4" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#8b5cf6"/></marker>
+      </defs>
+
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1e293b">LDM 학습 Forward Pass</text>
+
+      <!-- Stage labels -->
+      <rect x="20" y="35" width="380" height="220" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="6,4"/>
+      <text x="210" y="55" text-anchor="middle" font-size="11" font-weight="700" fill="#64748b">Stage 1: Frozen CVAE</text>
+
+      <rect x="420" y="35" width="380" height="220" rx="10" fill="#fff7ed" stroke="#f97316" stroke-width="1.5"/>
+      <text x="610" y="55" text-anchor="middle" font-size="11" font-weight="700" fill="#9a3412">Stage 2: Trainable Denoiser</text>
+
+      <!-- Frozen Elevation Encoder -->
+      <rect x="40" y="75" width="140" height="65" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4,3"/>
+      <text x="110" y="97" text-anchor="middle" font-size="10" font-weight="600" fill="#64748b">Elevation Encoder</text>
+      <text x="110" y="113" text-anchor="middle" font-size="9" fill="#94a3b8">(frozen)</text>
+      <text x="110" y="130" text-anchor="middle" font-size="9" fill="#94a3b8">→ z₀ = μ (B, 64)</text>
+
+      <!-- Input -->
+      <text x="110" y="68" text-anchor="middle" font-size="9" fill="#475569">Elevation (B,1,256,256)</text>
+
+      <!-- Frozen Design Encoder -->
+      <rect x="40" y="160" width="140" height="65" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4,3"/>
+      <text x="110" y="182" text-anchor="middle" font-size="10" font-weight="600" fill="#64748b">Design Encoder</text>
+      <text x="110" y="198" text-anchor="middle" font-size="9" fill="#94a3b8">(frozen)</text>
+      <text x="110" y="214" text-anchor="middle" font-size="9" fill="#94a3b8">→ c (B, 64)</text>
+
+      <!-- Forward diffusion -->
+      <rect x="230" y="75" width="150" height="80" rx="8" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.5"/>
+      <text x="305" y="97" text-anchor="middle" font-size="10" font-weight="700" fill="#0c4a6e">Forward Diffusion</text>
+      <text x="305" y="115" text-anchor="middle" font-size="9" fill="#475569">t ~ Uniform(0, 500)</text>
+      <text x="305" y="130" text-anchor="middle" font-size="9" fill="#475569">ε ~ N(0, I)</text>
+      <text x="305" y="145" text-anchor="middle" font-size="9" font-weight="600" fill="#0c4a6e">z_t = √ᾱ_t·z₀ + √(1−ᾱ_t)·ε</text>
+
+      <line x1="180" y1="107" x2="222" y2="107" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#aL1)"/>
+
+      <!-- z_t output -->
+      <rect x="250" y="175" width="80" height="30" rx="6" fill="#f97316" stroke="#ea580c" stroke-width="1.5"/>
+      <text x="290" y="195" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">z_t</text>
+      <line x1="305" y1="155" x2="305" y2="168" stroke="#f97316" stroke-width="1.5"/>
+      <line x1="305" y1="168" x2="290" y2="168" stroke="#f97316" stroke-width="1"/>
+      <line x1="290" y1="168" x2="290" y2="170" stroke="#f97316" stroke-width="1.5" marker-end="url(#aL1)"/>
+
+      <!-- LatentDenoiser -->
+      <rect x="450" y="70" width="170" height="100" rx="9" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+      <text x="535" y="96" text-anchor="middle" font-size="12" font-weight="700" fill="#92400e">Latent Denoiser</text>
+      <text x="535" y="114" text-anchor="middle" font-size="10" fill="#78716c">8 × AdaLN ResBlock</text>
+      <text x="535" y="130" text-anchor="middle" font-size="10" fill="#78716c">hidden_dim = 512</text>
+      <text x="535" y="148" text-anchor="middle" font-size="10" font-weight="600" fill="#92400e">→ ε̂ (B, 64)</text>
+
+      <!-- Arrows to denoiser -->
+      <line x1="330" y1="190" x2="442" y2="120" stroke="#f97316" stroke-width="1.5" marker-end="url(#aL1)"/>
+      <text x="370" y="148" font-size="8" fill="#f97316">z_t</text>
+
+      <line x1="180" y1="192" x2="442" y2="140" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#aL2)"/>
+      <text x="300" y="220" font-size="8" fill="#64748b">c (condition)</text>
+
+      <!-- timestep -->
+      <rect x="450" y="190" width="80" height="30" rx="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.2"/>
+      <text x="490" y="210" text-anchor="middle" font-size="9" font-weight="600" fill="#92400e">t (timestep)</text>
+      <line x1="490" y1="190" x2="490" y2="175" stroke="#f59e0b" stroke-width="1"/>
+
+      <!-- Loss -->
+      <rect x="650" y="80" width="130" height="60" rx="8" fill="#ede9fe" stroke="#8b5cf6" stroke-width="2"/>
+      <text x="715" y="105" text-anchor="middle" font-size="11" font-weight="700" fill="#5b21b6">Loss</text>
+      <text x="715" y="125" text-anchor="middle" font-size="10" fill="#5b21b6">MSE(ε̂, ε)</text>
+      <line x1="620" y1="110" x2="642" y2="110" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#aL4)"/>
+
+      <!-- ε target -->
+      <path d="M305,145 Q305,240 715,240 L715,148" fill="none" stroke="#8b5cf6" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="500" y="248" font-size="8" fill="#8b5cf6">ε (target noise)</text>
+
+      <!-- ════════════ DDIM Sampling ════════════ -->
+      <text x="410" y="290" text-anchor="middle" font-size="14" font-weight="700" fill="#1e293b">DDIM Sampling (추론)</text>
+
+      <rect x="30" y="308" width="130" height="40" rx="7" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="95" y="326" text-anchor="middle" font-size="10" font-weight="600" fill="#92400e">z_T ~ N(0,I)</text>
+      <text x="95" y="340" text-anchor="middle" font-size="9" fill="#78716c">(K, 64)</text>
+
+      <!-- Step boxes -->
+      <rect x="195" y="305" width="120" height="48" rx="7" fill="#fff7ed" stroke="#f97316" stroke-width="1.5"/>
+      <text x="255" y="324" text-anchor="middle" font-size="9" font-weight="600" fill="#9a3412">Denoiser(z_t, t, c)</text>
+      <text x="255" y="340" text-anchor="middle" font-size="9" fill="#78716c">→ ε̂ 예측</text>
+      <line x1="160" y1="328" x2="187" y2="328" stroke="#f97316" stroke-width="1.5" marker-end="url(#aL1)"/>
+
+      <rect x="345" y="305" width="120" height="48" rx="7" fill="#ffedd5" stroke="#f97316" stroke-width="1.2"/>
+      <text x="405" y="324" text-anchor="middle" font-size="9" font-weight="600" fill="#9a3412">z₀ 예측</text>
+      <text x="405" y="340" text-anchor="middle" font-size="8" fill="#78716c">(z_t − √(1−ᾱ_t)·ε̂) / √ᾱ_t</text>
+      <line x1="315" y1="328" x2="337" y2="328" stroke="#f97316" stroke-width="1.5" marker-end="url(#aL1)"/>
+
+      <rect x="495" y="305" width="100" height="48" rx="7" fill="#ffedd5" stroke="#f97316" stroke-width="1.2"/>
+      <text x="545" y="324" text-anchor="middle" font-size="9" font-weight="600" fill="#9a3412">DDIM 업데이트</text>
+      <text x="545" y="340" text-anchor="middle" font-size="8" fill="#78716c">z_{t-1} 계산</text>
+      <line x1="465" y1="328" x2="487" y2="328" stroke="#f97316" stroke-width="1.5" marker-end="url(#aL1)"/>
+
+      <!-- Loop arrow -->
+      <path d="M545,353 L545,375 L255,375 L255,358" fill="none" stroke="#f97316" stroke-width="1.2" marker-end="url(#aL1)"/>
+      <text x="400" y="388" text-anchor="middle" font-size="9" fill="#9a3412">50 steps 반복 (t: T → 0)</text>
+
+      <!-- Final decode -->
+      <rect x="625" y="305" width="120" height="48" rx="7" fill="#d1fae5" stroke="#10b981" stroke-width="1.5"/>
+      <text x="685" y="324" text-anchor="middle" font-size="10" font-weight="600" fill="#065f46">Frozen Decoder</text>
+      <text x="685" y="340" text-anchor="middle" font-size="9" fill="#475569">z₀ → x̂</text>
+      <line x1="595" y1="328" x2="617" y2="328" stroke="#10b981" stroke-width="1.5" marker-end="url(#aL3)"/>
+
+      <!-- Output -->
+      <rect x="620" y="375" width="130" height="35" rx="7" fill="#10b981" stroke="#059669" stroke-width="1.5"/>
+      <text x="685" y="397" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">(K, 1, 256, 256)</text>
+      <line x1="685" y1="353" x2="685" y2="369" stroke="#10b981" stroke-width="1.5" marker-end="url(#aL3)"/>
+
+      <!-- η note -->
+      <rect x="30" y="415" width="760" height="45" rx="7" fill="#fff7ed" stroke="#fdba74" stroke-width="1"/>
+      <text x="410" y="435" text-anchor="middle" font-size="10" fill="#78716c">
+        <tspan font-weight="600" fill="#9a3412">핵심 파라미터:</tspan>
+        ldm_t=500 (확산 단계) &nbsp;|&nbsp; ldm_ddim_steps=50 (추론 단계) &nbsp;|&nbsp; ldm_ddim_eta=0.0~1.0 (확률성 조절)
+      </text>
+      <text x="410" y="452" text-anchor="middle" font-size="10" fill="#78716c">
+        η=0: 완전 결정적 &nbsp;|&nbsp; η>0: 노이즈 추가로 다양성 증가 &nbsp;|&nbsp; Cosine noise schedule 사용
+      </text>
+    </svg>
+  </div>
+  <p class="diagram-caption">그림 8-1. LDM 학습(위)과 DDIM 추론(아래) — 64차원 잠재 공간에서 확산/역확산 수행</p>
+
+  <h3>8.2 Cosine Noise Schedule</h3>
+  <p>
+    LDM은 선형이 아닌 <strong>cosine 스케줄</strong>을 사용하여 ᾱ_t를 정의합니다.
+    Cosine 스케줄은 학습 초반(t가 작을 때)에 노이즈를 천천히 추가하여 저주파 구조를 더 잘 보존합니다.
+  </p>
+
+  <h3>8.3 학습 가능 파라미터</h3>
+  <table>
+    <thead><tr><th>컴포넌트</th><th>상태</th><th>파라미터 수</th></tr></thead>
+    <tbody>
+      <tr><td>Elevation Encoder</td><td><span class="badge badge-gray">Frozen</span></td><td>~2.1M (학습 안 함)</td></tr>
+      <tr><td>Design Encoder</td><td><span class="badge badge-gray">Frozen</span> (기본) / <span class="badge badge-orange">Trainable</span></td><td>~100K</td></tr>
+      <tr><td>Decoder</td><td><span class="badge badge-gray">Frozen</span></td><td>~1.5M (학습 안 함)</td></tr>
+      <tr><td>Latent Denoiser</td><td><span class="badge badge-orange">Trainable</span></td><td>~4.2M</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>EMA (Exponential Moving Average)</strong>: LDM은 학습 중 EMA(decay=0.9999)를 적용하여
+    추론 시 안정적인 가중치를 사용합니다. 체크포인트에 <code>ema_state_dict</code>로 저장됩니다.
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- 9. LFM                                         -->
+<!-- ══════════════════════════════════════════════ -->
+<section id="sec-lfm">
+  <h2>9. 모델 C &mdash; LFM (Latent Flow Matching)</h2>
+  <p>
+    <strong>LFM</strong>은 LDM과 동일한 2단계 구조를 사용하지만, 확산 대신
+    <strong>최적 수송(Optimal Transport) 기반 흐름 매칭</strong>을 사용합니다.
+    노이즈 스케줄이 필요 없고, 직선 경로를 따라 ODE를 적분하므로 더 단순하고 효율적입니다.
+  </p>
+
+  <h3>9.1 Flow Matching 원리</h3>
+  <div class="diagram-wrap">
+    <svg width="780" height="300" viewBox="0 0 780 300" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs>
+        <marker id="aF1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#8b5cf6"/></marker>
+        <marker id="aF2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#f97316"/></marker>
+      </defs>
+
+      <text x="390" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1e293b">Flow Matching — 직선 보간 경로</text>
+
+      <!-- t=0 (source) -->
+      <circle cx="100" cy="160" r="35" fill="#ede9fe" stroke="#8b5cf6" stroke-width="2"/>
+      <text x="100" y="155" text-anchor="middle" font-size="11" font-weight="700" fill="#5b21b6">z₀</text>
+      <text x="100" y="172" text-anchor="middle" font-size="9" fill="#7c3aed">~ N(0, I)</text>
+      <text x="100" y="210" text-anchor="middle" font-size="10" fill="#64748b">t = 0 (source)</text>
+
+      <!-- t=1 (target) -->
+      <circle cx="660" cy="160" r="35" fill="#ffedd5" stroke="#f97316" stroke-width="2"/>
+      <text x="660" y="155" text-anchor="middle" font-size="11" font-weight="700" fill="#9a3412">z₁</text>
+      <text x="660" y="172" text-anchor="middle" font-size="9" fill="#ea580c">= μ (data)</text>
+      <text x="660" y="210" text-anchor="middle" font-size="10" fill="#64748b">t = 1 (target)</text>
+
+      <!-- Straight line path -->
+      <line x1="140" y1="160" x2="620" y2="160" stroke="#8b5cf6" stroke-width="2.5" stroke-dasharray="8,4"/>
+
+      <!-- z_t point -->
+      <circle cx="350" cy="160" r="20" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+      <text x="350" y="165" text-anchor="middle" font-size="10" font-weight="700" fill="#92400e">z_t</text>
+
+      <!-- Interpolation formula -->
+      <rect x="230" y="100" width="240" height="30" rx="6" fill="#fff" stroke="#8b5cf6" stroke-width="1.2"/>
+      <text x="350" y="120" text-anchor="middle" font-size="10" font-weight="600" fill="#5b21b6">z_t = (1 − t) · z₀ + t · z₁</text>
+
+      <!-- Velocity arrow -->
+      <line x1="355" y1="140" x2="450" y2="140" stroke="#f97316" stroke-width="2.5" marker-end="url(#aF2)"/>
+      <text x="410" y="132" text-anchor="middle" font-size="9" font-weight="600" fill="#f97316">v = z₁ − z₀</text>
+
+      <!-- VelocityNet box -->
+      <rect x="280" y="230" width="200" height="55" rx="8" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+      <text x="380" y="252" text-anchor="middle" font-size="11" font-weight="700" fill="#92400e">VelocityNet(z_t, t, c)</text>
+      <text x="380" y="270" text-anchor="middle" font-size="10" fill="#78716c">→ v̂ (속도 예측)</text>
+      <line x1="350" y1="180" x2="350" y2="224" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#aF2)"/>
+
+      <!-- Loss -->
+      <rect x="530" y="237" width="140" height="40" rx="8" fill="#ede9fe" stroke="#8b5cf6" stroke-width="1.5"/>
+      <text x="600" y="260" text-anchor="middle" font-size="10" font-weight="600" fill="#5b21b6">Loss = MSE(v̂, z₁−z₀)</text>
+      <line x1="480" y1="258" x2="522" y2="258" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#aF1)"/>
+    </svg>
+  </div>
+  <p class="diagram-caption">그림 9-1. Flow Matching 학습 — 가우시안(z₀)에서 데이터(z₁)로의 직선 경로를 따라 속도장을 학습</p>
+
+  <h3>9.2 ODE 적분 (추론)</h3>
+  <p>학습된 속도장을 따라 t=0에서 t=1까지 ODE를 수치 적분하여 샘플을 생성합니다. 세 가지 solver를 지원합니다:</p>
+
+  <div class="diagram-wrap">
+    <svg width="780" height="200" viewBox="0 0 780 200" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs>
+        <marker id="aFo" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#f97316"/></marker>
+        <marker id="aFg" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#10b981"/></marker>
+      </defs>
+
+      <rect x="15" y="20" width="100" height="40" rx="7" fill="#ede9fe" stroke="#8b5cf6" stroke-width="1.5"/>
+      <text x="65" y="40" text-anchor="middle" font-size="10" font-weight="600" fill="#5b21b6">z ~ N(0,I)</text>
+      <text x="65" y="54" text-anchor="middle" font-size="9" fill="#7c3aed">(K, 64)</text>
+
+      <!-- ODE steps -->
+      <rect x="150" y="15" width="130" height="55" rx="7" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="215" y="36" text-anchor="middle" font-size="10" font-weight="700" fill="#92400e">VelocityNet</text>
+      <text x="215" y="52" text-anchor="middle" font-size="9" fill="#78716c">(z, t, c) → v̂</text>
+      <text x="215" y="65" text-anchor="middle" font-size="8" fill="#78716c">dt = 1/steps</text>
+      <line x1="115" y1="40" x2="142" y2="40" stroke="#f97316" stroke-width="1.5" marker-end="url(#aFo)"/>
+
+      <rect x="315" y="15" width="120" height="55" rx="7" fill="#ffedd5" stroke="#f97316" stroke-width="1.2"/>
+      <text x="375" y="36" text-anchor="middle" font-size="10" font-weight="600" fill="#9a3412">z 업데이트</text>
+      <text x="375" y="52" text-anchor="middle" font-size="9" fill="#78716c">z = z + v̂ · dt</text>
+      <text x="375" y="65" text-anchor="middle" font-size="8" fill="#78716c">t = t + dt</text>
+      <line x1="280" y1="42" x2="307" y2="42" stroke="#f97316" stroke-width="1.5" marker-end="url(#aFo)"/>
+
+      <!-- Loop -->
+      <path d="M375,70 L375,90 L215,90 L215,74" fill="none" stroke="#f97316" stroke-width="1.2" marker-end="url(#aFo)"/>
+      <text x="295" y="105" text-anchor="middle" font-size="9" fill="#9a3412">30 steps 반복 (t: 0 → 1)</text>
+
+      <!-- Decoder -->
+      <rect x="470" y="15" width="120" height="55" rx="7" fill="#d1fae5" stroke="#10b981" stroke-width="1.5"/>
+      <text x="530" y="38" text-anchor="middle" font-size="10" font-weight="600" fill="#065f46">Frozen Decoder</text>
+      <text x="530" y="54" text-anchor="middle" font-size="9" fill="#475569">z → x̂</text>
+      <line x1="435" y1="42" x2="462" y2="42" stroke="#10b981" stroke-width="1.5" marker-end="url(#aFg)"/>
+
+      <!-- Output -->
+      <rect x="625" y="15" width="140" height="55" rx="7" fill="#10b981" stroke="#059669" stroke-width="1.5"/>
+      <text x="695" y="38" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">생성 샘플</text>
+      <text x="695" y="55" text-anchor="middle" font-size="9" fill="#ecfdf5">(K, 1, 256, 256)</text>
+      <line x1="590" y1="42" x2="617" y2="42" stroke="#10b981" stroke-width="1.5" marker-end="url(#aFg)"/>
+
+      <!-- Solver comparison -->
+      <rect x="20" y="120" width="740" height="70" rx="8" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.2"/>
+      <text x="390" y="142" text-anchor="middle" font-size="11" font-weight="700" fill="#5b21b6">ODE Solver 비교</text>
+      <text x="160" y="165" text-anchor="middle" font-size="10" fill="#475569"><tspan font-weight="600" fill="#5b21b6">Euler</tspan>: z += v̂·dt</text>
+      <text x="160" y="180" text-anchor="middle" font-size="9" fill="#94a3b8">가장 빠름, 1회 평가/step</text>
+      <text x="400" y="165" text-anchor="middle" font-size="10" fill="#475569"><tspan font-weight="600" fill="#5b21b6">Midpoint</tspan> (기본): 중점 평가</text>
+      <text x="400" y="180" text-anchor="middle" font-size="9" fill="#94a3b8">2회 평가/step, 2차 정확도</text>
+      <text x="640" y="165" text-anchor="middle" font-size="10" fill="#475569"><tspan font-weight="600" fill="#5b21b6">RK4</tspan>: 4차 Runge-Kutta</text>
+      <text x="640" y="180" text-anchor="middle" font-size="9" fill="#94a3b8">4회 평가/step, 최고 정확도</text>
+    </svg>
+  </div>
+  <p class="diagram-caption">그림 9-2. LFM 추론 — ODE 적분으로 가우시안 노이즈를 데이터 분포로 변환</p>
+
+  <h3>9.3 LDM 대비 장점</h3>
+  <table>
+    <thead><tr><th>항목</th><th>LDM</th><th>LFM</th></tr></thead>
+    <tbody>
+      <tr><td>노이즈 스케줄</td><td>필요 (cosine β schedule)</td><td><strong>불필요</strong></td></tr>
+      <tr><td>경로 형태</td><td>곡선 (확산 과정)</td><td><strong>직선</strong> (최적 수송)</td></tr>
+      <tr><td>기본 추론 단계</td><td>50 (DDIM)</td><td><strong>30</strong> (ODE)</td></tr>
+      <tr><td>손실 함수</td><td>MSE(ε̂, ε)</td><td>MSE(v̂, z₁−z₀)</td></tr>
+      <tr><td>수렴 속도</td><td>보통</td><td><strong>빠름</strong></td></tr>
+      <tr><td>hidden_dim</td><td>512</td><td>256 (더 작은 네트워크)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout tip">
+    <strong>σ_min = 0.001</strong>: t를 [σ_min, 1−σ_min] 범위로 클램핑하여
+    경계점(t=0, t=1)에서의 수치 불안정을 방지합니다.
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- 10. 데이터 파이프라인                            -->
+<!-- ══════════════════════════════════════════════ -->
+<section id="sec-data">
+  <h2>10. 데이터 파이프라인</h2>
+
+  <h3>10.1 데이터 구조</h3>
+  <p>
+    10개의 PCB 설계(A~J)가 있으며, 각 설계마다 ~200개의 elevation(높이) 샘플이 존재합니다.
+    설계 이미지는 그레이스케일 256×256 PNG이고, 검은 선(회로 패턴)이 흰 배경 위에 그려져 있습니다.
+  </p>
+  <pre><code>data/
+  design/
+    design_A.png ~ design_J.png         # 10개 설계 이미지
+  elevation/
+    design_A/images/0001.png ~ 0200.png # 설계별 ~200개 elevation 샘플
+    design_B/images/...
+    ...
+    design_J/images/...</code></pre>
+
+  <h3>10.2 Augmentation 파이프라인</h3>
+  <div class="diagram-wrap">
+    <svg width="800" height="350" viewBox="0 0 800 350" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <defs>
+        <marker id="aD1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#3b82f6"/></marker>
+        <marker id="aD2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#10b981"/></marker>
+      </defs>
+
+      <text x="400" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1e293b">학습 데이터 Augmentation 파이프라인</text>
+
+      <!-- Original Design -->
+      <rect x="20" y="45" width="120" height="60" rx="7" fill="#bfdbfe" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="80" y="68" text-anchor="middle" font-size="10" font-weight="600" fill="#1e3a8a">Design 원본</text>
+      <text x="80" y="85" text-anchor="middle" font-size="9" fill="#475569">(H, W) 원본 해상도</text>
+
+      <!-- D4 -->
+      <rect x="175" y="40" width="130" height="70" rx="7" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="240" y="62" text-anchor="middle" font-size="10" font-weight="600" fill="#1e40af">D4 대칭 변환</text>
+      <text x="240" y="78" text-anchor="middle" font-size="9" fill="#475569">k×90° 회전</text>
+      <text x="240" y="92" text-anchor="middle" font-size="9" fill="#475569">+ 수평/수직 반전</text>
+      <text x="240" y="105" text-anchor="middle" font-size="8" fill="#94a3b8">(8가지 방향)</text>
+      <line x1="140" y1="75" x2="167" y2="75" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aD1)"/>
+
+      <!-- Hand features extraction (at original resolution) -->
+      <rect x="340" y="40" width="150" height="70" rx="7" fill="#bbf7d0" stroke="#10b981" stroke-width="1.5"/>
+      <text x="415" y="60" text-anchor="middle" font-size="10" font-weight="600" fill="#065f46">수공 특징 추출</text>
+      <text x="415" y="78" text-anchor="middle" font-size="9" fill="#475569">24차원 벡터</text>
+      <text x="415" y="92" text-anchor="middle" font-size="9" font-weight="600" fill="#065f46">원본 해상도에서 계산!</text>
+      <text x="415" y="105" text-anchor="middle" font-size="8" fill="#94a3b8">(D4 변환 후, 리사이즈 전)</text>
+      <line x1="305" y1="75" x2="332" y2="75" stroke="#10b981" stroke-width="1.5" marker-end="url(#aD2)"/>
+
+      <!-- Resize -->
+      <rect x="525" y="45" width="110" height="60" rx="7" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.2"/>
+      <text x="580" y="68" text-anchor="middle" font-size="10" font-weight="600" fill="#1e40af">Resize</text>
+      <text x="580" y="85" text-anchor="middle" font-size="9" fill="#475569">→ 128×128</text>
+      <line x1="490" y1="75" x2="517" y2="75" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aD1)"/>
+
+      <!-- Small rotation -->
+      <rect x="668" y="45" width="110" height="60" rx="7" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.2"/>
+      <text x="723" y="65" text-anchor="middle" font-size="10" font-weight="600" fill="#0c4a6e">소각 회전</text>
+      <text x="723" y="82" text-anchor="middle" font-size="9" fill="#475569">±5° (공유)</text>
+      <text x="723" y="95" text-anchor="middle" font-size="8" fill="#94a3b8">reflect padding</text>
+      <line x1="635" y1="75" x2="660" y2="75" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aD1)"/>
+
+      <!-- ── Elevation path ── -->
+      <rect x="20" y="160" width="120" height="60" rx="7" fill="#fecaca" stroke="#ef4444" stroke-width="1.5"/>
+      <text x="80" y="183" text-anchor="middle" font-size="10" font-weight="600" fill="#991b1b">Elevation 원본</text>
+      <text x="80" y="200" text-anchor="middle" font-size="9" fill="#475569">(H, W)</text>
+
+      <rect x="175" y="155" width="130" height="70" rx="7" fill="#fecdd3" stroke="#ef4444" stroke-width="1.2"/>
+      <text x="240" y="177" text-anchor="middle" font-size="10" font-weight="600" fill="#991b1b">D4 대칭 변환</text>
+      <text x="240" y="193" text-anchor="middle" font-size="9" fill="#475569">(Design과 동일 변환)</text>
+      <text x="240" y="207" text-anchor="middle" font-size="8" fill="#94a3b8">설계-elevation 정합 유지</text>
+      <line x1="140" y1="190" x2="167" y2="190" stroke="#ef4444" stroke-width="1.5"/>
+
+      <rect x="340" y="160" width="110" height="60" rx="7" fill="#fecdd3" stroke="#ef4444" stroke-width="1.2"/>
+      <text x="395" y="185" text-anchor="middle" font-size="10" font-weight="600" fill="#991b1b">Resize</text>
+      <text x="395" y="200" text-anchor="middle" font-size="9" fill="#475569">→ 128×128</text>
+      <line x1="305" y1="190" x2="332" y2="190" stroke="#ef4444" stroke-width="1.5"/>
+
+      <rect x="485" y="155" width="120" height="70" rx="7" fill="#fecdd3" stroke="#ef4444" stroke-width="1.2"/>
+      <text x="545" y="177" text-anchor="middle" font-size="10" font-weight="600" fill="#991b1b">소각 회전</text>
+      <text x="545" y="193" text-anchor="middle" font-size="9" fill="#475569">±5° (Design과 공유)</text>
+      <line x1="450" y1="190" x2="477" y2="190" stroke="#ef4444" stroke-width="1.5"/>
+
+      <rect x="640" y="155" width="140" height="70" rx="7" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="710" y="177" text-anchor="middle" font-size="10" font-weight="600" fill="#92400e">저주파 노이즈</text>
+      <text x="710" y="193" text-anchor="middle" font-size="9" fill="#78716c">8×8 coarse grid</text>
+      <text x="710" y="207" text-anchor="middle" font-size="9" fill="#78716c">bicubic upsample</text>
+      <text x="710" y="220" text-anchor="middle" font-size="8" fill="#94a3b8">std=0.015</text>
+      <line x1="605" y1="190" x2="632" y2="190" stroke="#f59e0b" stroke-width="1.5"/>
+
+      <!-- Output tensors -->
+      <rect x="170" y="270" width="200" height="55" rx="8" fill="#3b82f6" stroke="#1e40af" stroke-width="1.5"/>
+      <text x="270" y="292" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">design_tensor (1, 128, 128)</text>
+      <text x="270" y="310" text-anchor="middle" font-size="9" fill="#bfdbfe">+ hand_features (24,)</text>
+
+      <rect x="440" y="270" width="200" height="55" rx="8" fill="#ef4444" stroke="#991b1b" stroke-width="1.5"/>
+      <text x="540" y="292" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">elevation_tensor (1, 128, 128)</text>
+      <text x="540" y="310" text-anchor="middle" font-size="9" fill="#fecaca">∈ [0, 1] normalized</text>
+
+      <line x1="723" y1="105" x2="723" y2="245" stroke="#3b82f6" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="723" y1="245" x2="370" y2="245" stroke="#3b82f6" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="370" y1="245" x2="320" y2="265" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#aD1)"/>
+
+      <line x1="710" y1="225" x2="710" y2="245" stroke="#ef4444" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="710" y1="245" x2="590" y2="265" stroke="#ef4444" stroke-width="1.5"/>
+    </svg>
+  </div>
+  <p class="diagram-caption">그림 10-1. 데이터 Augmentation — Design과 Elevation에 동일한 기하 변환 적용, 수공 특징은 원본 해상도에서 추출</p>
+
+  <h3>10.3 수공 특징(Handcrafted Features) 24차원</h3>
+  <table>
+    <thead><tr><th>그룹</th><th>인덱스</th><th>특징</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="4"><span class="badge badge-blue">밀도 &amp; 비대칭</span></td>
+          <td>[0]</td><td>전역 전경 밀도</td></tr>
+      <tr><td>[1-4]</td><td>4개 사분면 밀도</td></tr>
+      <tr><td>[5-6]</td><td>좌우/상하 비대칭도</td></tr>
+      <tr><td>[7-9]</td><td>수평/수직/대각선 라인 비율 (Sobel)</td></tr>
+      <tr><td rowspan="2"><span class="badge badge-green">구조/레이아웃</span></td>
+          <td>[10]</td><td>종횡비 (H/W)</td></tr>
+      <tr><td>[11-12]</td><td>연결 컴포넌트 수, 평균 면적</td></tr>
+      <tr><td><span class="badge badge-purple">대칭성</span></td>
+          <td>[13-15]</td><td>좌우/상하/180° 회전 대칭 (Pearson 상관)</td></tr>
+      <tr><td><span class="badge badge-orange">공간 분포</span></td>
+          <td>[16-18]</td><td>중심 밀도, 테두리 밀도, 방사 평균</td></tr>
+      <tr><td rowspan="2"><span class="badge badge-blue">형상 복잡도</span></td>
+          <td>[19]</td><td>외곽선 비율</td></tr>
+      <tr><td>[20-21]</td><td>Hu 모멘트 1, 2 (스케일 불변)</td></tr>
+      <tr><td><span class="badge badge-gray">절대 크기</span></td>
+          <td>[22-23]</td><td>이미지 높이/너비 (÷1000)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn">
+    <strong>주의:</strong> 수공 특징은 반드시 <strong>원본 해상도</strong>에서 계산합니다.
+    리사이즈 후에 계산하면 LANCZOS 보간으로 인해 가는 선이 뭉개져
+    밀도 임계값이 달라질 수 있습니다.
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- 11. 학습 전략                                    -->
+<!-- ══════════════════════════════════════════════ -->
+<section id="sec-train">
+  <h2>11. 학습 전략</h2>
+
+  <h3>11.1 CVAE 학습</h3>
+  <table>
+    <thead><tr><th>항목</th><th>설정</th></tr></thead>
+    <tbody>
+      <tr><td>Optimizer</td><td>Adam (lr=0.0001, weight_decay=0.0001)</td></tr>
+      <tr><td>Scheduler</td><td>CosineAnnealingLR (T_max=epochs, eta_min=1e-6)</td></tr>
+      <tr><td>Epochs</td><td>200</td></tr>
+      <tr><td>Batch size</td><td>32</td></tr>
+      <tr><td>Gradient clipping</td><td>max_norm = 5.0</td></tr>
+      <tr><td>AMP</td><td>활성화 (CUDA 환경)</td></tr>
+      <tr><td>KL annealing</td><td>Cyclical (β_max=0.4, 8 cycles)</td></tr>
+      <tr><td>Free bits</td><td>1.0 nats/dim (posterior collapse 방지)</td></tr>
+      <tr><td>Spectral loss</td><td>weight = 0.1 (FFT 기반 주파수 보존)</td></tr>
+      <tr><td>Early stopping</td><td>val_recon &lt; threshold 시 조기 종료</td></tr>
+    </tbody>
+  </table>
+
+  <h3>11.2 LDM / LFM 학습</h3>
+  <table>
+    <thead><tr><th>항목</th><th>LDM</th><th>LFM</th></tr></thead>
+    <tbody>
+      <tr><td>Optimizer</td><td colspan="2">AdamW (lr=0.0002, weight_decay=0.0001)</td></tr>
+      <tr><td>Scheduler</td><td colspan="2">CosineAnnealingLR (T_max=epochs, eta_min=1e-6)</td></tr>
+      <tr><td>Epochs</td><td colspan="2">500</td></tr>
+      <tr><td>Batch size</td><td colspan="2">64</td></tr>
+      <tr><td>Gradient clipping</td><td colspan="2">max_norm = 1.0</td></tr>
+      <tr><td>EMA decay</td><td colspan="2">0.9999</td></tr>
+      <tr><td>Loss</td><td>MSE(ε̂, ε)</td><td>MSE(v̂, z₁−z₀)</td></tr>
+      <tr><td>학습 대상</td><td>Latent Denoiser</td><td>Velocity Net</td></tr>
+      <tr><td>사전 학습</td><td colspan="2">CVAE 체크포인트 필수 (cvae_checkpoint)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>11.3 Checkpoint 형식</h3>
+  <pre><code>{
+    'epoch': int,
+    'model_type': 'cvae' | 'ldm' | 'lfm',
+    'model_state': OrderedDict,        # model.state_dict()
+    'optimizer_state': OrderedDict,
+    'config': dict,
+    'ema_state_dict': dict,            # LDM/LFM only
+    'val_loss': float,
+    'cvae_checkpoint': str,            # LDM/LFM only
+}</code></pre>
+</section>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- 12. 평가 프로토콜                                -->
+<!-- ══════════════════════════════════════════════ -->
+<section id="sec-eval">
+  <h2>12. 평가 프로토콜</h2>
+
+  <h3>12.1 Leave-One-Out 검증</h3>
+  <p>
+    10개 설계(A~J) 중 1개를 held-out 테스트 세트로 사용하고, 나머지 9개로 학습합니다.
+    이 과정을 10번 반복(fold 0~9)하여 모든 설계에 대한 일반화 성능을 측정합니다.
+  </p>
+
+  <div class="diagram-wrap">
+    <svg width="700" height="150" viewBox="0 0 700 150" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <!-- 10 design boxes -->
+      <rect x="20" y="30" width="55" height="40" rx="5" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="47" y="55" text-anchor="middle" font-size="11" font-weight="600" fill="#1e40af">A</text>
+
+      <rect x="85" y="30" width="55" height="40" rx="5" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="112" y="55" text-anchor="middle" font-size="11" font-weight="600" fill="#1e40af">B</text>
+
+      <rect x="150" y="30" width="55" height="40" rx="5" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="177" y="55" text-anchor="middle" font-size="11" font-weight="600" fill="#1e40af">C</text>
+
+      <rect x="215" y="30" width="55" height="40" rx="5" fill="#fecaca" stroke="#ef4444" stroke-width="2.5"/>
+      <text x="242" y="55" text-anchor="middle" font-size="11" font-weight="700" fill="#991b1b">D</text>
+
+      <rect x="280" y="30" width="55" height="40" rx="5" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="307" y="55" text-anchor="middle" font-size="11" font-weight="600" fill="#1e40af">E</text>
+
+      <rect x="345" y="30" width="55" height="40" rx="5" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="372" y="55" text-anchor="middle" font-size="11" font-weight="600" fill="#1e40af">F</text>
+
+      <rect x="410" y="30" width="55" height="40" rx="5" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="437" y="55" text-anchor="middle" font-size="11" font-weight="600" fill="#1e40af">G</text>
+
+      <rect x="475" y="30" width="55" height="40" rx="5" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="502" y="55" text-anchor="middle" font-size="11" font-weight="600" fill="#1e40af">H</text>
+
+      <rect x="540" y="30" width="55" height="40" rx="5" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="567" y="55" text-anchor="middle" font-size="11" font-weight="600" fill="#1e40af">I</text>
+
+      <rect x="605" y="30" width="55" height="40" rx="5" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="632" y="55" text-anchor="middle" font-size="11" font-weight="600" fill="#1e40af">J</text>
+
+      <!-- Labels -->
+      <text x="242" y="90" text-anchor="middle" font-size="10" font-weight="600" fill="#ef4444">Held-out (Val)</text>
+      <text x="420" y="90" text-anchor="middle" font-size="10" fill="#3b82f6">나머지 9개 → Train</text>
+
+      <text x="350" y="120" text-anchor="middle" font-size="10" fill="#64748b">예시: Fold 3 (val_fold=3) — Design D를 테스트, A,B,C,E,F,G,H,I,J로 학습</text>
+      <text x="350" y="140" text-anchor="middle" font-size="10" fill="#64748b">10개 fold의 평균 ± 표준편차로 최종 성능 보고</text>
+    </svg>
+  </div>
+
+  <h3>12.2 평가 지표</h3>
+  <table>
+    <thead><tr><th>지표</th><th>대상</th><th>수식</th><th>해석</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Reconstruction MSE</strong></td>
+        <td>CVAE only</td>
+        <td>MSE(reconstruct(x), x)</td>
+        <td>&lt; 0.005: 우수 / &lt; 0.01: 양호</td>
+      </tr>
+      <tr>
+        <td><strong>Sample Diversity</strong></td>
+        <td>모든 모델</td>
+        <td>Var(samples) 픽셀별 분산의 평균</td>
+        <td>real diversity의 0.3~3.0배가 적절</td>
+      </tr>
+      <tr>
+        <td><strong>MMD</strong></td>
+        <td>모든 모델</td>
+        <td>K_rr + K_gg − 2K_rg (RBF kernel)</td>
+        <td>&lt; 0.1: 우수 / 0.1~0.3: 보통 / &gt; 0.3: 부족</td>
+      </tr>
+      <tr>
+        <td><strong>Active KL dims</strong></td>
+        <td>CVAE only</td>
+        <td>count(mean_KL_per_dim &gt; 0.1)</td>
+        <td>&gt; z_dim/4: 건강한 잠재 공간</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>12.3 2단계 검증</h3>
+  <ul>
+    <li><strong>Step 1 — 암기 검증</strong> (학습 분할): Train Recon MSE, Real Diversity 측정. 학습 데이터를 제대로 학습했는지 확인.</li>
+    <li><strong>Step 2 — 일반화 검증</strong> (Held-out 분할): Val Recon MSE, Gen Diversity, MMD, Active KL dims 측정. 보지 못한 설계에 대한 성능 평가.</li>
+  </ul>
+</section>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- 13. 모델 비교                                    -->
+<!-- ══════════════════════════════════════════════ -->
+<section id="sec-compare">
+  <h2>13. 모델 비교</h2>
+
+  <h3>13.1 아키텍처 비교</h3>
+  <div class="diagram-wrap">
+    <svg width="820" height="320" viewBox="0 0 820 320" xmlns="http://www.w3.org/2000/svg" font-family="sans-serif">
+      <text x="410" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="#1e293b">세 모델의 생성 경로 비교</text>
+
+      <!-- CVAE -->
+      <rect x="15" y="40" width="250" height="265" rx="10" fill="#eff6ff" stroke="#3b82f6" stroke-width="2"/>
+      <text x="140" y="65" text-anchor="middle" font-size="13" font-weight="700" fill="#1e40af">CVAE</text>
+      <text x="140" y="82" text-anchor="middle" font-size="9" fill="#64748b">단일 단계 / End-to-End</text>
+
+      <rect x="60" y="100" width="130" height="30" rx="5" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.2"/>
+      <text x="125" y="120" text-anchor="middle" font-size="9" fill="#92400e">z ~ N(0, I)</text>
+      <text x="140" y="147" text-anchor="middle" font-size="10" fill="#475569">↓ 1 step</text>
+      <rect x="60" y="155" width="130" height="30" rx="5" fill="#ffedd5" stroke="#f97316" stroke-width="1.2"/>
+      <text x="125" y="175" text-anchor="middle" font-size="9" fill="#9a3412">Fuse(z, c)</text>
+      <text x="140" y="202" text-anchor="middle" font-size="10" fill="#475569">↓</text>
+      <rect x="60" y="210" width="130" height="30" rx="5" fill="#d1fae5" stroke="#10b981" stroke-width="1.2"/>
+      <text x="125" y="230" text-anchor="middle" font-size="9" fill="#065f46">Decoder → x̂</text>
+      <text x="140" y="270" text-anchor="middle" font-size="10" font-weight="600" fill="#1e40af">총 1회 forward</text>
+      <text x="140" y="290" text-anchor="middle" font-size="9" fill="#64748b">가장 빠른 추론</text>
+
+      <!-- LDM -->
+      <rect x="285" y="40" width="250" height="265" rx="10" fill="#fff7ed" stroke="#f97316" stroke-width="2"/>
+      <text x="410" y="65" text-anchor="middle" font-size="13" font-weight="700" fill="#9a3412">LDM</text>
+      <text x="410" y="82" text-anchor="middle" font-size="9" fill="#64748b">잠재 확산 / DDIM 역확산</text>
+
+      <rect x="330" y="100" width="160" height="30" rx="5" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.2"/>
+      <text x="410" y="120" text-anchor="middle" font-size="9" fill="#92400e">z_T ~ N(0, I)</text>
+      <text x="410" y="147" text-anchor="middle" font-size="10" fill="#475569">↓ 50 DDIM steps</text>
+      <rect x="330" y="155" width="160" height="30" rx="5" fill="#ffedd5" stroke="#f97316" stroke-width="1.2"/>
+      <text x="410" y="175" text-anchor="middle" font-size="9" fill="#9a3412">Denoiser(z_t, t, c) → ε̂ (반복)</text>
+      <text x="410" y="202" text-anchor="middle" font-size="10" fill="#475569">↓</text>
+      <rect x="330" y="210" width="160" height="30" rx="5" fill="#d1fae5" stroke="#10b981" stroke-width="1.2"/>
+      <text x="410" y="230" text-anchor="middle" font-size="9" fill="#065f46">Frozen Decoder → x̂</text>
+      <text x="410" y="270" text-anchor="middle" font-size="10" font-weight="600" fill="#9a3412">총 50회 denoiser forward</text>
+      <text x="410" y="290" text-anchor="middle" font-size="9" fill="#64748b">높은 품질, 느린 추론</text>
+
+      <!-- LFM -->
+      <rect x="555" y="40" width="250" height="265" rx="10" fill="#faf5ff" stroke="#8b5cf6" stroke-width="2"/>
+      <text x="680" y="65" text-anchor="middle" font-size="13" font-weight="700" fill="#5b21b6">LFM</text>
+      <text x="680" y="82" text-anchor="middle" font-size="9" fill="#64748b">잠재 흐름 매칭 / ODE 적분</text>
+
+      <rect x="600" y="100" width="160" height="30" rx="5" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.2"/>
+      <text x="680" y="120" text-anchor="middle" font-size="9" fill="#92400e">z₀ ~ N(0, I)</text>
+      <text x="680" y="147" text-anchor="middle" font-size="10" fill="#475569">↓ 30 ODE steps</text>
+      <rect x="600" y="155" width="160" height="30" rx="5" fill="#ede9fe" stroke="#8b5cf6" stroke-width="1.2"/>
+      <text x="680" y="175" text-anchor="middle" font-size="9" fill="#5b21b6">VelNet(z, t, c) → v̂ (반복)</text>
+      <text x="680" y="202" text-anchor="middle" font-size="10" fill="#475569">↓</text>
+      <rect x="600" y="210" width="160" height="30" rx="5" fill="#d1fae5" stroke="#10b981" stroke-width="1.2"/>
+      <text x="680" y="230" text-anchor="middle" font-size="9" fill="#065f46">Frozen Decoder → x̂</text>
+      <text x="680" y="270" text-anchor="middle" font-size="10" font-weight="600" fill="#5b21b6">총 30회 velocity forward</text>
+      <text x="680" y="290" text-anchor="middle" font-size="9" fill="#64748b">품질과 속도의 균형</text>
+    </svg>
+  </div>
+  <p class="diagram-caption">그림 13-1. 세 모델의 생성 경로 비교 — CVAE(1단계), LDM(50단계 역확산), LFM(30단계 ODE)</p>
+
+  <h3>13.2 종합 비교표</h3>
+  <table>
+    <thead>
+      <tr><th>항목</th><th>CVAE</th><th>LDM</th><th>LFM</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>학습 방식</strong></td><td>End-to-End</td><td>2단계 (Frozen CVAE + Denoiser)</td><td>2단계 (Frozen CVAE + VelocityNet)</td></tr>
+      <tr><td><strong>잠재 공간</strong></td><td>64-dim (확률적)</td><td>64-dim (확산)</td><td>64-dim (흐름)</td></tr>
+      <tr><td><strong>생성 원리</strong></td><td>VAE 샘플링</td><td>DDIM 역확산</td><td>ODE 적분 (직선 경로)</td></tr>
+      <tr><td><strong>노이즈 스케줄</strong></td><td>N/A</td><td>Cosine (500 steps)</td><td>불필요</td></tr>
+      <tr><td><strong>추론 단계</strong></td><td>1</td><td>50 (DDIM)</td><td>30 (ODE)</td></tr>
+      <tr><td><strong>추론 속도</strong></td><td>가장 빠름</td><td>느림</td><td>중간</td></tr>
+      <tr><td><strong>손실 함수</strong></td><td>MSE + β·KL + Spectral</td><td>MSE(ε̂, ε)</td><td>MSE(v̂, v_target)</td></tr>
+      <tr><td><strong>학습 epochs</strong></td><td>200</td><td>500</td><td>500</td></tr>
+      <tr><td><strong>학습률</strong></td><td>0.0001</td><td>0.0002</td><td>0.0002</td></tr>
+      <tr><td><strong>핵심 네트워크</strong></td><td>Enc + Fusion + Dec</td><td>LatentDenoiser (H=512)</td><td>VelocityNet (H=256)</td></tr>
+      <tr><td><strong>EMA</strong></td><td>미사용</td><td>0.9999</td><td>0.9999</td></tr>
+      <tr><td><strong>Grad clip</strong></td><td>5.0</td><td>1.0</td><td>1.0</td></tr>
+      <tr><td><strong>Reconstruction</strong></td><td>지원 (결정적)</td><td>미지원</td><td>미지원</td></tr>
+      <tr><td><strong>다양성 제어</strong></td><td>temperature</td><td>η (DDIM eta)</td><td>temperature + solver</td></tr>
+      <tr><td><strong>사전 요구</strong></td><td>없음</td><td>학습된 CVAE</td><td>학습된 CVAE</td></tr>
+    </tbody>
+  </table>
+
+  <h3>13.3 핵심 차원 요약</h3>
+  <table>
+    <thead><tr><th>컴포넌트</th><th>기본값</th><th>설정 키</th></tr></thead>
+    <tbody>
+      <tr><td>이미지 크기</td><td>256×256 (학습 시 128×128 가능)</td><td><code>image_size</code></td></tr>
+      <tr><td>잠재 벡터 z</td><td>64</td><td><code>z_dim</code></td></tr>
+      <tr><td>조건 벡터 c</td><td>64</td><td><code>c_dim</code></td></tr>
+      <tr><td>CNN 브랜치 출력</td><td>64</td><td><code>c_cnn_dim</code></td></tr>
+      <tr><td>Hand 브랜치 출력</td><td>32</td><td><code>c_hand_dim</code></td></tr>
+      <tr><td>Denoiser hidden</td><td>512 (LDM) / 256 (LFM)</td><td><code>ldm_hidden_dim</code> / <code>lfm_hidden_dim</code></td></tr>
+      <tr><td>ResBlock 수</td><td>8</td><td><code>ldm_n_blocks</code> / <code>lfm_n_blocks</code></td></tr>
+      <tr><td>시간 임베딩</td><td>128</td><td>고정</td></tr>
+      <tr><td>수공 특징</td><td>24 (선택 가능)</td><td><code>selected_features</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>13.4 명령어 참고</h3>
+  <pre><code># CVAE 학습
+python train.py --config config.txt --val_fold 0
+
+# LDM 학습 (CVAE 사전 학습 필요)
+python train.py --config config_ldm.txt --cvae-checkpoint ./outputs/cvae_pcb.pth
+
+# LFM 학습 (CVAE 사전 학습 필요)
+python train.py --config config_lfm.txt --cvae-checkpoint ./outputs/cvae_pcb.pth
+
+# 평가 (전체 fold)
+python evaluate.py --k 50
+
+# 샘플 생성
+python sample.py --design data/design/design_A.png --num_samples 10</code></pre>
+</section>
+
+</div><!-- /.container -->
+
+<footer style="text-align:center; padding:2rem; color:#94a3b8; font-size:0.85rem; border-top:1px solid #e2e8f0; margin-top:1rem;">
+  PCB Warpage Architecture Document &mdash; 자동 생성 &mdash; 2024
+</footer>
+
+</body>
+</html>
+</body>
+</html>
