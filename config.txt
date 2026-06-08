@@ -27,7 +27,7 @@ c_cnn_dim   8       # design encoder CNN branch output dim
 c_hand_dim  4       # handcrafted feature branch output dim
 
 %   Fusion method: concat / film / cross_attention  (CVAE only)
-fusion_method   concat
+fusion_method   film
 
 %   Training parameters
 training_epochs         200
@@ -67,4 +67,4 @@ num_gen_samples 300  # K samples to generate per design at inference
 elevation_min   0.0     # physical minimum value used in min-max scaling (μm)
 elevation_max   3000.0  # physical maximum value used in min-max scaling (μm)
 
-selected_features  7,9,11,13,14,15,17,20,21
+selected_features  5,6,11,12,13,14,15,22,23

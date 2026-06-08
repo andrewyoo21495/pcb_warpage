@@ -68,4 +68,4 @@ num_gen_samples 300
 elevation_min   0.0
 elevation_max   3000.0
 
-selected_features  7,9,11,13,14,15,17,20,21
+selected_features  5,6,11,12,13,14,15,22,23
