@@ -52,6 +52,11 @@ def parse_args():
                         help='Force CPU evaluation (avoids GPU usage entirely)')
     parser.add_argument('--step',   type=int, default=None, choices=[1, 2],
                         help='Run only step 1 (memorisation) or step 2 (generalisation)')
+    parser.add_argument('--gpu',    type=int, default=None,
+                        help='Override gpu_ids from config (e.g. --gpu 3)')
+    parser.add_argument('--checkpoint', type=str, default=None,
+                        help='Override modelpath from config '
+                             '(e.g. --checkpoint outputs/cvae_pcb_fold0.pth)')
     return parser.parse_args()
 
 
@@ -387,6 +392,10 @@ def evaluate_fold(config: dict, fold: int, k: int, device: torch.device,
 def main():
     args   = parse_args()
     config = load_config(args.config)
+    if args.gpu is not None:
+        config['gpu_ids'] = args.gpu
+    if args.checkpoint is not None:
+        config['modelpath'] = args.checkpoint
     display_config(config)
 
     device = torch.device('cpu') if args.cpu else get_device(config)

@@ -63,6 +63,8 @@ def parse_args():
     parser.add_argument('--metadata',   type=str, default=None,
                         help='Path to scaling_metadata.json from preprocessing '
                              '(default: auto-detect in elevation data directory)')
+    parser.add_argument('--gpu',        type=int, default=None,
+                        help='Override gpu_ids from config (e.g. --gpu 3)')
     return parser.parse_args()
 
 
@@ -478,6 +480,8 @@ def generate_for_design(design_path: str, model, model_type: str, config: dict,
 def main():
     args   = parse_args()
     config = load_config(args.config)
+    if args.gpu is not None:
+        config['gpu_ids'] = args.gpu
 
     if not args.design and not args.design_dir:
         raise ValueError("Specify either --design (single image) or --design-dir (folder of images).")

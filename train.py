@@ -36,6 +36,14 @@ def parse_args():
     parser.add_argument('--config',   type=str, default='config.txt')
     parser.add_argument('--val_fold', type=int, default=None,
                         help='Override val_fold from config (0-indexed)')
+    parser.add_argument('--gpu',      type=int, default=None,
+                        help='Override gpu_ids from config (e.g. --gpu 3)')
+    parser.add_argument('--tag',      type=str, default=None,
+                        help='Tag appended to output paths for parallel runs '
+                             '(e.g. --tag fold0 → outputs/cvae_pcb_fold0.pth)')
+    parser.add_argument('--cvae-checkpoint', type=str, default=None,
+                        help='Override cvae_checkpoint for LDM/LFM training '
+                             '(e.g. --cvae-checkpoint outputs/cvae_pcb_fold0.pth)')
     return parser.parse_args()
 
 
@@ -243,6 +251,21 @@ def main():
 
     if args.val_fold is not None:
         config['val_fold'] = args.val_fold
+    if args.gpu is not None:
+        config['gpu_ids'] = args.gpu
+    if args.cvae_checkpoint is not None:
+        config['cvae_checkpoint'] = args.cvae_checkpoint
+
+    # --tag: append tag to output paths so parallel runs don't collide
+    if args.tag:
+        tag = args.tag
+        for key in ('modelpath', 'log_file_dir', 'vis_save_dir', 'sample_save_dir'):
+            if key in config:
+                p = Path(config[key])
+                if p.suffix:  # file path  (e.g. model.pth, train.log)
+                    config[key] = str(p.with_stem(f"{p.stem}_{tag}"))
+                else:         # directory  (e.g. outputs/vis_cvae)
+                    config[key] = str(p.parent / f"{p.name}_{tag}")
 
     display_config(config)
 

@@ -69,6 +69,10 @@ def parse_args():
                         help='Sampling temperature (default: 1.0)')
     parser.add_argument('--cpu',      action='store_true',
                         help='Force CPU')
+    parser.add_argument('--gpu',      type=int, default=None,
+                        help='Override gpu_ids from config (e.g. --gpu 3)')
+    parser.add_argument('--checkpoint', type=str, default=None,
+                        help='Override modelpath from config')
     return parser.parse_args()
 
 
@@ -479,6 +483,10 @@ def evaluate_fold(config, fold, model, k, temperature, save_dir, show, grid_n,
 def main():
     args   = parse_args()
     config = load_config(args.config)
+    if args.gpu is not None:
+        config['gpu_ids'] = args.gpu
+    if args.checkpoint is not None:
+        config['modelpath'] = args.checkpoint
     display_config(config)
 
     device       = get_device(config, cpu=args.cpu)
