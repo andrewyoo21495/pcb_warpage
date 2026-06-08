@@ -39,8 +39,11 @@ esac
 
 # Auto-detect number of folds from design_names in config
 NUM_FOLDS=$(python -c "
+import sys, io
+sys.stdout = io.StringIO()  # suppress load_config prints
 from utils.load_config import load_config
 c = load_config('$CONFIG')
+sys.stdout = sys.__stdout__  # restore stdout
 names = c.get('design_names', [])
 if isinstance(names, list):
     print(len(names))

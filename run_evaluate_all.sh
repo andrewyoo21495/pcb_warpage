@@ -54,8 +54,11 @@ for model in $MODELS; do
 
     # Auto-detect number of folds from design_names in config
     NUM_FOLDS=$(python -c "
+import sys, io
+sys.stdout = io.StringIO()
 from utils.load_config import load_config
 c = load_config('$conf')
+sys.stdout = sys.__stdout__
 names = c.get('design_names', [])
 if isinstance(names, list):
     print(len(names))
