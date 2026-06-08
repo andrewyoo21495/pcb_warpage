@@ -2,10 +2,12 @@
 # =============================================================
 # run_pipeline.sh — Full training pipeline: CVAE → LDM + LFM
 #
-# Phase 1: Train CVAE on all 10 folds (8 GPUs in parallel)
+# Phase 1: Train CVAE on all folds (8 GPUs in parallel)
 # Phase 2: Train LDM + LFM simultaneously
 #            - LDM on GPUs 0..3, LFM on GPUs 4..7
-# Phase 3: Evaluate all models (10 folds × 8 GPUs)
+# Phase 3: Evaluate + Sample + Visualize all models
+#
+# Stops immediately on any error.
 #
 # Usage:
 #   bash run_pipeline.sh                # full pipeline
@@ -37,12 +39,20 @@ log() {
     echo "[$(date '+%H:%M:%S')] $*" | tee -a "$PIPELINE_LOG"
 }
 
+die() {
+    log "FATAL: $*"
+    log "Pipeline aborted. Check logs above."
+    exit 1
+}
+
 # ==============================================================
 # Phase 1: CVAE training (all folds)
 # ==============================================================
 if [ "$SKIP_CVAE" = false ]; then
-    log "========== Phase 1: CVAE Training (10 folds × ${NUM_GPUS} GPUs) =========="
-    bash run_all_folds.sh --model cvae --gpus "$NUM_GPUS" 2>&1 | tee -a "$PIPELINE_LOG"
+    log "========== Phase 1: CVAE Training (${NUM_GPUS} GPUs) =========="
+    if ! bash run_all_folds.sh --model cvae --gpus "$NUM_GPUS" 2>&1 | tee -a "$PIPELINE_LOG"; then
+        die "Phase 1 (CVAE training) failed."
+    fi
     log "Phase 1 complete."
 else
     log "Skipping Phase 1 (CVAE). Using existing checkpoints."
@@ -66,27 +76,30 @@ if [ $HALF -lt 1 ]; then HALF=1; fi
 
 log "LDM on GPUs 0..$((HALF-1)), LFM on GPUs ${HALF}..$((NUM_GPUS-1))"
 
-# LDM on first half of GPUs
 bash run_all_folds.sh --model ldm --gpus "$HALF" --gpu-offset 0 \
     2>&1 | tee -a "$PIPELINE_LOG" &
 LDM_PID=$!
 
-# LFM on second half of GPUs
 bash run_all_folds.sh --model lfm --gpus "$HALF" --gpu-offset "$HALF" \
     2>&1 | tee -a "$PIPELINE_LOG" &
 LFM_PID=$!
 
 fail=0
-if ! wait "$LDM_PID"; then fail=$((fail + 1)); log "WARNING: LDM had errors"; fi
-if ! wait "$LFM_PID"; then fail=$((fail + 1)); log "WARNING: LFM had errors"; fi
+if ! wait "$LDM_PID"; then fail=$((fail + 1)); log "ERROR: LDM training failed"; fi
+if ! wait "$LFM_PID"; then fail=$((fail + 1)); log "ERROR: LFM training failed"; fi
 
+if [ $fail -gt 0 ]; then
+    die "Phase 2 failed ($fail model(s) had errors)."
+fi
 log "Phase 2 complete."
 
 # ==============================================================
 # Phase 3: Evaluate + Sample + Visualize (all models)
 # ==============================================================
 log "========== Phase 3: Evaluate + Sample + Visualize =========="
-bash run_evaluate_all.sh --gpus "$NUM_GPUS" 2>&1 | tee -a "$PIPELINE_LOG"
+if ! bash run_evaluate_all.sh --gpus "$NUM_GPUS" 2>&1 | tee -a "$PIPELINE_LOG"; then
+    die "Phase 3 (evaluation) failed."
+fi
 
 log ""
 log "============================================"

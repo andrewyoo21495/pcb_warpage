@@ -5,6 +5,7 @@
 # Distributes folds across N GPUs in parallel (round-robin).
 # Number of folds is auto-detected from design_names in config.
 # GPUs with >1 fold handle them sequentially.
+# Stops immediately if any fold fails.
 #
 # Usage:
 #   bash run_all_folds.sh                                # CVAE (default)
@@ -40,10 +41,10 @@ esac
 # Auto-detect number of folds from design_names in config
 NUM_FOLDS=$(python -c "
 import sys, io
-sys.stdout = io.StringIO()  # suppress load_config prints
+sys.stdout = io.StringIO()
 from utils.load_config import load_config
 c = load_config('$CONFIG')
-sys.stdout = sys.__stdout__  # restore stdout
+sys.stdout = sys.__stdout__
 names = c.get('design_names', [])
 if isinstance(names, list):
     print(len(names))
@@ -53,7 +54,9 @@ else:
 echo "Auto-detected $NUM_FOLDS designs from $CONFIG"
 
 LOG_DIR="outputs/logs_${MODEL}"
+FAIL_FLAG="/tmp/run_all_folds_${MODEL}_$$_fail"
 mkdir -p "$LOG_DIR"
+rm -f "$FAIL_FLAG"
 
 echo "============================================"
 echo "  Model: ${MODEL^^}"
@@ -74,22 +77,27 @@ train_fold() {
     if [ "$MODEL" = "ldm" ] || [ "$MODEL" = "lfm" ]; then
         local cvae_ckpt="outputs/cvae_pcb_${tag}.pth"
         if [ ! -f "$cvae_ckpt" ]; then
-            echo "[GPU $gpu] WARNING: CVAE checkpoint not found: $cvae_ckpt — skipping fold $fold"
+            echo "[GPU $gpu] ERROR: CVAE checkpoint not found: $cvae_ckpt"
+            touch "$FAIL_FLAG"
             return 1
         fi
         extra_args="--cvae-checkpoint $cvae_ckpt"
     fi
 
     echo "[GPU $gpu] Starting ${MODEL^^} fold $fold → $logfile"
-    python train.py \
+    if ! python train.py \
         --config "$CONFIG" \
         --val_fold "$fold" \
         --gpu "$gpu" \
         --tag "$tag" \
         $extra_args \
-        > "$logfile" 2>&1
+        > "$logfile" 2>&1; then
+        echo "[GPU $gpu] ERROR: ${MODEL^^} fold $fold failed! See $logfile"
+        touch "$FAIL_FLAG"
+        return 1
+    fi
 
-    echo "[GPU $gpu] ${MODEL^^} fold $fold finished (exit=$?)"
+    echo "[GPU $gpu] ${MODEL^^} fold $fold finished successfully"
 }
 
 # Distribute folds across GPUs: round-robin assignment
@@ -99,7 +107,8 @@ for fold in $(seq 0 $((NUM_FOLDS - 1))); do
 done
 
 # Group folds by GPU and run each GPU's folds sequentially,
-# but all GPUs run in parallel
+# but all GPUs run in parallel.
+# Each GPU subshell stops on first error.
 pids=()
 for gpu_slot in $(seq 0 $((NUM_GPUS - 1))); do
     gpu=$((gpu_slot + GPU_OFFSET))
@@ -119,6 +128,11 @@ for gpu_slot in $(seq 0 $((NUM_GPUS - 1))); do
     # Launch a background subshell for this GPU
     (
         for fold in "${folds_for_gpu[@]}"; do
+            # Stop this GPU's queue if a failure was detected anywhere
+            if [ -f "$FAIL_FLAG" ]; then
+                echo "[GPU $gpu] Skipping fold $fold (earlier failure detected)"
+                exit 1
+            fi
             train_fold "$fold" "$gpu"
         done
     ) &
@@ -139,12 +153,15 @@ for pid in "${pids[@]}"; do
     fi
 done
 
+rm -f "$FAIL_FLAG"
+
 echo ""
 echo "============================================"
 if [ $fail -eq 0 ]; then
     echo "  All ${MODEL^^} folds completed successfully!"
 else
-    echo "  WARNING: $fail GPU group(s) had errors."
+    echo "  ERROR: $fail GPU group(s) had failures."
     echo "  Check logs in $LOG_DIR/"
+    exit 1
 fi
 echo "============================================"

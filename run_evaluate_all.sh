@@ -2,8 +2,8 @@
 # =============================================================
 # run_evaluate_all.sh — Batch evaluate + sample + visualize
 #
-# For each model (cvae/ldm/lfm), runs all 10 folds in parallel
-# across available GPUs.
+# For each model (cvae/ldm/lfm), runs all folds in parallel
+# across available GPUs. Stops on first error.
 #
 # Usage:
 #   bash run_evaluate_all.sh                         # all 3 models
@@ -39,6 +39,23 @@ get_config() {
         ldm)  echo "config_ldm.txt" ;;
         lfm)  echo "config_lfm.txt" ;;
     esac
+}
+
+# Wait for all PIDs; if any fail, print error and exit
+wait_or_die() {
+    local phase="$1"
+    shift
+    local pids=("$@")
+    local fail=0
+    for pid in "${pids[@]}"; do
+        if ! wait "$pid"; then
+            fail=$((fail + 1))
+        fi
+    done
+    if [ $fail -gt 0 ]; then
+        echo "ERROR: $fail job(s) failed during $phase. Check logs."
+        exit 1
+    fi
 }
 
 echo "============================================"
@@ -78,8 +95,8 @@ else:
         ckpt="outputs/${model}_pcb_${tag}.pth"
 
         if [ ! -f "$ckpt" ]; then
-            echo "  Fold $fold: checkpoint not found ($ckpt), skipping."
-            continue
+            echo "  ERROR: Fold $fold checkpoint not found ($ckpt)"
+            exit 1
         fi
 
         k_arg=""
@@ -94,7 +111,7 @@ else:
             > "${log_dir}/eval_${tag}.log" 2>&1 &
         pids+=($!)
     done
-    for pid in "${pids[@]}"; do wait "$pid" || true; done
+    wait_or_die "${model^^} evaluate" "${pids[@]}"
     echo "[${model^^}] Evaluate done."
 
     # --- Phase B: Sample ---
@@ -105,8 +122,6 @@ else:
             gpu=$((fold % NUM_GPUS))
             tag="fold${fold}"
             ckpt="outputs/${model}_pcb_${tag}.pth"
-
-            if [ ! -f "$ckpt" ]; then continue; fi
 
             k_arg=""
             if [ -n "$K_SAMPLES" ]; then k_arg="--k $K_SAMPLES"; fi
@@ -122,7 +137,7 @@ else:
                 > "${log_dir}/sample_${tag}.log" 2>&1 &
             pids+=($!)
         done
-        for pid in "${pids[@]}"; do wait "$pid" || true; done
+        wait_or_die "${model^^} sample" "${pids[@]}"
         echo "[${model^^}] Sample done."
     fi
 
@@ -134,8 +149,6 @@ else:
             gpu=$((fold % NUM_GPUS))
             tag="fold${fold}"
             ckpt="outputs/${model}_pcb_${tag}.pth"
-
-            if [ ! -f "$ckpt" ]; then continue; fi
 
             k_arg=""
             if [ -n "$K_SAMPLES" ]; then k_arg="--k $K_SAMPLES"; fi
@@ -150,7 +163,7 @@ else:
                 > "${log_dir}/vis_${tag}.log" 2>&1 &
             pids+=($!)
         done
-        for pid in "${pids[@]}"; do wait "$pid" || true; done
+        wait_or_die "${model^^} visualize" "${pids[@]}"
         echo "[${model^^}] Visualize done."
     fi
 done
