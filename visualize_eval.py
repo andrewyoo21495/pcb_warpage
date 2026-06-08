@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Visual quality check for trained CVAE/DDPM/LDM/LFM models.
+"""Visual quality check for trained CVAE/LDM/LFM models.
 
 For each held-out design (leave-one-out fold), generates four plots that
 compare the model's generated samples against the real elevation data:
@@ -52,7 +52,7 @@ from models            import build_model
 # ------------------------------------------------------------------
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Visualise CVAE/DDPM/LDM/LFM generation quality')
+    parser = argparse.ArgumentParser(description='Visualise CVAE/LDM/LFM generation quality')
     parser.add_argument('--config',   type=str, default='config.txt')
     parser.add_argument('--fold',     type=int, default=None,
                         help='Evaluate a single fold (0-indexed); default: all folds')
@@ -97,23 +97,7 @@ def load_model(config, device):
 
     model = build_model(config).to(device)
 
-    if model_type == 'ddpm':
-        # Use raw model weights — EMA shadow appears corrupted for this
-        # checkpoint (produces x0_pred with wrong sign).
-        model.load_state_dict(ckpt['model_state'])
-        # Restore z-score normalization stats
-        elev_mean = ckpt.get('elevation_norm_mean', None)
-        elev_std = ckpt.get('elevation_norm_std', None)
-        if elev_mean is not None and elev_std is not None:
-            model.set_elevation_stats(elev_mean, elev_std)
-            print(f"Loaded DDPM (raw weights) from {model_path}  "
-                  f"(epoch {ckpt.get('epoch', '?')}, "
-                  f"elev_mean={elev_mean:.4f}, elev_std={elev_std:.4f})")
-        else:
-            print(f"Loaded DDPM (raw weights) from {model_path}  "
-                  f"(epoch {ckpt.get('epoch', '?')}, no z-score stats in checkpoint)")
-
-    elif model_type in ('ldm', 'lfm'):
+    if model_type in ('ldm', 'lfm'):
         # LDM/LFM: load full model_state first (includes frozen CVAE components),
         # then overlay EMA weights for the trainable denoiser/velocity_net.
         model.load_state_dict(ckpt['model_state'])

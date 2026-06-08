@@ -51,7 +51,7 @@ def _cosine_beta_schedule(T: int, s: float = 0.008) -> torch.Tensor:
 class LatentDiffusionModel(nn.Module):
     """Latent Diffusion Model — DDIM diffusion in CVAE latent space.
 
-    Provides the same sampling interface as CVAE and DDPM:
+    Provides the same sampling interface as CVAE:
         model.sample(design, hand_features, num_samples, temperature) -> (K, 1, H, W)
 
     Args:

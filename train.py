@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Training script for PCB Warpage models (CVAE, DDPM, LDM, LFM).
+"""Training script for PCB Warpage models (CVAE, LDM, LFM).
 
 Usage:
   python train.py                      # uses config.txt in current dir
@@ -8,7 +8,6 @@ Usage:
 
 Set model_type in config.txt:
   model_type  cvae   -> Conditional VAE with cyclical KL annealing
-  model_type  ddpm   -> Conditional DDPM with EMA
   model_type  ldm    -> Latent Diffusion Model (requires pretrained CVAE)
   model_type  lfm    -> Latent Flow Matching (requires pretrained CVAE)
 """
@@ -183,55 +182,6 @@ def validate_cvae(model, loader, device, use_amp, beta, free_bits, spectral_weig
 
 
 # ==================================================================
-# DDPM training functions
-# ==================================================================
-
-def train_one_epoch_ddpm(model, ema, loader, optimizer, scaler, device, use_amp):
-    model.train()
-    total_loss = 0.0
-    n_batches = 0
-
-    for design, elevation, hand_features in loader:
-        design        = design.to(device, non_blocking=True)
-        elevation     = elevation.to(device, non_blocking=True)
-        hand_features = hand_features.to(device, non_blocking=True)
-
-        optimizer.zero_grad(set_to_none=True)
-        with torch.amp.autocast(device_type=device.type, enabled=use_amp):
-            loss = model(elevation, design, hand_features)
-        scaler.scale(loss).backward()
-        scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        scaler.step(optimizer)
-        scaler.update()
-        ema.update()
-
-        total_loss += loss.item()
-        n_batches  += 1
-
-    return total_loss / max(n_batches, 1)
-
-
-@torch.no_grad()
-def validate_ddpm(model, loader, device, use_amp):
-    model.eval()
-    total_loss = 0.0
-    n_batches = 0
-
-    for design, elevation, hand_features in loader:
-        design        = design.to(device, non_blocking=True)
-        elevation     = elevation.to(device, non_blocking=True)
-        hand_features = hand_features.to(device, non_blocking=True)
-
-        with torch.amp.autocast(device_type=device.type, enabled=use_amp):
-            loss = model(elevation, design, hand_features)
-        total_loss += loss.item()
-        n_batches  += 1
-
-    return total_loss / max(n_batches, 1)
-
-
-# ==================================================================
 # LDM / LFM training functions (shared — both return scalar loss)
 # ==================================================================
 
@@ -400,84 +350,6 @@ def main():
 
         logger.info("Training complete.")
         logger.info(f"Best val recon loss: {best_val_loss:.4f}")
-
-    # ============================================================
-    # DDPM training
-    # ============================================================
-    elif model_type == 'ddpm':
-        from utils.ema import EMA
-
-        # Compute elevation mean/std from training data for z-score normalization
-        logger.info("Computing elevation mean/std from training data ...")
-        _elev_sum = 0.0
-        _elev_sq_sum = 0.0
-        _elev_count = 0
-        for _, elevation_batch, _ in train_loader:
-            _elev_sum += elevation_batch.sum().item()
-            _elev_sq_sum += (elevation_batch ** 2).sum().item()
-            _elev_count += elevation_batch.numel()
-        elev_mean = _elev_sum / _elev_count
-        elev_std = ((_elev_sq_sum / _elev_count) - elev_mean ** 2) ** 0.5
-        logger.info(f"  Elevation stats (in [0,1]): mean={elev_mean:.6f}, std={elev_std:.6f}")
-
-        # Set z-score normalization on model
-        model.set_elevation_stats(elev_mean, elev_std)
-
-        optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=total_epochs, eta_min=1e-6)
-        scaler = torch.amp.GradScaler('cuda', enabled=use_amp)
-
-        ema_decay = float(config.get('ema_decay', 0.9999))
-        ema = EMA(model, decay=ema_decay)
-
-        logger.info("=" * 60)
-        logger.info(f"Training DDPM  |  T={config.get('ddpm_t', 1000)}  "
-                    f"|  val_fold={config.get('val_fold')}  "
-                    f"|  epochs={total_epochs}  "
-                    f"|  ema_decay={ema_decay}{stop_info}")
-        logger.info("=" * 60)
-
-        for epoch in range(total_epochs):
-            t0 = time.time()
-            train_loss = train_one_epoch_ddpm(
-                model, ema, train_loader, optimizer, scaler, device, use_amp)
-            val_loss = validate_ddpm(model, val_loader, device, use_amp)
-            scheduler.step()
-            elapsed = time.time() - t0
-
-            logger.info(
-                f"Epoch {epoch+1:4d}/{total_epochs}  "
-                f"train_loss={train_loss:.6f}  "
-                f"val_loss={val_loss:.6f}  "
-                f"lr={scheduler.get_last_lr()[0]:.2e}  "
-                f"({elapsed:.1f}s)"
-            )
-
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                torch.save({
-                    'epoch':                epoch + 1,
-                    'model_type':           'ddpm',
-                    'model_state':          model.state_dict(),
-                    'ema_state_dict':       ema.shadow,
-                    'optimizer_state':      optimizer.state_dict(),
-                    'val_loss':             val_loss,
-                    'config':               config,
-                    'elevation_norm_mean':  elev_mean,
-                    'elevation_norm_std':   elev_std,
-                }, model_path)
-                logger.info(f"  -> Checkpoint saved (val_loss={val_loss:.6f})")
-
-            if early_stop_thresh > 0.0 and val_loss < early_stop_thresh:
-                logger.info(
-                    f"Early stop at epoch {epoch+1}: "
-                    f"val_loss={val_loss:.6f} < threshold={early_stop_thresh:.4f}"
-                )
-                break
-
-        logger.info("Training complete.")
-        logger.info(f"Best val noise-pred loss: {best_val_loss:.6f}")
 
     # ============================================================
     # LDM / LFM training (shared logic — both use latent-space loss)

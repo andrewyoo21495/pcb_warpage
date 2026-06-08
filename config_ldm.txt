@@ -30,9 +30,9 @@ c_hand_dim  4
 fusion_method   concat
 
 %   LDM-specific parameters
-ldm_T               500     # diffusion timesteps in latent space (fewer than pixel DDPM)
+ldm_T               500     # diffusion timesteps in latent space
 ldm_ddim_steps      50      # DDIM inference steps
-ldm_ddim_eta        0.5     # DDIM stochasticity: 0=deterministic, 1=full DDPM noise
+ldm_ddim_eta        0.5     # DDIM stochasticity: 0=deterministic, 1=full noise
 ldm_hidden_dim      512     # denoiser MLP hidden width
 ldm_n_blocks        8       # denoiser residual blocks
 ldm_dropout         0.1     # denoiser dropout rate

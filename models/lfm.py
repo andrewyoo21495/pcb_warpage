@@ -53,7 +53,7 @@ from models.latent_denoiser   import LatentDenoiser
 class LatentFlowMatching(nn.Module):
     """Latent Flow Matching — ODE-based generation in CVAE latent space.
 
-    Provides the same sampling interface as CVAE, DDPM, and LDM:
+    Provides the same sampling interface as CVAE and LDM:
         model.sample(design, hand_features, num_samples, temperature) -> (K, 1, H, W)
 
     Args:

@@ -1,4 +1,4 @@
-model_type  cvae        # cvae / ddpm
+model_type  cvae        # cvae / ldm / lfm
 mode        Train       # Train / Inference
 gpu_ids     0           # -1 for CPU, single GPU index for single GPU
 
@@ -28,7 +28,7 @@ c_hand_dim  4       # handcrafted feature branch output dim
 %   Fusion method: concat / film / cross_attention  (CVAE only)
 fusion_method   concat
 
-%   Training parameters  (shared by CVAE and DDPM)
+%   Training parameters
 training_epochs         200
 batch_size              32
 learning_rate           0.0001
@@ -48,15 +48,6 @@ aux_weight      0.2     # z1-only reconstruction loss weight; 0 = disabled
 logvar_clamp_min -6.0   # lower bound on logvar (wider = more expressive posterior)
 logvar_clamp_max  4.0   # upper bound on logvar
 
-%   DDPM parameters
-ddpm_T              1000    # diffusion timesteps
-ddpm_base_ch        64      # U-Net base channels
-ddpm_cond_dim       256     # global condition vector dimension
-ddpm_eta            0.7     # DDIM stochasticity: 0=deterministic, 1=full DDPM
-ddpm_ddim_steps     50      # DDIM inference steps
-ddpm_dropout        0.15    # dropout rate in U-Net
-ema_decay           0.9999  # EMA decay for DDPM
-  
 %   Augmentation
 use_design_aug      True        # brightness/contrast jitter on design input
 use_elevation_aug   True        # master switch for elevation-side augmentation

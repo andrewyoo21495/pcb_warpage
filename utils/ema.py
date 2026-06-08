@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Exponential Moving Average (EMA) for model parameters.
 
-Essential for DDPM generation quality.
+Essential for LDM/LFM generation quality.
 
 Usage during training:
     ema = EMA(model, decay=0.9999)
@@ -24,7 +24,7 @@ class EMA:
 
     Args:
         model : nn.Module whose parameters are tracked.
-        decay : smoothing factor (typical DDPM value: 0.9999).
+        decay : smoothing factor (typical value: 0.9999).
     """
 
     def __init__(self, model, decay: float = 0.9999):

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate K elevation samples for a given design image and save each as an individual PNG.
 
-Supports both CVAE and DDPM (auto-detected from checkpoint).
+Supports CVAE, LDM, and LFM (auto-detected from checkpoint).
 Supports single-design mode (--design) or batch mode (--design-dir).
 
 Usage:
@@ -102,44 +102,27 @@ def load_design(path: str, image_size: int) -> tuple[torch.Tensor, np.ndarray, I
 # ------------------------------------------------------------------
 
 def load_model_from_checkpoint(checkpoint: dict, config: dict, device: torch.device):
-    """Load a model from checkpoint, handling CVAE, DDPM, LDM, and LFM.
+    """Load a model from checkpoint, handling CVAE, LDM, and LFM.
 
-    For DDPM/LDM/LFM checkpoints, EMA weights are loaded for inference.
-    For LDM/LFM, the pretrained CVAE is also loaded from the saved path.
+    For LDM/LFM checkpoints, EMA weights are loaded for inference.
     """
     model_type = checkpoint.get('model_type', 'cvae')
     config['model_type'] = model_type
 
     model = build_model(config).to(device)
 
-    if model_type == 'ddpm':
-        model.load_state_dict(checkpoint['model_state'])
-        elev_mean = checkpoint.get('elevation_norm_mean', None)
-        elev_std = checkpoint.get('elevation_norm_std', None)
-        if elev_mean is not None and elev_std is not None:
-            model.set_elevation_stats(elev_mean, elev_std)
-            print(f"  Loaded DDPM checkpoint with raw weights "
-                  f"(elev_mean={elev_mean:.4f}, elev_std={elev_std:.4f})")
-        else:
-            print(f"  Loaded DDPM checkpoint with raw weights (no z-score stats)")
+    # Load full model_state (includes frozen CVAE weights for LDM/LFM)
+    model.load_state_dict(checkpoint['model_state'])
 
-    elif model_type in ('ldm', 'lfm'):
-        # LDM/LFM: load full state dict first (includes frozen CVAE + trained denoiser)
-        model.load_state_dict(checkpoint['model_state'])
-        # Then overlay EMA weights for the trainable denoiser/velocity_net
-        if 'ema_state_dict' in checkpoint:
-            ema_sd = checkpoint['ema_state_dict']
-            model_sd = model.state_dict()
-            for name in ema_sd:
-                if name in model_sd:
-                    model_sd[name] = ema_sd[name]
-            model.load_state_dict(model_sd)
-            print(f"  Loaded {model_type.upper()} checkpoint with EMA weights")
-        else:
-            print(f"  Loaded {model_type.upper()} checkpoint with raw weights")
-
-    else:
-        model.load_state_dict(checkpoint['model_state'])
+    if model_type in ('ldm', 'lfm') and 'ema_state_dict' in checkpoint:
+        # Overlay EMA weights for the trainable denoiser/velocity_net
+        ema_sd = checkpoint['ema_state_dict']
+        model_sd = model.state_dict()
+        for name in ema_sd:
+            if name in model_sd:
+                model_sd[name] = ema_sd[name]
+        model.load_state_dict(model_sd)
+        print(f"  Loaded {model_type.upper()} checkpoint with EMA weights")
 
     model.eval()
     return model, model_type
@@ -436,7 +419,7 @@ def plot_generated_histograms(all_samples: dict, hist_dir,
 
 
 def _resolve_scaling(args, config):
-    """Resolve elevation scaling parameters from config.txt / config_ddpm.txt."""
+    """Resolve elevation scaling parameters from config."""
     elev_min = float(config.get('elevation_min', 0.0))
     elev_max = float(config.get('elevation_max', 1.0))
     if elev_max == 1.0:
@@ -507,7 +490,7 @@ def main():
         raise FileNotFoundError(f"Checkpoint not found: {model_path}\n"
                                 "Run train.py first.")
 
-    # Load model (auto-detects CVAE or DDPM from checkpoint)
+    # Load model (auto-detects CVAE, LDM, or LFM from checkpoint)
     checkpoint = torch.load(model_path, map_location=device, weights_only=False)
     model, model_type = load_model_from_checkpoint(checkpoint, config, device)
     print(f"Loaded {model_type.upper()} model from {model_path}  "

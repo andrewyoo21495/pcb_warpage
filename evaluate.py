@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Evaluation script for PCB Warpage models — Leave-One-Out protocol.
 
-Supports both CVAE and DDPM (auto-detected from checkpoint).
+Supports CVAE, LDM, and LFM (auto-detected from checkpoint).
 
 Two-step validation:
   Step 1 — Memorisation check (train split)
@@ -187,9 +187,9 @@ def mmd(real: torch.Tensor, generated: torch.Tensor, sigma: float = 1.0) -> floa
 # ------------------------------------------------------------------
 
 def load_model_from_checkpoint(checkpoint: dict, config: dict, device: torch.device):
-    """Load a model from checkpoint, handling CVAE, DDPM, LDM, and LFM.
+    """Load a model from checkpoint, handling CVAE, LDM, and LFM.
 
-    For DDPM/LDM/LFM checkpoints, EMA weights are loaded for inference.
+    For LDM/LFM checkpoints, EMA weights are loaded for inference.
     """
     model_type = checkpoint.get('model_type', 'cvae')
     config['model_type'] = model_type
@@ -199,9 +199,9 @@ def load_model_from_checkpoint(checkpoint: dict, config: dict, device: torch.dev
     # Always load full model_state first (includes frozen CVAE weights for LDM/LFM)
     model.load_state_dict(checkpoint['model_state'])
 
-    if model_type in ('ddpm', 'ldm', 'lfm') and 'ema_state_dict' in checkpoint:
+    if model_type in ('ldm', 'lfm') and 'ema_state_dict' in checkpoint:
         # Overlay EMA weights on top (only covers trainable params: denoiser for
-        # LDM/LFM, all params for DDPM)
+        # LDM, velocity_net for LFM)
         ema_sd = checkpoint['ema_state_dict']
         model_sd = model.state_dict()
         for name in ema_sd:
@@ -271,7 +271,7 @@ def evaluate_fold(config: dict, fold: int, k: int, device: torch.device,
             verdict = 'good' if train_recon_mse < 0.005 else 'high — model may be underfitting'
             print(f"  Train Recon MSE  : {train_recon_mse:.6f}  ({verdict})")
         else:
-            print(f"  Train Recon MSE  : N/A (DDPM)")
+            print(f"  Train Recon MSE  : N/A ({model_type.upper()})")
 
         # Real sample diversity — baseline for comparison with generated diversity
         real_train_list = []
@@ -312,7 +312,7 @@ def evaluate_fold(config: dict, fold: int, k: int, device: torch.device,
             status = 'healthy' if n_active > z_dim // 4 else 'WARNING: possible posterior collapse'
             print(f"  Active KL dims   : {n_active}/{z_dim}  ({status})")
         else:
-            print(f"  Val Recon MSE    : N/A (DDPM)")
+            print(f"  Val Recon MSE    : N/A ({model_type.upper()})")
 
         # 2b. Collect real val elevations
         real_flat_list = []
