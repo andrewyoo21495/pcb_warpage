@@ -2,7 +2,8 @@
 # =============================================================
 # run_all_folds.sh — Run leave-one-out training across multiple GPUs
 #
-# Distributes 10 folds across N GPUs in parallel (round-robin).
+# Distributes folds across N GPUs in parallel (round-robin).
+# Number of folds is auto-detected from design_names in config.
 # GPUs with >1 fold handle them sequentially.
 #
 # Usage:
@@ -36,7 +37,18 @@ case $MODEL in
     *)    echo "Unknown model: $MODEL (choose cvae/ldm/lfm)"; exit 1 ;;
 esac
 
-NUM_FOLDS=10
+# Auto-detect number of folds from design_names in config
+NUM_FOLDS=$(python -c "
+from utils.load_config import load_config
+c = load_config('$CONFIG')
+names = c.get('design_names', [])
+if isinstance(names, list):
+    print(len(names))
+else:
+    print(len([n.strip() for n in str(names).split(',')]))
+")
+echo "Auto-detected $NUM_FOLDS designs from $CONFIG"
+
 LOG_DIR="outputs/logs_${MODEL}"
 mkdir -p "$LOG_DIR"
 
