@@ -60,7 +60,7 @@ aug_elev_noise_grid 8           # coarse-grid size for smooth noise (upsampled b
 val_fold    0       # which design to hold out: 0=A, 1=B, 2=C, 3=D
 
 %   Inference
-num_gen_samples 10  # K samples to generate per design at inference
+num_gen_samples 300  # K samples to generate per design at inference
 
 %   Physical scaling  (used by sample.py --denormalize)
 elevation_min   0.0     # physical minimum value used in min-max scaling (μm)

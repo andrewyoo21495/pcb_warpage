@@ -61,7 +61,7 @@ aug_elev_noise_grid 8
 val_fold    0
 
 %   Inference
-num_gen_samples 10
+num_gen_samples 300
 
 %   Physical scaling
 elevation_min   0.0
