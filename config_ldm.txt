@@ -12,12 +12,13 @@ cvae_checkpoint     ./outputs/cvae_pcb.pth
 
 %   Dataset  (same as CVAE config)
 dataset_dir             ./data
-design_names            design_A, design_B, design_C, design_D, design_E, design_F, design_G, design_H, design_I, design_J
-design_image_dir        ./data/design
-elevation_base_dir      ./data/elevation
-elevation_subdir        images
+%   design_names            B8+REV02+SEC+BOT, B8+REV03+SEC+BOT, B8+REV04+SEC+BOT,B8+REV05+SEC+BOT, B8+REV07+SEC+BOT, B8+REV02+MAIN+BOT, B8+REV03+MAIN+BOT, B8+REV04+MAIN+BOT,B8+REV05+MAIN+BOT, B8+REV07+MAIN+BOT
+design_names            B8+REV02+SEC+BOT, B8+REV03+SEC+BOT, B8+REV04+SEC+BOT,B8+REV05+SEC+BOT, B8+REV07+SEC+BOT
+design_image_dir        /data2/AOI/B8_AOI_preprocessed
+elevation_base_dir      /data2/AOI/B8_AOI_preprocessed
+elevation_subdir        
 num_designs             10
-num_samples_per_design  200
+num_samples_per_design  300
 
 %   Image parameters
 image_size  128
