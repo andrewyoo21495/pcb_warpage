@@ -1,0 +1,101 @@
+model_type  dfm         # Decomposed Fourier-Conditioned Flow Matching
+mode        Train       # Train / Inference
+gpu_ids     0           # -1 for CPU, single GPU index
+
+log_file_dir    ./outputs/train_dfm.log
+vis_save_dir    ./outputs/vis_dfm
+sample_save_dir ./outputs/samples_dfm
+
+%   Checkpoint paths (one per phase)
+fno_modelpath       ./outputs/dfm_fno.pth
+cae_modelpath       ./outputs/dfm_cae.pth
+cfm_modelpath       ./outputs/dfm_cfm.pth
+
+%   Dataset (same paths as existing configs)
+dataset_dir             ./data
+design_names            B8+REV02+SEC+BOT, B8+REV03+SEC+BOT, B8+REV04+SEC+BOT,B8+REV05+SEC+BOT, B8+REV07+SEC+BOT
+design_image_dir        /data2/AOI/B8_AOI_preprocessed
+elevation_base_dir      /data2/AOI/B8_AOI_preprocessed
+elevation_subdir
+num_designs             10
+num_samples_per_design  300
+
+%   Image parameters
+image_size  128
+
+%   Handcrafted feature selection
+selected_features  5,6,11,12,13,14,15,22,23
+
+%   ─── Module A: FNO Mean Predictor ───
+fno_width           32      # channel width in Fourier layers
+fno_modes           16      # number of Fourier modes to keep (per spatial axis)
+fno_num_layers      4       # number of Fourier layers
+fno_feat_dim        64      # handcrafted feature embedding dim for FiLM
+
+fno_epochs          300
+fno_batch_size      16      # small (few training pairs)
+fno_lr              0.001
+fno_weight_decay    0.0001
+fno_smooth_weight   0.01    # Laplacian smoothness loss weight
+fno_spectral_weight 0.1     # FFT magnitude loss weight
+fno_mixup_alpha     0.4     # Beta distribution alpha for design mixup (0=disabled)
+fno_early_stop      0.0001
+
+%   ─── Module B-1: Residual Conditional Autoencoder ───
+z_dim       64      # latent dimension (larger than CVAE's 32)
+c_dim       64      # global condition vector dimension
+c_cnn_dim   32      # CNN branch output dim
+c_hand_dim  32      # handcrafted feature branch output dim
+
+cae_epochs          200
+cae_batch_size      32
+cae_lr              0.0001
+cae_weight_decay    0.0001
+cae_beta_start      0.0
+cae_beta_max        0.3
+cae_beta_cycles     6
+cae_free_bits       0.5     # soft free bits threshold (nats per dim)
+cae_spectral_weight 0.1
+cae_logvar_clamp_min    -6.0
+cae_logvar_clamp_max     4.0
+
+%   ─── Module B-2: OT-Conditional Flow Matching ───
+cfm_hidden_dim      512     # velocity network hidden width
+cfm_n_blocks        8       # number of AdaLN-ResBlocks
+cfm_dropout         0.1
+cfm_use_cross_attn  True    # cross-attention to c_spatial tokens
+cfm_cross_attn_every 2      # insert cross-attn every N blocks
+cfm_n_heads         4       # cross-attention heads
+cfm_ode_steps       20      # ODE integration steps at inference
+cfm_ode_solver      midpoint    # euler / midpoint / rk4
+cfm_sigma_min       0.001
+cfm_use_ot          True    # enable minibatch OT coupling
+
+cfm_epochs          500
+cfm_batch_size      64
+cfm_lr              0.0002
+cfm_weight_decay    0.0001
+cfm_ema_decay       0.9999
+
+%   ─── Augmentation ───
+use_design_aug      True
+use_elevation_aug   True
+aug_d4              True
+aug_small_rot_deg   5.0
+aug_elev_noise_std  0.015
+aug_elev_noise_grid 8
+aug_feature_perturb_std  0.1    # feature-space noise std (relative to per-feature std)
+aug_spectral_noise_std   0.05   # high-freq spectral perturbation std
+
+%   Validation (leave-one-out)
+val_fold    0
+
+%   Inference
+num_gen_samples 300
+
+%   Physical scaling
+elevation_min   0.0
+elevation_max   3000.0
+
+%   Number of dataloader workers
+num_workers     4
