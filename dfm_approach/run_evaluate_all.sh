@@ -6,14 +6,18 @@
 #
 # Usage:
 #   bash dfm_approach/run_evaluate_all.sh --gpus 8
-#   bash dfm_approach/run_evaluate_all.sh --gpus 4 --config dfm_approach/config_dfm.txt
+#   bash dfm_approach/run_evaluate_all.sh --gpus 4 --config config_dfm.txt
 # =============================================================
 
 set -euo pipefail
 
+# cd to the directory containing this script (dfm_approach/)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
 NUM_GPUS=8
 GPU_OFFSET=0
-CONFIG="dfm_approach/config_dfm.txt"
+CONFIG="config_dfm.txt"
 K=50
 
 while [[ $# -gt 0 ]]; do
@@ -61,7 +65,7 @@ eval_fold() {
     echo "[GPU $gpu] Evaluating fold $fold → $logfile"
 
     # Evaluate: point to fold-specific checkpoints
-    if ! python dfm_approach/evaluate.py \
+    if ! python evaluate.py \
         --config "$CONFIG" \
         --fold "$fold" \
         --k "$K" \
@@ -84,7 +88,7 @@ sample_fold() {
 
     echo "[GPU $gpu] Sampling fold $fold → $logfile"
 
-    if ! python dfm_approach/sample.py \
+    if ! python sample.py \
         --config "$CONFIG" \
         --num-samples "$K" \
         --gpu "$gpu" \

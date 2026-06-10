@@ -15,10 +15,14 @@
 
 set -euo pipefail
 
+# cd to the directory containing this script (dfm_approach/)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
 PHASE=0
 NUM_GPUS=8
 GPU_OFFSET=0
-CONFIG="dfm_approach/config_dfm.txt"
+CONFIG="config_dfm.txt"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -72,7 +76,7 @@ train_fold() {
     local logfile="${LOG_DIR}/${tag}_phase${PHASE}.log"
 
     echo "[GPU $gpu] Starting DF²M phase=${PHASE} fold $fold → $logfile"
-    if ! python dfm_approach/train.py \
+    if ! python train.py \
         --config "$CONFIG" \
         --val_fold "$fold" \
         --gpu "$gpu" \

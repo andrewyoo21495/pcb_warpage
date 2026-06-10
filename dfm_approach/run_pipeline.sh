@@ -18,12 +18,16 @@
 
 set -euo pipefail
 
+# cd to the directory containing this script (dfm_approach/)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
 NUM_GPUS=8
 GPU_OFFSET=0
 SKIP_TO=1
 PHASE_ONLY=0
 SKIP_EVAL=false
-CONFIG="dfm_approach/config_dfm.txt"
+CONFIG="config_dfm.txt"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -79,7 +83,7 @@ fi
 if [[ " ${phases[*]} " =~ " 1 " ]]; then
     log ""
     log "========== Phase 1: FNO Mean Predictor (${NUM_GPUS} GPUs) =========="
-    if ! bash dfm_approach/run_all_folds.sh \
+    if ! bash run_all_folds.sh \
         --phase 1 --gpus "$NUM_GPUS" --gpu-offset "$GPU_OFFSET" --config "$CONFIG" \
         2>&1 | tee -a "$PIPELINE_LOG"; then
         die "Phase 1 (FNO training) failed."
@@ -93,7 +97,7 @@ fi
 if [[ " ${phases[*]} " =~ " 2 " ]]; then
     log ""
     log "========== Phase 2: Residual CAE (${NUM_GPUS} GPUs) =========="
-    if ! bash dfm_approach/run_all_folds.sh \
+    if ! bash run_all_folds.sh \
         --phase 2 --gpus "$NUM_GPUS" --gpu-offset "$GPU_OFFSET" --config "$CONFIG" \
         2>&1 | tee -a "$PIPELINE_LOG"; then
         die "Phase 2 (CAE training) failed."
@@ -107,7 +111,7 @@ fi
 if [[ " ${phases[*]} " =~ " 3 " ]]; then
     log ""
     log "========== Phase 3: OT-CFM (${NUM_GPUS} GPUs) =========="
-    if ! bash dfm_approach/run_all_folds.sh \
+    if ! bash run_all_folds.sh \
         --phase 3 --gpus "$NUM_GPUS" --gpu-offset "$GPU_OFFSET" --config "$CONFIG" \
         2>&1 | tee -a "$PIPELINE_LOG"; then
         die "Phase 3 (OT-CFM training) failed."
@@ -121,7 +125,7 @@ fi
 if [ "$SKIP_EVAL" = false ]; then
     log ""
     log "========== Phase 4: Evaluate + Sample (${NUM_GPUS} GPUs) =========="
-    if ! bash dfm_approach/run_evaluate_all.sh \
+    if ! bash run_evaluate_all.sh \
         --gpus "$NUM_GPUS" --gpu-offset "$GPU_OFFSET" --config "$CONFIG" \
         2>&1 | tee -a "$PIPELINE_LOG"; then
         die "Phase 4 (evaluation) failed."

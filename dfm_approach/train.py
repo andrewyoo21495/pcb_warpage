@@ -32,8 +32,14 @@ import torch
 import torch.nn as nn
 from torch.cuda.amp import GradScaler, autocast
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+# Ensure dfm_approach/ is in path first (for models/, utils/)
+_dfm_dir = str(Path(__file__).resolve().parent)
+if _dfm_dir not in sys.path:
+    sys.path.insert(0, _dfm_dir)
+# Append project root so dfm_approach/utils/__init__.py can find shared modules
+_project_root = str(Path(__file__).resolve().parents[1])
+if _project_root not in sys.path:
+    sys.path.append(_project_root)
 from utils.load_config import load_config, display_config
 from utils.ema import EMA
 
