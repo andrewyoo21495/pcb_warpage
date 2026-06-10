@@ -12,15 +12,17 @@
 set -euo pipefail
 
 NUM_GPUS=8
+GPU_OFFSET=0
 CONFIG="dfm_approach/config_dfm.txt"
 K=50
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --gpus)   NUM_GPUS="$2"; shift 2 ;;
-        --config) CONFIG="$2"; shift 2 ;;
-        --k)      K="$2"; shift 2 ;;
-        *)        echo "Unknown arg: $1"; exit 1 ;;
+        --gpus)       NUM_GPUS="$2"; shift 2 ;;
+        --gpu-offset) GPU_OFFSET="$2"; shift 2 ;;
+        --config)     CONFIG="$2"; shift 2 ;;
+        --k)          K="$2"; shift 2 ;;
+        *)            echo "Unknown arg: $1"; exit 1 ;;
     esac
 done
 
@@ -46,7 +48,7 @@ rm -f "$FAIL_FLAG"
 echo "============================================"
 echo "  DF²M Evaluate + Sample"
 echo "  Config: $CONFIG"
-echo "  GPUs: 0..$((NUM_GPUS - 1))"
+echo "  GPUs: $GPU_OFFSET..$((GPU_OFFSET + NUM_GPUS - 1))"
 echo "  Folds: $NUM_FOLDS | K=$K"
 echo "============================================"
 
@@ -100,12 +102,12 @@ sample_fold() {
 # Round-robin fold assignment
 declare -a gpu_assignments
 for fold in $(seq 0 $((NUM_FOLDS - 1))); do
-    gpu_assignments[$fold]=$(( fold % NUM_GPUS ))
+    gpu_assignments[$fold]=$(( (fold % NUM_GPUS) + GPU_OFFSET ))
 done
 
 pids=()
 for gpu_slot in $(seq 0 $((NUM_GPUS - 1))); do
-    gpu=$gpu_slot
+    gpu=$((gpu_slot + GPU_OFFSET))
 
     folds_for_gpu=()
     for fold in $(seq 0 $((NUM_FOLDS - 1))); do
@@ -161,7 +163,7 @@ echo "--- Sampling phase ($NUM_FOLDS folds) ---"
 
 pids=()
 for gpu_slot in $(seq 0 $((NUM_GPUS - 1))); do
-    gpu=$gpu_slot
+    gpu=$((gpu_slot + GPU_OFFSET))
 
     folds_for_gpu=()
     for fold in $(seq 0 $((NUM_FOLDS - 1))); do
