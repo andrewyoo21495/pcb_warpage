@@ -30,7 +30,17 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-from torch.cuda.amp import GradScaler, autocast
+from torch.cuda.amp import GradScaler
+
+# Use torch.amp.autocast (PyTorch >= 2.0) with fallback for older versions
+try:
+    from torch.amp import autocast as _autocast
+    def autocast_ctx(device):
+        return _autocast(device_type='cuda' if device.type == 'cuda' else 'cpu')
+except ImportError:
+    from torch.cuda.amp import autocast as _autocast
+    def autocast_ctx(device):
+        return _autocast(enabled=device.type == 'cuda')
 
 # Ensure dfm_approach/ is in path first (for models/, utils/)
 _dfm_dir = str(Path(__file__).resolve().parent)
@@ -169,7 +179,7 @@ def train_phase1(config: dict, device: torch.device, logger: Logger,
 
             optimizer.zero_grad()
 
-            with autocast(device_type='cuda' if device.type == 'cuda' else 'cpu'):
+            with autocast_ctx(device):
                 pred = model_dp(design, features)
                 loss, metrics = fno_loss(pred, mean_warp, smooth_w, spectral_w)
 
@@ -304,7 +314,7 @@ def train_phase2(
 
             optimizer.zero_grad()
 
-            with autocast(device_type='cuda' if device.type == 'cuda' else 'cpu'):
+            with autocast_ctx(device):
                 c_global, c_spatial = cond_enc_dp(design, features)
                 recon, mu, logvar = cae_dp(residual, c_global, c_spatial)
                 loss, metrics = cae_loss(
@@ -447,7 +457,7 @@ def train_phase3(
 
             optimizer.zero_grad()
 
-            with autocast(device_type='cuda' if device.type == 'cuda' else 'cpu'):
+            with autocast_ctx(device):
                 # cfm_dp.forward(z1, c_global, c_spatial) → compute_loss
                 loss = cfm_dp(z1, c_global, c_spatial)
                 if loss.dim() > 0:
