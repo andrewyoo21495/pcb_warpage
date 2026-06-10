@@ -74,6 +74,29 @@ eval_fold() {
     echo "[GPU $gpu] Evaluation fold $fold finished"
 }
 
+sample_fold() {
+    local fold=$1
+    local gpu=$2
+    local tag="fold${fold}"
+    local logfile="${LOG_DIR}/${tag}_sample.log"
+
+    echo "[GPU $gpu] Sampling fold $fold → $logfile"
+
+    if ! python dfm_approach/sample.py \
+        --config "$CONFIG" \
+        --num-samples "$K" \
+        --gpu "$gpu" \
+        --tag "$tag" \
+        --denormalize \
+        > "$logfile" 2>&1; then
+        echo "[GPU $gpu] ERROR: Sampling fold $fold failed! See $logfile"
+        touch "$FAIL_FLAG"
+        return 1
+    fi
+
+    echo "[GPU $gpu] Sampling fold $fold finished"
+}
+
 # Round-robin fold assignment
 declare -a gpu_assignments
 for fold in $(seq 0 $((NUM_FOLDS - 1))); do
@@ -120,12 +143,70 @@ done
 
 rm -f "$FAIL_FLAG"
 
+if [ $fail -gt 0 ]; then
+    echo ""
+    echo "============================================"
+    echo "  ERROR: $fail GPU group(s) had evaluation failures."
+    echo "  Check logs in $LOG_DIR/"
+    echo "============================================"
+    exit 1
+fi
+echo "Evaluation phase complete."
+
+# ==============================================================
+# Phase B: Sample (all folds, parallel across GPUs)
+# ==============================================================
+echo ""
+echo "--- Sampling phase ($NUM_FOLDS folds) ---"
+
+pids=()
+for gpu_slot in $(seq 0 $((NUM_GPUS - 1))); do
+    gpu=$gpu_slot
+
+    folds_for_gpu=()
+    for fold in $(seq 0 $((NUM_FOLDS - 1))); do
+        if [ "${gpu_assignments[$fold]}" -eq "$gpu" ]; then
+            folds_for_gpu+=("$fold")
+        fi
+    done
+
+    if [ ${#folds_for_gpu[@]} -eq 0 ]; then
+        continue
+    fi
+
+    (
+        for fold in "${folds_for_gpu[@]}"; do
+            if [ -f "$FAIL_FLAG" ]; then
+                echo "[GPU $gpu] Skipping sample fold $fold (earlier failure detected)"
+                exit 1
+            fi
+            sample_fold "$fold" "$gpu"
+        done
+    ) &
+    pids+=($!)
+    echo "Launched GPU $gpu: sample folds [${folds_for_gpu[*]}]"
+done
+
+echo ""
+echo "All GPUs launched for sampling. Waiting..."
+
+fail=0
+for pid in "${pids[@]}"; do
+    if ! wait "$pid"; then
+        fail=$((fail + 1))
+    fi
+done
+
+rm -f "$FAIL_FLAG"
+
 echo ""
 echo "============================================"
 if [ $fail -eq 0 ]; then
-    echo "  DF²M Evaluation — All folds completed!"
+    echo "  DF²M Evaluate + Sample — All folds completed!"
+    echo "  Eval logs:   $LOG_DIR/*_eval.log"
+    echo "  Sample logs: $LOG_DIR/*_sample.log"
 else
-    echo "  ERROR: $fail GPU group(s) had failures."
+    echo "  ERROR: $fail GPU group(s) had sampling failures."
     echo "  Check logs in $LOG_DIR/"
     exit 1
 fi
