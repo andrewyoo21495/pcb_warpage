@@ -65,11 +65,11 @@ eval_fold() {
     echo "[GPU $gpu] Evaluating fold $fold → $logfile"
 
     # Evaluate: point to fold-specific checkpoints
-    if ! python evaluate.py \
+    if ! CUDA_VISIBLE_DEVICES="$gpu" python evaluate.py \
         --config "$CONFIG" \
         --fold "$fold" \
         --k "$K" \
-        --gpu "$gpu" \
+        --gpu 0 \
         --tag "$tag" \
         > "$logfile" 2>&1; then
         echo "[GPU $gpu] ERROR: Evaluation fold $fold failed! See $logfile"
@@ -88,10 +88,10 @@ sample_fold() {
 
     echo "[GPU $gpu] Sampling fold $fold → $logfile"
 
-    if ! python sample.py \
+    if ! CUDA_VISIBLE_DEVICES="$gpu" python sample.py \
         --config "$CONFIG" \
         --num-samples "$K" \
-        --gpu "$gpu" \
+        --gpu 0 \
         --tag "$tag" \
         --denormalize \
         > "$logfile" 2>&1; then

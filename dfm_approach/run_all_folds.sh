@@ -76,10 +76,10 @@ train_fold() {
     local logfile="${LOG_DIR}/${tag}_phase${PHASE}.log"
 
     echo "[GPU $gpu] Starting DF²M phase=${PHASE} fold $fold → $logfile"
-    if ! python train.py \
+    if ! CUDA_VISIBLE_DEVICES="$gpu" python train.py \
         --config "$CONFIG" \
         --val_fold "$fold" \
-        --gpu "$gpu" \
+        --gpu 0 \
         --tag "$tag" \
         --phase "$PHASE" \
         > "$logfile" 2>&1; then
