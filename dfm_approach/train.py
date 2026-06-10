@@ -30,15 +30,13 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-from torch.cuda.amp import GradScaler
-
-# Use torch.amp.autocast (PyTorch >= 2.0) with fallback for older versions
+# AMP: prefer torch.amp (PyTorch >= 2.0) with fallback for older versions
 try:
-    from torch.amp import autocast as _autocast
+    from torch.amp import GradScaler, autocast as _autocast
     def autocast_ctx(device):
         return _autocast(device_type='cuda' if device.type == 'cuda' else 'cpu')
 except ImportError:
-    from torch.cuda.amp import autocast as _autocast
+    from torch.cuda.amp import GradScaler, autocast as _autocast
     def autocast_ctx(device):
         return _autocast(enabled=device.type == 'cuda')
 
@@ -157,7 +155,6 @@ def train_phase1(config: dict, device: torch.device, logger: Logger,
     )
     epochs = int(config.get('fno_epochs', 300))
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
-    scaler = GradScaler()
 
     smooth_w = float(config.get('fno_smooth_weight', 0.01))
     spectral_w = float(config.get('fno_spectral_weight', 0.1))
@@ -166,6 +163,10 @@ def train_phase1(config: dict, device: torch.device, logger: Logger,
     save_path = config.get('fno_modelpath', './outputs/dfm_fno.pth')
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     best_val_loss = float('inf')
+
+    # FNO uses complex-valued parameters (SpectralConv2d) whose gradients are
+    # incompatible with GradScaler.unscale_(). Train without AMP scaling.
+    logger.log("Note: AMP GradScaler disabled for Phase 1 (complex FFT parameters)")
 
     for epoch in range(epochs):
         model_dp.train()
@@ -179,15 +180,12 @@ def train_phase1(config: dict, device: torch.device, logger: Logger,
 
             optimizer.zero_grad()
 
-            with autocast_ctx(device):
-                pred = model_dp(design, features)
-                loss, metrics = fno_loss(pred, mean_warp, smooth_w, spectral_w)
+            pred = model_dp(design, features)
+            loss, metrics = fno_loss(pred, mean_warp, smooth_w, spectral_w)
 
-            scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
+            loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
-            scaler.step(optimizer)
-            scaler.update()
+            optimizer.step()
 
             for k, v in metrics.items():
                 epoch_metrics[k] += v

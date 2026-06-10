@@ -60,27 +60,30 @@ class SpectralConv2d(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B = x.shape[0]
-        # FFT along spatial dims
-        x_ft = torch.fft.rfft2(x.float(), norm='ortho')
+        # All FFT / complex ops must run outside autocast —
+        # complex tensors are incompatible with AMP GradScaler.
+        device_type = 'cuda' if x.device.type == 'cuda' else 'cpu'
+        with torch.amp.autocast(device_type, enabled=False):
+            x_ft = torch.fft.rfft2(x.float(), norm='ortho')
 
-        H_ft, W_ft = x_ft.shape[-2], x_ft.shape[-1]
-        m1 = min(self.modes1, H_ft)
-        m2 = min(self.modes2, W_ft)
+            H_ft, W_ft = x_ft.shape[-2], x_ft.shape[-1]
+            m1 = min(self.modes1, H_ft)
+            m2 = min(self.modes2, W_ft)
 
-        out_ft = torch.zeros(B, self.out_channels, H_ft, W_ft,
-                             dtype=torch.cfloat, device=x.device)
+            out_ft = torch.zeros(B, self.out_channels, H_ft, W_ft,
+                                 dtype=torch.cfloat, device=x.device)
 
-        # Top-left corner modes
-        out_ft[:, :, :m1, :m2] = self._compl_mul2d(
-            x_ft[:, :, :m1, :m2], self.weights1[:, :, :m1, :m2]
-        )
-        # Bottom-left corner modes (negative frequencies along height)
-        out_ft[:, :, -m1:, :m2] = self._compl_mul2d(
-            x_ft[:, :, -m1:, :m2], self.weights2[:, :, :m1, :m2]
-        )
+            # Top-left corner modes
+            out_ft[:, :, :m1, :m2] = self._compl_mul2d(
+                x_ft[:, :, :m1, :m2], self.weights1[:, :, :m1, :m2]
+            )
+            # Bottom-left corner modes (negative frequencies along height)
+            out_ft[:, :, -m1:, :m2] = self._compl_mul2d(
+                x_ft[:, :, -m1:, :m2], self.weights2[:, :, :m1, :m2]
+            )
 
-        # Inverse FFT
-        return torch.fft.irfft2(out_ft, s=(x.shape[-2], x.shape[-1]), norm='ortho')
+            # Inverse FFT
+            return torch.fft.irfft2(out_ft, s=(x.shape[-2], x.shape[-1]), norm='ortho')
 
 
 # ------------------------------------------------------------------

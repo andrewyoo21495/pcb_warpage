@@ -48,9 +48,12 @@ def spectral_loss(x_pred: torch.Tensor, x_target: torch.Tensor) -> torch.Tensor:
         x_pred:   (B, 1, H, W) predicted
         x_target: (B, 1, H, W) target
     """
-    fft_pred = torch.fft.rfft2(x_pred.float(), norm='ortho')
-    fft_target = torch.fft.rfft2(x_target.float(), norm='ortho')
-    return F.mse_loss(fft_pred.abs(), fft_target.abs())
+    # Disable autocast: FFT produces complex tensors incompatible with AMP
+    device_type = 'cuda' if x_pred.device.type == 'cuda' else 'cpu'
+    with torch.amp.autocast(device_type, enabled=False):
+        fft_pred = torch.fft.rfft2(x_pred.float(), norm='ortho')
+        fft_target = torch.fft.rfft2(x_target.float(), norm='ortho')
+        return F.mse_loss(fft_pred.abs(), fft_target.abs())
 
 
 def fno_loss(
